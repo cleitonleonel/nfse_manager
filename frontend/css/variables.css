@@ -1,0 +1,40 @@
+/* --- CSS VARIABLES --- */
+:root {
+  --bg:       #0a0c10;
+  --bg2:      #12161f;
+  --bg3:      #1a1f2e;
+  --bg4:      #21283b;
+  --bg5:      #2a334d;
+  --border:   rgba(255,255,255,0.06);
+  --border2:  rgba(255,255,255,0.12);
+  --accent:   #3b82f6;
+  --accent-h: #2563eb;
+  --green:    #10b981;
+  --green-bg: rgba(16,185,129,0.12);
+  --amber:    #f59e0b;
+  --amber-bg: rgba(245,158,11,0.12);
+  --red:      #ef4444;
+  --red-bg:   rgba(239,68,68,0.12);
+  --text:     #f1f5f9;
+  --text2:    #94a3b8;
+  --text3:    #475569;
+  --sans:     'Outfit', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+  --r:        10px;
+  --r2:       16px;
+  --shadow:   0 10px 30px -10px rgba(0,0,0,0.5);
+}
+
+body.theme-light {
+  --bg:       #f8fafc;
+  --bg2:      #ffffff;
+  --bg3:      #f1f5f9;
+  --bg4:      #e2e8f0;
+  --bg5:      #cbd5e1;
+  --border:   rgba(0,0,0,0.08);
+  --border2:  rgba(0,0,0,0.15);
+  --text:     #0f172a;
+  --text2:    #475569;
+  --text3:    #64748b;
+  --shadow:   0 10px 30px -10px rgba(0,0,0,0.1);
+}

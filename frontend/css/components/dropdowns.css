@@ -1,0 +1,13 @@
+/* --- CUSTOM DROPDOWN --- */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 8px); background: var(--bg2); min-width: 180px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; z-index: 100; padding: 8px 0; animation: fadeSlideIn 0.2s ease;
+}
+.dropdown-menu.show { display: block; }
+.dropdown-item {
+  display: flex; align-items: center; padding: 10px 16px; color: var(--text2); font-size: 13px; font-weight: 500;
+  text-decoration: none; cursor: pointer; transition: background 0.2s, color 0.2s;
+}
+.dropdown-item:hover { background: var(--bg3); color: var(--text); }
+.dropdown-item svg { margin-right: 10px; width: 16px; height: 16px; stroke: currentColor; fill: none; }

@@ -1,0 +1,16 @@
+/* --- TABLES --- */
+.tbl-container { margin-top: 10px; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+.tbl th {
+  text-align: left; padding: 16px 20px; font-size: 11px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--bg2); z-index: 10;
+}
+.tbl td {
+  padding: 18px 20px; font-size: 14px; color: var(--text2); border-bottom: 1px solid var(--border); transition: background 0.2s;
+}
+.tbl tr:hover td { background: rgba(255,255,255,0.02); }
+.tbl tr:last-child td { border-bottom: none; }
+
+.badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

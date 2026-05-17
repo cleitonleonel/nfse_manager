@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono&display=swap');
+
+@import './variables.css';
+@import './base.css';
+@import './layout.css';
+
+@import './components/buttons.css';
+@import './components/forms.css';
+@import './components/tables.css';
+@import './components/cards.css';
+@import './components/modals.css';
+@import './components/dropdowns.css';
+@import './components/utils.css';
+
+@import './pages/dashboard.css';
+ 
+/* --- FLATPICKR CUSTOM THEME --- */
+.flatpickr-calendar {
+  background: var(--bg2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--r) !important;
+  box-shadow: var(--shadow) !important;
+  font-family: var(--sans) !important;
+}
+.flatpickr-calendar.arrowTop:after { border-bottom-color: var(--bg2) !important; }
+.flatpickr-calendar.arrowTop:before { border-bottom-color: var(--border2) !important; }
+
+.flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  border-radius: 6px !important;
+}
+.flatpickr-day:hover { background: var(--bg4) !important; }
+.flatpickr-current-month .flatpickr-monthDropdown-months { background: var(--bg2) !important; font-weight: 600 !important; color: var(--text) !important; }
+.flatpickr-months .flatpickr-month { background: var(--bg2) !important; fill: var(--text) !important; }
+.flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { fill: var(--text) !important; opacity: 0.8; }
+.flatpickr-months .flatpickr-prev-month:hover, .flatpickr-months .flatpickr-next-month:hover { fill: var(--accent) !important; opacity: 1; }
+.flatpickr-weekday { color: var(--text) !important; font-weight: 700 !important; opacity: 0.9; }
+.flatpickr-day { color: var(--text) !important; }
+.flatpickr-day.flatpickr-disabled { color: var(--text3) !important; }
+.flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: var(--text3) !important; opacity: 0.5; }
+.numInputWrapper span.arrowUp:after { border-bottom-color: var(--text2) !important; }
+.numInputWrapper span.arrowDown:after { border-top-color: var(--text2) !important; }

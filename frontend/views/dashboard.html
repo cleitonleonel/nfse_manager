@@ -1,0 +1,131 @@
+<div class="page-content" id="page-dashboard">
+<div class="metrics">
+        <div class="card metric-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div class="metric-label">Receita Total (Emitidas)</div>
+              <div class="metric-value metric-value--currency" id="stat-total-value">R$ 0,00</div>
+            </div>
+            <div class="metric-icon-box" style="background:rgba(16,185,129,0.15); color:#10b981;">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+          </div>
+          <div class="metric-trend trend-up">
+            <svg viewBox="0 0 24 24" width="14" height="14"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            Calculado via XML
+          </div>
+        </div>
+        <div class="card metric-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div class="metric-label">Despesas (Recebidas)</div>
+              <div class="metric-value metric-value--currency" id="stat-total-recebidas" style="color: var(--danger-color, #ef4444);">R$ 0,00</div>
+            </div>
+            <div class="metric-icon-box" style="background:rgba(239,68,68,0.15); color:#ef4444;">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="23" x2="12" y2="1"/><path d="M7 19h7.5a3.5 3.5 0 0 0 0-7H9.5a3.5 3.5 0 0 1 0-7H18"/></svg>
+            </div>
+          </div>
+          <div class="metric-sub" id="stat-saldo-liquido" style="margin-top: 12px; font-weight: 500;">Saldo: R$ 0,00</div>
+        </div>
+        <div class="card metric-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div class="metric-label">Volume de Notas</div>
+              <div class="metric-value" id="stat-total-notes">0</div>
+            </div>
+            <div class="metric-icon-box" style="background:rgba(59,130,246,0.15); color:#3b82f6;">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+          </div>
+          <div class="metric-sub" id="stat-emitidas-recebidas">— emitidas / — recebidas</div>
+        </div>
+        <div class="card metric-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div class="metric-label">Visão da Carteira</div>
+              <div class="metric-value" id="stat-active-clients">0</div>
+            </div>
+            <div class="metric-icon-box" style="background:rgba(139,92,246,0.15); color:#8b5cf6;">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+          </div>
+          <div class="metric-sub" id="stat-pending-dl" style="color: #f59e0b; font-weight:500;">0 downloads pendentes</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+          <h3 style="font-weight:600;">Evolução de Emissões</h3>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <div class="dropdown">
+              <button class="btn btn-secondary btn-sm" onclick="this.nextElementSibling.classList.toggle('show')" style="margin-right: 8px;">
+                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Exportar Relatório
+              </button>
+              <div class="dropdown-menu">
+                <a href="#" class="dropdown-item" onclick="App.exportReport('csv'); return false;"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Download CSV</a>
+                <a href="#" class="dropdown-item" onclick="App.exportReport('xlsx'); return false;"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Download Excel</a>
+                <a href="#" class="dropdown-item" onclick="App.exportReport('json'); return false;"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Download JSON</a>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="App.enrichFromXml()" title="Atualizar valores a partir dos XMLs baixados" id="btn-enrich">
+              <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+            <div class="btn-group">
+              <button class="btn btn-ghost btn-sm" onclick="App.changeChartPeriod('7d', this)" id="period-7d">7d</button>
+              <button class="btn btn-ghost btn-sm" onclick="App.changeChartPeriod('30d', this)" id="period-30d">30d</button>
+              <button class="btn btn-ghost btn-sm" onclick="App.changeChartPeriod('90d', this)" id="period-90d">90d</button>
+              <button class="btn btn-ghost btn-sm active" onclick="App.changeChartPeriod('12m', this)" id="period-12m">12m</button>
+            </div>
+          </div>
+        </div>
+        <div style="height: 280px; width: 100%;">
+          <canvas id="dashboardChart"></canvas>
+        </div>
+      </div>
+
+      <!-- RANKING SECTION -->
+      <div id="ranking-section" style="display: flex; gap: 24px; margin-bottom: 24px;">
+        <div class="card flex-card" style="flex: 1;">
+          <h3 style="font-weight:600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" style="color:#10b981;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Top Faturamento
+          </h3>
+          <div id="ranking-emitidas" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Renderizado via JS -->
+          </div>
+        </div>
+        <div class="card flex-card" style="flex: 1;">
+          <h3 style="font-weight:600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" style="color:#ef4444;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Top Despesas
+          </h3>
+          <div id="ranking-recebidas" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Renderizado via JS -->
+          </div>
+        </div>
+      </div>
+
+      <div class="card flex-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-shrink: 0;">
+          <h3 style="font-weight:600;">Notas Recentes</h3>
+          <button class="btn btn-ghost" onclick="App.showPage('notes')">Ver tudo</button>
+        </div>
+        <div class="tbl-container scroll-area">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Número</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Arquivos</th>
+              </tr>
+            </thead>
+            <tbody id="recent-notes-body">
+              <!-- JS rendered -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+</div>

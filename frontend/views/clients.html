@@ -1,0 +1,26 @@
+<div class="page-content" id="page-clients">
+<div class="sticky-filter glass" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; padding:16px 24px; border-radius:var(--r2); flex-shrink: 0;">
+        <h2 style="font-size:20px; font-weight:700; margin:0;">Gerenciamento de Clientes</h2>
+        <button class="btn btn-primary" onclick="App.openModal('modal-client')">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Novo Cliente
+        </button>
+      </div>
+      <div class="card flex-card">
+        <div class="tbl-container scroll-area">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>CNPJ</th>
+                <th>Razão Social</th>
+                <th>Descrição</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="clients-table-body">
+              <!-- JS rendered -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+</div>

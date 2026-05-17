@@ -1,0 +1,12 @@
+.idea
+.github
+.DS_Store
+node_modules
+dist
+coverage
+ui/node_modules
+ui/src-tauri
+*.log
+*.env
+*.db
+

@@ -1,0 +1,29 @@
+/* --- UTILITIES --- */
+.task-toast {
+  position: fixed; bottom: 32px; right: 32px; width: 320px; background: var(--bg2); border: 1px solid var(--accent);
+  border-radius: var(--r); padding: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); z-index: 2000; display: none;
+}
+#task-msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+.progress-bar { height: 4px; background: var(--bg4); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+.progress-inner { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+
+.loader {
+  width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+body.theme-light .loader { border: 3px solid rgba(0,0,0,0.1); border-top-color: var(--accent); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.skeleton { background: linear-gradient(90deg, var(--bg3) 25%, var(--bg4) 50%, var(--bg3) 75%); background-size: 200% 100%; animation: skeleton 1.5s infinite; border-radius: 4px; }
+body.theme-light .skeleton { background: linear-gradient(90deg, var(--bg4) 25%, var(--bg5) 50%, var(--bg4) 75%); background-size: 200% 100%; }
+@keyframes skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; }
+.empty-state svg { width: 48px; height: 48px; stroke: var(--text3); stroke-width: 1.5; fill: none; margin-bottom: 16px; }
+.empty-state-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.empty-state-desc { font-size: 13px; color: var(--text2); margin-bottom: 24px; max-width: 300px; }

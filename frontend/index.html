@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFSe Manager Pro</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
+<link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+  </div>
+  <div class="nav-item active" onclick="App.showPage('dashboard')" id="nav-dashboard">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+  </div>
+  <div class="nav-item" onclick="App.showPage('clients')" id="nav-clients">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+  </div>
+  <div class="nav-item" onclick="App.showPage('notes')" id="nav-notes">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+  </div>
+  <div class="sidebar-spacer"></div>
+  <div class="nav-item" onclick="App.showPage('about')" id="nav-about" title="Sobre o Sistema / Configurações">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </div>
+</nav>
+
+<div class="main">
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="topbar-actions">
+      <div class="dropdown" id="global-client-dropdown">
+        <button class="btn btn-secondary" onclick="this.nextElementSibling.classList.toggle('show')" id="global-client-btn" style="min-width: 250px; justify-content: space-between;">
+          <span>Todos os Clientes (Visão Geral)</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="dropdown-menu" id="global-client-menu" style="min-width: 250px; max-height: 400px; overflow-y: auto;">
+          <a href="#" class="dropdown-item" onclick="App.setGlobalClient('', 'Todos os Clientes (Visão Geral)'); return false;">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Todos os Clientes (Visão Geral)
+          </a>
+          <!-- JS Rendered -->
+        </div>
+      </div>
+      <!-- Hidden input for state logic -->
+      <input type="hidden" id="global-client-filter" value="">
+      <div id="sync-indicator" style="display:none; align-items:center; gap:8px; color:var(--accent); font-size:12px; font-weight:600;">
+        <div class="loader" style="width:14px; height:14px; border-width:2px;"></div>
+        Sincronizando...
+      </div>
+      <button class="btn btn-ghost" onclick="App.toggleTheme()" title="Alternar Tema">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+
+  </header>
+
+  <div class="content" id="app-content">
+    <!-- FOOTER -->
+    <footer style="text-align:center; padding: 20px 0; margin-top: auto; color:var(--text3); font-size:12px;">
+      NFSe Manager Pro &copy; 2026. Todos os direitos reservados.
+    </footer>
+  </div>
+</div>
+
+<!-- MODAL: ADD CLIENT -->
+<div class="modal-overlay" id="modal-client">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 style="font-weight:600;">Adicionar Novo Cliente</h3>
+      <button class="btn-ghost" onclick="App.closeModal('modal-client')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">CNPJ</label>
+        <input type="text" class="form-input" id="c-cnpj" placeholder="00.000.000/0000-00" maxlength="18" oninput="App.maskCnpj(this)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Razão Social</label>
+        <input type="text" class="form-input" id="c-razao" placeholder="Nome da Empresa">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label">Tipo de Autenticação</label>
+        <div style="display:flex; gap:16px; font-size:13px; color:var(--text2);">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="radio" name="auth_type" value="portal" checked onchange="App.toggleAuthType()"> Usuário/Senha do Portal
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="radio" name="auth_type" value="cert" onchange="App.toggleAuthType()"> Certificado Digital
+          </label>
+        </div>
+      </div>
+
+      <div id="auth-portal" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="form-group">
+          <label class="form-label">Usuário Portal</label>
+          <input type="text" class="form-input" id="c-user">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Senha Portal</label>
+          <input type="password" class="form-input" id="c-pass">
+        </div>
+      </div>
+
+      <div id="auth-cert" style="display:none; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="form-group">
+          <label class="form-label">Certificado (.pfx, .p12)</label>
+          <label class="file-upload-wrapper">
+            <span class="file-upload-btn">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Escolher arquivo
+            </span>
+            <span class="file-upload-name" id="c-cert-name">Nenhum arquivo...</span>
+            <input type="file" id="c-cert-file" accept=".pfx,.p12" onchange="document.getElementById('c-cert-name').textContent = this.files.length > 0 ? this.files[0].name : 'Nenhum arquivo...'">
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Senha do Certificado</label>
+          <input type="password" class="form-input" id="c-cert-pass">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+        <label class="form-label">Configuração de Diretórios</label>
+        <div class="form-group">
+          <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Caminho Base no Computador</label>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <input type="text" class="form-input" id="c-save-path" readonly placeholder="Clique em Explorar para selecionar uma pasta...">
+            <button class="btn btn-secondary" onclick="App.toggleExplorer()" id="btn-toggle-explorer" style="padding:0 12px; font-size:12px;">Explorar</button>
+          </div>
+          
+          <!-- Web-Native Folder Explorer -->
+          <div id="folder-explorer" style="display:none; border:1px solid var(--border); border-radius:8px; background:var(--bg3); padding:8px; margin-bottom:12px; border-left:4px solid var(--accent);">
+            <div id="explorer-current" style="font-size:10px; color:var(--text3); margin-bottom:8px; font-family:var(--mono); word-break:break-all; background:var(--bg4); padding:4px 8px; border-radius:4px;"></div>
+            <div id="explorer-list" style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:2px;">
+                <!-- Folders go here -->
+            </div>
+            <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:8px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-primary btn-sm" onclick="App.selectCurrentFolder()" style="font-size:11px; padding:4px 10px;">Selecionar esta pasta</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Estrutura de Pastas Personalizada</label>
+          <input type="text" class="form-input" id="c-path-structure" placeholder="Ex: {ANO} / {MES} / {CLIENTE}" onkeydown="App.handlePathKey(event, this)">
+          <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+            <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{ANO}')">{ANO}</span>
+            <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{MES}')">{MES}</span>
+            <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{CLIENTE}')">{CLIENTE}</span>
+            <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{CNPJ}')">{CNPJ}</span>
+            <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{DIA}')">{DIA}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Descrição (Opcional)</label>
+        <input type="text" class="form-input" id="c-desc">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-client')">Cancelar</button>
+      <button class="btn btn-primary" onclick="App.saveClient()">Salvar Cliente</button>
+    </div>
+  </div>
+</div>
+
+<!-- TASK TOAST -->
+<div class="task-toast" id="task-toast">
+  <div style="display:flex; justify-content:space-between; align-items:start;">
+    <div style="font-weight:600; font-size:13px;" id="task-title">Sincronizando Dados</div>
+    <button class="btn-ghost" style="padding:0; height:auto;" onclick="document.getElementById('task-toast').style.display='none'">&times;</button>
+  </div>
+  <div style="font-size:12px; color:var(--text2); margin-top:4px;" id="task-msg">Aguarde um momento...</div>
+  <div class="progress-bar">
+    <div class="progress-inner" id="task-progress"></div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>

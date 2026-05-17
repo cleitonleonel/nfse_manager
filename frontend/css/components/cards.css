@@ -1,0 +1,11 @@
+/* --- CARDS & PANELS --- */
+.card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r2); padding: 24px; box-shadow: var(--shadow);
+}
+.glass {
+  background: rgba(26, 31, 46, 0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05);
+}
+body.theme-light .glass { background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(0,0,0,0.05); }
+
+.scroll-area { max-height: 55vh; overflow: auto; padding-right: 8px; }
+.sticky-filter { position: sticky; top: -32px; z-index: 40; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.5); }

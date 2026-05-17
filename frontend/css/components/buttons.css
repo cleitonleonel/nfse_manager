@@ -1,0 +1,29 @@
+/* --- BUTTONS --- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 20px; border-radius: var(--r); font-size: 13px; font-weight: 500;
+  cursor: pointer; border: 1px solid transparent; font-family: var(--sans);
+  transition: all 0.2s; white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(59,130,246,0.25); }
+.btn-primary:hover { background: var(--accent-h); transform: translateY(-1px); }
+.btn-secondary { background: var(--bg4); color: var(--text2); border-color: var(--border2); }
+.btn-secondary:hover { background: var(--bg5); color: var(--text); }
+.btn-ghost { background: transparent; color: var(--text3); border: none; }
+.btn-ghost:hover { background: var(--bg4); color: var(--text); }
+.btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+
+.btn-action {
+  width: 32px; height: 32px; border-radius: 8px; border: none; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; background: var(--bg4); color: var(--text2); transition: all 0.2s;
+}
+.btn-action:hover { background: var(--red-bg); color: var(--red); transform: scale(1.08); }
+.btn-action svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+.btn-group { display: inline-flex; background: var(--bg3); padding: 3px; border-radius: 9px; gap: 2px; }
+.btn-group .btn { padding: 5px 12px; border: none; font-size: 11px; border-radius: 7px; color: var(--text3); }
+.btn-group .btn:hover { background: var(--bg4); color: var(--text); }
+.btn-group .btn.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(59,130,246,0.35); }
+.btn-sm { padding: 7px 12px; font-size: 12px; gap: 6px; }
+.btn-sm svg { width: 14px; height: 14px; }
