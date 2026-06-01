@@ -10,30 +10,25 @@ import openpyxl
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Note
+from backend.models import Invoice
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 @router.get("/export")
-def export_report(
-        format: str,
-        period: str = "30d",
-        client_id: Optional[int] = None,
-        db: Session = Depends(get_db)
-):
+def export_report(format: str, period: str = "30d", client_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Exportar relatório em JSON, CSV ou XLSX."""
     days = {"7d": 7, "30d": 30, "90d": 90, "12m": 365}.get(period, 30)
     date_limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
-    query = db.query(Note).filter(Note.data_emissao >= date_limit)
+    query = db.query(Invoice).filter(Invoice.data_emissao >= date_limit)
     if client_id:
-        query = query.filter(Note.client_id == client_id)
+        query = query.filter(Invoice.client_id == client_id)
 
-    notes = query.order_by(Note.data_emissao.desc()).all()
+    invoices = query.order_by(Invoice.data_emissao.desc()).all()
 
-    total_emitidas = sum(n.valor or 0 for n in notes if n.tipo == "emitidas")
-    total_recebidas = sum(n.valor or 0 for n in notes if n.tipo == "recebidas")
+    total_emitidas = sum(n.valor or 0 for n in invoices if n.tipo == "emitidas")
+    total_recebidas = sum(n.valor or 0 for n in invoices if n.tipo == "recebidas")
     saldo = total_emitidas - total_recebidas
 
     if format == "json":
@@ -50,10 +45,10 @@ def export_report(
                     "data": n.data_emissao.isoformat() if n.data_emissao else None,
                     "tipo": n.tipo,
                     "valor": n.valor,
-                    "status": n.status
+                    "status": n.status,
                 }
-                for n in notes
-            ]
+                for n in invoices
+            ],
         }
 
     elif format == "csv":
@@ -66,7 +61,7 @@ def export_report(
         writer.writerow([])
         writer.writerow(["DETALHAMENTO DE NOTAS"])
         writer.writerow(["ID", "Data", "Número", "Tipo", "Status", "Valor (R$)"])
-        for n in notes:
+        for n in invoices:
             dt_str = n.data_emissao.strftime("%d/%m/%Y %H:%M") if n.data_emissao else ""
             writer.writerow([n.id, dt_str, n.numero or "", n.tipo, n.status, f"{n.valor or 0:.2f}"])
 
@@ -74,7 +69,7 @@ def export_report(
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=relatorio_nfse.csv"}
+            headers={"Content-Disposition": "attachment; filename=relatorio_nfse.csv"},
         )
 
     elif format == "xlsx":
@@ -91,7 +86,7 @@ def export_report(
         ws.append(["DETALHAMENTO DE NOTAS"])
         ws.append(["ID", "Data", "Número", "Tipo", "Status", "Valor"])
 
-        for n in notes:
+        for n in invoices:
             dt_str = n.data_emissao.strftime("%d/%m/%Y %H:%M") if n.data_emissao else ""
             ws.append([n.id, dt_str, n.numero or "", n.tipo, n.status, n.valor or 0])
 
@@ -102,7 +97,7 @@ def export_report(
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=relatorio_nfse.xlsx"}
+            headers={"Content-Disposition": "attachment; filename=relatorio_nfse.xlsx"},
         )
     else:
         raise HTTPException(status_code=400, detail="Formato não suportado")

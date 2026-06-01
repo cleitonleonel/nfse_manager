@@ -50,25 +50,28 @@ export async function showPage(pageId) {
     const navItem = document.getElementById(`nav-${pageId}`);
     if (navItem) navItem.classList.add('active');
     
-    const titles = {dashboard: 'Dashboard', clients: 'Clientes', notes: 'Notas Fiscais', about: 'Sobre o Sistema'};
+    const titles = {dashboard: 'Dashboard', clients: 'Clientes', invoices: 'Notas Fiscais', about: 'Sobre o Sistema'};
     const titleEl = document.getElementById('page-title');
     if (titleEl) titleEl.innerText = titles[pageId] || 'Dashboard';
     
     await loadView(pageId);
     
     // Trigger page specific initializations via App
-    if (window.App) {
-        window.App.activePage = pageId;
-        if (pageId === 'notes') {
-            if (window.App.loadNotes) window.App.loadNotes();
-        }
-        if (pageId === 'clients') {
-            if (window.App.renderClients) window.App.renderClients();
-        }
-        if (pageId === 'dashboard') {
-            if (window.App.loadDashboardStats) window.App.loadDashboardStats();
-            if (window.App.loadDashboardChart) window.App.loadDashboardChart(window.App.chartPeriod);
-            if (window.App.loadRanking) window.App.loadRanking();
-        }
-    }
+     if (window.App) {
+         window.App.activePage = pageId;
+         if (pageId === 'invoices') {
+             if (window.App.loadInvoices) window.App.loadInvoices();
+         }
+         if (pageId === 'clients') {
+             if (window.App.renderClients) window.App.renderClients();
+         }
+         if (pageId === 'dashboard') {
+             if (window.App.loadDashboardStats) window.App.loadDashboardStats();
+             if (window.App.loadDashboardChart) window.App.loadDashboardChart(window.App.chartPeriod);
+             if (window.App.loadRanking) window.App.loadRanking();
+         }
+         if (pageId === 'about') {
+             if (window.App.initAbout) window.App.initAbout();
+         }
+     }
 }

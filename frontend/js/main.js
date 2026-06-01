@@ -4,8 +4,8 @@ import { maskCnpj, maskPhone, openModal, closeModal, toggleTheme } from './core/
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder } from './pages/clients.js';
-import { loadNotes, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload } from './pages/notes.js';
-import { sendSupportMessage, checkUpdates } from './pages/about.js';
+import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload } from './pages/invoices.js';
+import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate } from './pages/about.js';
 
 // Construct the global App object for HTML onclick handlers
 window.App = {
@@ -31,24 +31,25 @@ window.App = {
     loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey,
     toggleExplorer, browseFolders, selectCurrentFolder,
     
-    // Notes
-    loadNotes, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload,
+    // Invoices
+    loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload,
     
     // System/About
-    sendSupportMessage, checkUpdates,
+    sendSupportMessage, checkUpdates, startUpdateDownload, applyDownloadedUpdate,
+    initAbout,
     
     onGlobalClientChange() {
         this.loadDashboardStats();
         this.loadDashboardChart(this.chartPeriod);
         this.loadRanking();
-        if (this.activePage === 'notes') {
-            this.loadNotes();
+        if (this.activePage === 'invoices') {
+            this.loadInvoices();
         }
     },
     
     refresh() {
         this.loadClients();
-        if (this.activePage === 'notes') this.loadNotes();
+        if (this.activePage === 'invoices') this.loadInvoices();
         this.loadDashboardStats();
         this.loadDashboardChart(this.chartPeriod);
     },
@@ -61,7 +62,9 @@ window.App = {
         
         this.loadClients();
         this.refresh();
-        setInterval(() => pollTask(), 2000);
+        setInterval(() => this.pollTask(), 2000);
+        // initialize about page data (version badge)
+        try { this.initAbout(); } catch (e) { console.warn('initAbout failed', e); }
         
         // Global click listener for dropdowns
         document.addEventListener('click', e => {

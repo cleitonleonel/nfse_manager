@@ -88,7 +88,7 @@ python -c "from backend.main import app; import uvicorn; uvicorn.run(app, port=8
 Use sempre os caminhos do pacote `backend`:
 
 ```python
-from backend.models import Client, Note
+from backend.models import Client, Invoice
 from backend.schemas import ClientResponse, SyncRequest, DashboardStats
 from backend.database import get_db, SessionLocal
 from backend.main import app
@@ -253,11 +253,11 @@ O backend principal está em `backend/main.py` e:
 ### Routers disponíveis
 
 - `backend/api/routers/clients.py` — CRUD de clientes.
-- `backend/api/routers/notes.py` — sincronização e listagem de notas.
-- `backend/api/routers/downloads.py` — download de arquivos e lote ZIP.
-- `backend/api/routers/analytics.py` — estatísticas e gráficos.
-- `backend/api/routers/reports.py` — exportação de relatórios.
-- `backend/api/routers/system.py` — suporte, update check e navegação de pastas.
+- `backend/api/routers/invoices.py` — Sincronização e listagem de faturas (invoices).
+- `backend/api/routers/downloads.py` — Download de arquivos e lote ZIP.
+- `backend/api/routers/analytics.py` — Estatísticas e gráficos.
+- `backend/api/routers/reports.py` — Exportação de relatórios.
+- `backend/api/routers/system.py` — Suporte, update check e navegação de pastas.
 
 ## Principais endpoints
 
@@ -272,7 +272,7 @@ O backend principal está em `backend/main.py` e:
 
 - `POST /api/sync`
 - `GET /api/tasks/{task_id}`
-- `GET /api/notes`
+- `GET /api/invoices`
 
 ### Downloads
 
@@ -310,7 +310,7 @@ Guarda credenciais e configuração de cada cliente:
 - caminho base de salvamento
 - estrutura personalizada de diretórios
 
-### `notes`
+### `invoices`
 
 Guarda as notas sincronizadas:
 
@@ -353,20 +353,60 @@ Guarda as notas sincronizadas:
 ./run_ui.sh    # inicia o desktop Tauri
 ```
 
+## 🔖 Versionamento e releases
+
+Este projeto centraliza a versão no `pyproject.toml` (campo `project.version`). Para manter tudo sincronizado e facilitar releases, seguem ferramentas e recomendações:
+
+- Fonte única de verdade: edite a versão em `pyproject.toml` (ex.: `version = "0.2.0"`).
+- O backend expõe essa versão via `backend.version.VERSION` e existe um endpoint leve `/api/system/version` que retorna `{ "current_version": "X.Y.Z" }`.
+- A página **Sobre** carrega a versão dinamicamente e o botão de update não abre mais o GitHub: ele baixa o ZIP da release em background, extrai em `release/staging/` e só depois libera a aplicação.
+- Para atualizar automaticamente trechos estáticos (ex.: `frontend/views/about.html`) execute:
+
+```bash
+python3 scripts/sync_version.py
+```
+
+- Para criar a tag Git e a release no GitHub localmente execute (após merge e com a árvore limpa):
+- Para criar a tag Git e a release no GitHub localmente execute (após merge e com a árvore limpa):
+
+```bash
+chmod +x scripts/release.sh
+./scripts/release.sh
+```
+
+- Critério de "estável": por convenção aqui consideramos estável uma versão sem sufixo de pre-release. Ex.: `1.2.3` é estável, `1.3.0-alpha` e `2.0.0-rc.1` são pré-releases e não gerarão automaticamente a release.
+
+### Automação com GitHub Actions
+
+Existe um workflow (`.github/workflows/auto-release.yml`) que é disparado quando uma PR para `main` é encerrada com merge **e** recebe a label `release`. O comportamento padrão do workflow:
+
+- Executa testes (se existirem) e tenta criar uma tag `vX.Y.Z` e uma release no GitHub;
+- Só cria release automática se a versão não contiver sufixos `-` ou `+` (pré-release);
+- Só roda quando a PR estiver mesclada e marcada com a label `release`;
+- Se preferir releases manuais, desabilite o workflow ou ajuste as condições.
+
+Recomendações de processo:
+
+1. Atualize a versão em `pyproject.toml` (use `poetry version patch/minor/major` se utilizar Poetry).
+2. Abra PR para `main`. Aguarde a execução do CI (testes/lint).
+3. Depois do merge, o workflow de `auto-release` pode criar a tag e a release automaticamente.
+
+Se quiser que eu adapte o workflow para um fluxo diferente (por exemplo: apenas criar release quando uma PR tiver uma label `release` ou quando um arquivo `RELEASE.md` for modificado), posso ajustar isso.
+
 ## ⚡ Referência rápida da estrutura do backend
 
 ```text
 backend/
 ├── 🚪 main.py               # inicia a API e serve o frontend
 ├── 🗄️ database.py           # engine, sessão e get_db()
-├── 🧱 models.py              # Client, Note e init_db()
+├── 🧱 models.py              # Client, Invoice e init_db()
 ├── 🧾 schemas.py             # modelos Pydantic
 └── api/
     ├── 🔌 deps.py            # cliente NFSe a partir do banco
     ├── 🧠 state.py           # status de tarefas em memória
     └── routers/
         ├── 👥 clients.py
-        ├── 📝 notes.py
+        ├── 📝 invoices.py
         ├── ⬇️ downloads.py
         ├── 📊 analytics.py
         ├── 📤 reports.py
@@ -379,10 +419,10 @@ backend/
 |------|---------|--------|
 | API principal | `backend/main.py` | Sobe o FastAPI e monta o frontend |
 | Banco | `backend/database.py` | Conexão SQLite e sessão SQLAlchemy |
-| Modelos | `backend/models.py` | Tabelas `Client` e `Note` |
+| Modelos | `backend/models.py` | Tabelas `Client` e `Invoice` |
 | Schemas | `backend/schemas.py` | Validação de dados |
 | Clientes | `backend/api/routers/clients.py` | CRUD de clientes |
-| Notas | `backend/api/routers/notes.py` | Sincronização e listagem |
+| Invoices | `backend/api/routers/invoices.py` | Sincronização e listagem |
 | Downloads | `backend/api/routers/downloads.py` | Baixa arquivos e gera ZIP |
 | Analytics | `backend/api/routers/analytics.py` | Estatísticas e ranking |
 | Relatórios | `backend/api/routers/reports.py` | Exportação JSON/CSV/XLSX |

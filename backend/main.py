@@ -6,12 +6,12 @@ frontend como conteúdo estático.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware import Middleware
 from fastapi.staticfiles import StaticFiles
 import logging
 
 from backend.models import init_db
-from backend.api.routers import clients, notes, downloads, analytics, reports, system
+from backend.api.routers import clients, invoices, downloads, analytics, reports, system
+from backend.version import VERSION as __PROJECT_VERSION
 
 # Initialize database
 init_db()
@@ -20,15 +20,14 @@ init_db()
 app = FastAPI(
     title="NFSe Download Manager API",
     description="API para gerenciamento e sincronização de NFSe",
-    version="1.2.0",
-    middleware=[
-        Middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-    ],
+    version=__PROJECT_VERSION,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Logging
@@ -37,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Register routers
 app.include_router(clients.router)
-app.include_router(notes.router)
+app.include_router(invoices.router)
 app.include_router(downloads.router)
 app.include_router(analytics.router)
 app.include_router(reports.router)

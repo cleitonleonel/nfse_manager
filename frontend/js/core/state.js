@@ -3,6 +3,9 @@ export const state = {
     activePage: 'dashboard',
     chartPeriod: '12m',
     currentTask: null,
+    updateTask: null,
+    updateReady: false,
+    updateInfo: null,
     
     getGlobalClientId() {
         const el = document.getElementById('global-client-filter');

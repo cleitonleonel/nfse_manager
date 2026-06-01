@@ -25,30 +25,30 @@ export async function loadDashboardStats() {
         const pendingEl = document.getElementById('stat-pending-dl');
         if (pendingEl) pendingEl.innerText = `${data.downloads_pendentes || 0} downloads pendentes`;
         
-        await loadRecentNotes();
+        await loadRecentInvoices();
     } catch (e) {
         console.error("Erro dashboard stats:", e);
     }
 }
 
-export async function loadRecentNotes() {
-    const tbody = document.getElementById('recent-notes-body');
+export async function loadRecentInvoices() {
+    const tbody = document.getElementById('recent-invoices-body');
     if (!tbody) return;
     
     const clientId = state.getGlobalClientId();
-    let url = '/notes?tipo=emitidas';
+    let url = '/invoices?tipo=emitidas';
     if (clientId) url += `&client_id=${clientId}`;
     
     try {
-        const notas = await api(url);
+        const invoices = await api(url);
         const fmt = v => new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(v || 0);
         
-        if (!notas || notas.length === 0) {
+        if (!invoices || invoices.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text3);">Nenhuma nota recente encontrada.</td></tr>`;
             return;
         }
         
-        tbody.innerHTML = notas.slice(0, 5).map(n => {
+        tbody.innerHTML = invoices.slice(0, 5).map(n => {
             let files = '';
             if (n.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.xml_path)}); return false;" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Baixar XML">XML</a>`;
             if (n.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Baixar PDF">PDF</a>`;

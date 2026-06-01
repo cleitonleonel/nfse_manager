@@ -18,11 +18,11 @@ class Client(Base):
     save_path = Column(String, nullable=True)
     path_structure = Column(String, nullable=True)
 
-    notes = relationship("Note", back_populates="client")
+    invoices = relationship("Invoice", back_populates="client")
 
 
-class Note(Base):
-    __tablename__ = "notes"
+class Invoice(Base):
+    __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
@@ -37,15 +37,19 @@ class Note(Base):
     download_url_xml = Column(String, nullable=True)
     download_url_pdf = Column(String, nullable=True)
 
-    client = relationship("Client", back_populates="notes")
+    client = relationship("Client", back_populates="invoices")
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    # Simple migration for SQLite to add 'valor' column if it doesn't exist
     with engine.connect() as conn:
+        """try:
+            conn.execute(text("ALTER TABLE notes RENAME TO invoices"))
+            conn.commit()
+        except Exception:
+            pass"""
+
         try:
-            conn.execute(text("ALTER TABLE notes ADD COLUMN valor FLOAT"))
+            conn.execute(text("ALTER TABLE invoices ADD COLUMN valor FLOAT"))
             conn.commit()
         except Exception:
             pass
@@ -56,3 +60,5 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+
+    Base.metadata.create_all(bind=engine)

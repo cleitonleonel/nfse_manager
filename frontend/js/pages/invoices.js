@@ -16,8 +16,8 @@ export function triggerDownload(path) {
     document.body.removeChild(link);
 }
 
-export async function loadNotes() {
-    const tbody = document.getElementById('notes-table-body');
+export async function loadInvoices() {
+    const tbody = document.getElementById('invoices-table-body');
     if (!tbody) return;
     
     const typeEl = document.getElementById('filter-type');
@@ -27,20 +27,20 @@ export async function loadNotes() {
     const dataInicio = document.getElementById('filter-start')?.value || '';
     const dataFim = document.getElementById('filter-end')?.value || '';
     
-    let url = `/notes?tipo=${type}&data_inicio=${dataInicio}&data_fim=${dataFim}`;
+    let url = `/invoices?tipo=${type}&data_inicio=${dataInicio}&data_fim=${dataFim}`;
     if (clientId) url += `&client_id=${clientId}`;
     
     try {
-        const notas = await api(url);
+        const invoices = await api(url);
         const fmt = v => new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(v);
         
-        if (notas.length === 0) {
+        if (invoices.length === 0) {
             tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><div class="empty-state-title">Nenhuma nota encontrada</div></div></td></tr>`;
             return;
         }
         
-        tbody.innerHTML = notas.map(n => renderNoteRow(n, fmt)).join('');
-        initDatePickers(); // Inicializa o calendário nos novos campos
+        tbody.innerHTML = invoices.map(i => renderInvoiceRow(i, fmt)).join('');
+        initDatePickers();
     } catch (e) {
         console.error("Erro ao carregar notas:", e);
     }
@@ -53,8 +53,7 @@ function initDatePickers() {
         locale: "pt",
         disableMobile: true,
         onChange: function() {
-            // Recarrega as notas ao mudar a data visualmente
-            loadNotes();
+            loadInvoices();
         }
     };
     
@@ -64,23 +63,23 @@ function initDatePickers() {
     }
 }
 
-function renderNoteRow(n, fmt) {
+function renderInvoiceRow(i, fmt) {
     let files = '';
-    if (n.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.xml_path)}); return false;" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
-    if (n.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Download PDF">PDF</a>`;
+    if (i.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(i.xml_path)}); return false;" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
+    if (i.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(i.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Download PDF">PDF</a>`;
     
-    const dataFmt = n.data_emissao ? new Date(n.data_emissao).toLocaleDateString('pt-BR') : '-';
+    const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
     
     return `
         <tr>
-            <td><input type="checkbox" class="row-check" value="${n.id}" data-xml="${n.xml_path}" data-pdf="${n.pdf_path}" data-client-id="${n.client_id}"></td>
+            <td><input type="checkbox" class="row-check" value="${i.id}" data-xml="${i.xml_path}" data-pdf="${i.pdf_path}" data-client-id="${i.client_id}"></td>
             <td>${dataFmt}</td>
             <td>
-                <div style="font-size:14px; font-weight:600; color:var(--text);">${n.numero || 'S/N'}</div>
-                <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${n.chave && n.chave !== 'null' ? n.chave : 'Chave não sincronizada'}</div>
+                <div style="font-size:14px; font-weight:600; color:var(--text);">${i.numero || 'S/N'}</div>
+                <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${i.chave && i.chave !== 'null' ? i.chave : 'Chave não sincronizada'}</div>
             </td>
-            <td style="font-weight:600; color:var(--text);">${fmt(n.valor)}</td>
-            <td><span class="status-badge status-${n.status || 'unknown'}">${n.status || 'desconhecido'}</span></td>
+            <td style="font-weight:600; color:var(--text);">${fmt(i.valor)}</td>
+            <td><span class="status-badge status-${i.status || 'unknown'}">${i.status || 'desconhecido'}</span></td>
             <td>${files}</td>
         </tr>
     `;
@@ -93,7 +92,7 @@ export function setFilterType(val, text) {
     if (btnSpan) btnSpan.innerText = text;
     
     document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
-    loadNotes();
+    loadInvoices();
 }
 
 export function toggleSelectAll(cb) {
@@ -107,7 +106,7 @@ export async function downloadBatch() {
         return;
     }
     
-    const noteIds = selected.map(chk => chk.value);
+    const invoiceIds = selected.map(chk => chk.value);
     const paths = [];
     const missing = [];
     
@@ -125,11 +124,9 @@ export async function downloadBatch() {
         }
     });
     
-    // Se houver notas sem arquivo baixado, inicia o download do portal automaticamente
     if (missing.length > 0) {
         let clientId = state.getGlobalClientId();
         
-        // Se estiver na visão geral, pega o ID do cliente da própria nota
         if (!clientId && selected.length > 0) {
             clientId = selected[0].dataset.clientId;
         }
@@ -145,7 +142,7 @@ export async function downloadBatch() {
             const res = await api('/download/sync-portal', 'POST', {
                 client_id: parseInt(clientId),
                 action_type: actionType,
-                note_ids: noteIds.map(id => parseInt(id))
+                invoice_ids: invoiceIds.map(id => parseInt(id))
             });
             state.currentTask = res.task_id;
             document.getElementById('sync-indicator').style.display = 'flex';
@@ -228,7 +225,7 @@ export async function pollTask() {
             state.currentTask = null;
             if (msg) msg.innerText = 'Concluído com sucesso!';
             closeProgressIndicatorsAfterDelay(5000);
-            setTimeout(() => loadNotes(), 1000);
+            setTimeout(() => loadInvoices(), 1000);
         } else if (res.status === 'failed') {
             state.currentTask = null;
             if (msg) {
@@ -251,7 +248,7 @@ export async function enrichFromXml() {
     }
     
     const clientId = state.getGlobalClientId();
-    let url = `/tools/enrich-values`;
+    let url = `/analytics/enrich-xml`;
     if (clientId) url += `?client_id=${clientId}`;
     
     try {

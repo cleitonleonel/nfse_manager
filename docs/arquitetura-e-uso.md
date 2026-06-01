@@ -33,7 +33,7 @@ A aplicação usa um banco SQLite local (`nfse.db`) e mantém os dados de client
 ┌──────────────────────────────────────────────┐
 │ SQLite local                                  │
 │ - nfse.db                                     │
-│ - tabelas clients e notes                     │
+│ - tabelas clients e invoices                  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -48,7 +48,7 @@ A aplicação usa um banco SQLite local (`nfse.db`) e mantém os dados de client
   - monta a pasta `frontend/` na raiz da aplicação.
 
 - `backend/models.py`
-  - define os modelos SQLAlchemy `Client` e `Note`;
+  - define os modelos SQLAlchemy `Client` e `Invoice`;
   - executa pequenas migrações de compatibilidade no SQLite.
 
 - `backend/schemas.py`
@@ -63,7 +63,7 @@ A aplicação usa um banco SQLite local (`nfse.db`) e mantém os dados de client
 ### Routers
 
 - `clients.py`: CRUD de clientes.
-- `notes.py`: sincronização e listagem de notas.
+- `invoices.py`: sincronização e listagem de faturas (invoices).
 - `downloads.py`: download, recuperação e empacotamento de arquivos.
 - `analytics.py`: estatísticas, gráfico, ranking e enriquecimento via XML.
 - `reports.py`: exportação de relatórios em JSON, CSV e XLSX.
@@ -103,7 +103,7 @@ Campos principais:
 - `save_path`
 - `path_structure`
 
-### `notes`
+### `invoices`
 
 Campos principais:
 
@@ -163,7 +163,7 @@ Campos principais:
 
 - `POST /api/sync`
 - `GET /api/tasks/{task_id}`
-- `GET /api/notes`
+- `GET /api/invoices`
 
 ### Downloads
 

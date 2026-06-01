@@ -103,55 +103,68 @@ export async function saveClient() {
     
     try {
         if (editId) {
-            // Update mode — use PUT with JSON
-            const authType = document.querySelector('input[name="auth_type"]:checked').value;
-            const payload = { razao_social, description: descricao };
-            const usuario = document.getElementById('c-user').value;
-            const senha = document.getElementById('c-pass').value;
-            if (authType === 'portal') {
-                if (usuario) payload.username = usuario;
-                if (senha) payload.password = senha;
-            }
-            if (save_path) payload.save_path = save_path;
-            if (path_structure) payload.path_structure = path_structure;
-            
-            await api(`/clients/${editId}`, 'PUT', payload);
-            delete modalEl.dataset.editId;
-        } else {
-            // Create mode — use FormData/POST
             const data = new FormData();
-            data.append('cnpj', cnpj);
             data.append('razao_social', razao_social);
-            data.append('descricao', descricao);
+            data.append('description', descricao);
             data.append('save_path', save_path);
             data.append('path_structure', path_structure);
             
             const authType = document.querySelector('input[name="auth_type"]:checked').value;
             if (authType === 'portal') {
-                data.append('usuario', document.getElementById('c-user').value);
-                data.append('senha', document.getElementById('c-pass').value);
+                data.append('username', document.getElementById('c-user').value);
+                data.append('password', document.getElementById('c-pass').value);
             } else {
                 const certFile = document.getElementById('c-cert-file').files[0];
-                if (certFile) data.append('certificado', certFile);
-                data.append('senha_certificado', document.getElementById('c-cert-pass').value);
+                if (certFile) {
+                    data.append('cert_file', certFile);
+                }
+                data.append('cert_password', document.getElementById('c-cert-pass').value);
+            }
+            
+            await api(`/clients/${editId}`, 'PUT', data);
+            delete modalEl.dataset.editId;
+        } else {
+            const data = new FormData();
+            data.append('cnpj', cnpj);
+            data.append('razao_social', razao_social);
+            data.append('description', descricao);
+            data.append('save_path', save_path);
+            data.append('path_structure', path_structure);
+            
+            const authType = document.querySelector('input[name="auth_type"]:checked').value;
+            if (authType === 'portal') {
+                data.append('username', document.getElementById('c-user').value);
+                data.append('password', document.getElementById('c-pass').value);
+            } else {
+                const certFile = document.getElementById('c-cert-file').files[0];
+                if (certFile) {
+                    data.append('cert_file', certFile);
+                }
+                data.append('cert_password', document.getElementById('c-cert-pass').value);
             }
             await api('/clients', 'POST', data);
         }
         
         closeModal('modal-client');
-        // Reset modal title
         const title = document.querySelector('#modal-client .modal-header h3');
-        if (title) title.innerText = 'Adicionar Novo Cliente';
+        if (title) {
+            title.innerText = 'Adicionar Novo Cliente';
+        }
         
-        // Reset form
         ['c-cnpj','c-razao','c-desc','c-user','c-pass','c-cert-pass', 'c-save-path', 'c-path-structure'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.value = '';
+            if (el) {
+                el.value = '';
+            }
         });
         const certFile = document.getElementById('c-cert-file');
-        if (certFile) certFile.value = '';
+        if (certFile) {
+            certFile.value = '';
+        }
         const certName = document.getElementById('c-cert-name');
-        if (certName) certName.textContent = 'Nenhum arquivo...';
+        if (certName) {
+            certName.textContent = 'Nenhum arquivo...';
+        }
         
         await loadClients();
     } catch (e) {

@@ -11,7 +11,7 @@
             <div>
                 <h3 style="font-size:24px; font-weight:700; color:var(--text); margin-bottom:6px;">NFSe Manager Pro</h3>
                 <div style="font-size:15px; color:var(--text3); display: flex; align-items: center; gap: 8px;">
-                    <span class="badge" style="background: var(--bg4); color: var(--text2); border: 1px solid var(--border);">v1.2.0</span>
+                    <span class="badge" data-version style="background: var(--bg4); color: var(--text2); border: 1px solid var(--border);">v-</span>
                     <span>Sistema Inteligente de Gestão Fiscal e Automação</span>
                 </div>
             </div>
@@ -63,19 +63,19 @@
                 <div style="display:flex; flex-direction:column; gap:12px;">
                     <div style="display:flex; justify-content:space-between; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
                         <span style="color:var(--text3); font-size: 14px;">Motor de Processamento</span>
-                        <span style="color:var(--text); font-family:var(--mono); font-size: 13px;">FastAPI / Python 3.10+</span>
+                        <span style="color:var(--text); font-family:var(--mono), monospace; font-size: 13px;">FastAPI / Python 3.12+</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
                         <span style="color:var(--text3); font-size: 14px;">Integridade de Dados</span>
-                        <span style="color:var(--text); font-family:var(--mono); font-size: 13px;">SQLite / SQLAlchemy</span>
+                        <span style="color:var(--text); font-family:var(--mono), monospace; font-size: 13px;">SQLite / SQLAlchemy</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
                         <span style="color:var(--text3); font-size: 14px;">Interface SPA</span>
-                        <span style="color:var(--text); font-family:var(--mono); font-size: 13px;">Vanilla ES6+ / Modular</span>
+                        <span style="color:var(--text); font-family:var(--mono), monospace; font-size: 13px;">Vanilla ES6+ / Modular</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; padding-top: 4px;">
                         <span style="color:var(--text3); font-size: 14px;">Segurança</span>
-                        <span style="color:var(--text); font-family:var(--mono); font-size: 13px;">OAuth2 / SSL-Encrypted</span>
+                        <span style="color:var(--text); font-family:var(--mono), monospace; font-size: 13px;">OAuth2 / SSL-Encrypted</span>
                     </div>
                 </div>
             </div>
@@ -89,17 +89,20 @@
                 </h4>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
                     <div class="form-group">
-                        <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Seu E-mail</label>
-                        <input type="email" id="sup-email" class="form-input" placeholder="contato@exemplo.com">
+                        <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Seu E-mail
+                            <input type="email" id="sup-email" class="form-input" placeholder="contato@exemplo.com">
+                        </label>
                     </div>
                     <div class="form-group">
-                        <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">WhatsApp (contato)</label>
-                        <input type="text" id="sup-whatsapp" class="form-input" placeholder="(00) 00000-0000" oninput="App.maskPhone(this)">
+                        <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">WhatsApp (contato)
+                            <input type="text" id="sup-whatsapp" class="form-input" placeholder="(00) 00000-0000" oninput="App.maskPhone(this)">
+                        </label>
                     </div>
                 </div>
                 <div class="form-group" style="margin-bottom:20px;">
-                    <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Sua Mensagem</label>
-                    <textarea id="sup-msg" class="form-input" style="height:100px; resize:none; padding:12px;" placeholder="Dúvidas, sugestões ou críticas..."></textarea>
+                    <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Sua Mensagem
+                        <textarea id="sup-msg" class="form-input" style="height:100px; resize:none; padding:12px;" placeholder="Dúvidas, sugestões ou críticas..."></textarea>
+                    </label>
                 </div>
                 <button class="btn btn-primary" onclick="App.sendSupportMessage()" id="btn-send-sup" style="width:100%;">
                     Enviar Mensagem
@@ -117,7 +120,7 @@
                     <div style="width:100%; display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left;">
                         <div style="background:var(--bg4); border:1px solid var(--border); border-radius:10px; padding:12px;">
                             <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px;">Versão instalada</div>
-                            <div style="font-size:14px; color:var(--text); font-weight:700;" id="installed-version-tag">1.2.0</div>
+                            <div style="font-size:14px; color:var(--text); font-weight:700;" id="installed-version-tag">-</div>
                         </div>
                         <div style="background:var(--bg4); border:1px solid var(--border); border-radius:10px; padding:12px;">
                             <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px;">Canal</div>
@@ -128,23 +131,28 @@
                         <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Resumo da verificação</div>
                         <div id="update-status-text" style="font-size:13px; color:var(--text2); line-height:1.5;">Clique em verificar para consultar a última release no GitHub.</div>
                     </div>
-                    <button class="btn btn-secondary" onclick="App.checkUpdates()" id="btn-check-update" style="width: 100%;">
-                        Verificar nova versão
-                    </button>
-                </div>
-
-                <div id="update-available-box" style="display:none; flex: 1; flex-direction: column; gap: 16px;">
-                    <div class="badge" style="background: var(--green-bg); color: var(--green); align-self: center; padding: 6px 12px; font-size: 12px;">Nova Versão Disponível!</div>
-                    <div style="font-size: 14px; color: var(--text2); text-align: center; line-height:1.5;">Uma nova versão (<span id="new-version-tag" style="font-weight: 700;">-</span>) está disponível no GitHub.</div>
+                    <div id="update-progress-area" style="display:none; width:100%; background:var(--bg4); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:left;">
+                        <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Progresso da atualização</div>
+                        <div class="progress-bar" style="margin-bottom:8px;">
+                            <div class="progress-inner" id="update-progress-bar" style="width:0%"></div>
+                        </div>
+                        <div id="update-progress-text" style="font-size:12px; color:var(--text2); line-height:1.5;">Aguardando ação...</div>
+                    </div>
                     <div style="width:100%; background:var(--bg4); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:left;">
                         <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Novidades desta release</div>
                         <div id="update-changelog-preview" style="font-size:12px; color:var(--text2); line-height:1.5; max-height:120px; overflow:auto; white-space:pre-line;">-</div>
                     </div>
-                    <a href="#" id="update-download-link" target="_blank" class="btn btn-primary" style="width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                        Baixar Atualização
-                    </a>
+                    <button class="btn btn-secondary" onclick="App.checkUpdates()" id="btn-check-update" style="width: 100%;">
+                        Verificar nova versão
+                    </button>
+                    <button class="btn btn-primary" onclick="App.startUpdateDownload()" id="btn-download-update" style="width: 100%; display:none;">
+                        Baixar atualização
+                    </button>
+                    <button class="btn btn-primary" onclick="App.applyDownloadedUpdate()" id="btn-apply-update" style="width: 100%; display:none;">
+                        Reiniciar e aplicar
+                    </button>
                 </div>
+
             </div>
         </div>
     </div>

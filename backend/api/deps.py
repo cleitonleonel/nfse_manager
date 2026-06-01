@@ -20,5 +20,5 @@ def get_nfse_client(client_db: Client) -> ClienteNfseNacional:
         senha_pfx=client_db.cert_password,
         save_path=client_db.save_path,
         path_structure=client_db.path_structure,
-        razao_social=client_db.razao_social
+        razao_social=client_db.razao_social,
     )

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -31,12 +31,10 @@ class ClientUpdate(BaseModel):
 
 class ClientResponse(ClientBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
-class NoteBase(BaseModel):
+class InvoiceBase(BaseModel):
     numero: str
     chave: str
     status: str
@@ -47,14 +45,12 @@ class NoteBase(BaseModel):
     download_url_pdf: Optional[str] = None
 
 
-class NoteResponse(NoteBase):
+class InvoiceResponse(InvoiceBase):
     id: int
     client_id: int | None = None
     xml_path: Optional[str] = None
     pdf_path: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SyncRequest(BaseModel):
@@ -66,7 +62,7 @@ class SyncRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     client_id: int
-    note_ids: List[int]
+    invoice_ids: List[int]
     action_type: str
 
 
@@ -96,3 +92,11 @@ class SupportMessage(BaseModel):
     email: str
     whatsapp: str
     message: str
+
+
+class UpdateDownloadRequest(BaseModel):
+    version: Optional[str] = None
+
+
+class UpdateApplyRequest(BaseModel):
+    task_id: str
