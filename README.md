@@ -1,8 +1,23 @@
 # 🚀 NFSe Manager
 
-Aplicação para gerenciamento de NFSe com **backend FastAPI**, **frontend web estático** e **empacotamento desktop com Tauri**.
+<p align="center">
+  <a href="https://github.com/cleitonleonel/nfse_manager">
+    <img src="docs/assets/nfse_manager.png" alt="nfse_manager logo" width="45%" height="auto">
+  </a>
+</p>
 
+<p align="center">
+  <i>Aplicação para gerenciamento de NFSe com backend FastAPI, frontend web estático e empacotamento desktop com Tauri.
+</i>
+</p>
+
+
+## Sobre
 O projeto armazena clientes e notas em um banco SQLite local, sincroniza dados com o portal de NFSe, baixa XML/PDF, gera relatórios e exibe indicadores no dashboard.
+
+![1.jpeg](docs/assets/1.jpeg)
+![2.jpeg](docs/assets/2.jpeg)
+
 
 ## Visão geral
 
