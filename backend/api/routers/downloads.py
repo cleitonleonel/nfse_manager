@@ -68,11 +68,11 @@ def _find_invoice_by_path(db, path: str) -> Optional[Invoice]:
 
 
 def _infer_file_kind(path: str, invoice: Optional[Invoice] = None) -> Optional[str]:
-    """Tenta identificar se o arquivo é XML ou PDF."""
+    """Tenta identificar se o arquivo é XML ou PDF (incluindo HTML fallback)."""
     lower_path = (path or "").lower()
     if lower_path.endswith(".xml"):
         return "xml"
-    if lower_path.endswith(".pdf"):
+    if lower_path.endswith(".pdf") or lower_path.endswith(".html"):
         return "pdf"
 
     if invoice:

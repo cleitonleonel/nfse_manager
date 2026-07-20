@@ -6,14 +6,7 @@ let progressCloseTimer = null;
 
 export function triggerDownload(path) {
     if (!path) return;
-
-    const link = document.createElement('a');
-    link.href = '/api/download/file?path=' + encodeURIComponent(path);
-    link.download = '';
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    window.location.href = '/api/download/file?path=' + encodeURIComponent(path);
 }
 
 export async function loadInvoices() {
@@ -65,8 +58,13 @@ function initDatePickers() {
 
 function renderInvoiceRow(i, fmt) {
     let files = '';
-    if (i.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(i.xml_path)}); return false;" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
-    if (i.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(i.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Download PDF">PDF</a>`;
+    if (i.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.xml_path}" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
+    if (i.pdf_path) {
+        const isHtml = i.pdf_path.toLowerCase().endsWith('.html') || i.pdf_path.toLowerCase().endsWith('.htm');
+        const label = isHtml ? 'HTML' : 'PDF';
+        const color = isHtml ? 'var(--amber)' : 'var(--accent)';
+        files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:${color}; font-weight:700; font-size:11px; text-decoration:none;" title="Download ${label}">${label}</a>`;
+    }
     
     const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
     

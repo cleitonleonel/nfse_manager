@@ -560,7 +560,7 @@ dev = ["Pygments (==2.20.0)", "coverage (==7.14.0)", "iniconfig (==2.3.0)", "pac
 type = "git"
 url = "https://github.com/cleitonleonel/emissor_nfse.git"
 reference = "HEAD"
-resolved_reference = "415f55c070c7ab18be25257ff717db8719c3ce2c"
+resolved_reference = "3b03625fc29620c47ca944365cf4a8685412749a"
 
 [[package]]
 name = "et-xmlfile"

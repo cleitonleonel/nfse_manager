@@ -112,9 +112,17 @@ def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: st
                             valor=valor,
                             download_url_xml=xml_url,
                             download_url_pdf=nota_data.get("download_danfs-e"),
+                            xml_path=nota_data.get("xml_path_saved"),
                         )
                         db.add(new_invoice)
                         new_count += 1
+                    else:
+                        if not existing.xml_path and nota_data.get("xml_path_saved"):
+                            existing.xml_path = nota_data.get("xml_path_saved")
+                        if (existing.valor is None or existing.valor == 0.0) and valor > 0.0:
+                            existing.valor = valor
+                        if (not existing.numero or existing.numero == existing.chave) and nota_data.get("numero"):
+                            existing.numero = nota_data.get("numero")
 
                 db.commit()
                 new_count_total += new_count
