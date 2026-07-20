@@ -93,6 +93,33 @@ def _clear_stale_reference(db, invoice: Invoice, kind: str) -> None:
     db.commit()
 
 
+def _gerar_pdf_local(invoice: Invoice) -> Optional[str]:
+    """Gera o PDF localmente a partir do XML da nota utilizando DanfseGenerator."""
+    if not invoice.xml_path:
+        return None
+    xml_path = Path(invoice.xml_path)
+    if not xml_path.exists():
+        resolved = _resolve_existing_path(str(xml_path))
+        if resolved:
+            xml_path = Path(resolved)
+        else:
+            return None
+
+    pdf_path_str = str(xml_path.with_suffix(".pdf")).replace("/xmls/", "/pdfs/").replace("\\xmls\\", "\\pdfs\\")
+    pdf_path = Path(pdf_path_str)
+
+    try:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        from core.danfse_generator import DanfseGenerator
+        generator = DanfseGenerator(str(xml_path), status=invoice.status or "NORMAL")
+        generator.gerar_pdf(str(pdf_path))
+        logger.info(f"PDF gerado offline com sucesso em: {pdf_path}")
+        return str(pdf_path)
+    except Exception as e:
+        logger.error(f"Erro ao gerar PDF local a partir do XML para a nota {invoice.numero}: {e}")
+        return None
+
+
 def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optional[str]:
     """Baixa novamente o XML/PDF da nota usando o portal, se houver URL salva."""
     client_db = db.query(Client).filter(Client.id == invoice.client_id).first()
@@ -110,12 +137,19 @@ def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optiona
 
     _clear_stale_reference(db, invoice, kind)
 
+    new_path = None
     if kind == "xml" and invoice.download_url_xml:
         new_path = nfse.baixar_xml(invoice.download_url_xml, invoice.status or "gerada", invoice.data_emissao)
-    elif kind == "pdf" and invoice.download_url_pdf:
-        new_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status or "gerada", invoice.data_emissao)
-    else:
-        return None
+    elif kind == "pdf":
+        if invoice.download_url_pdf:
+            try:
+                new_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status or "gerada", invoice.data_emissao)
+            except Exception as e:
+                logger.warning(f"Falha ao baixar PDF do portal: {e}")
+        
+        # Se falhou o download do PDF ou não possuir URL, mas temos o XML local, geramos localmente
+        if (not new_path or not Path(new_path).exists()) and invoice.xml_path:
+            new_path = _gerar_pdf_local(invoice)
 
     if new_path:
         if kind == "xml":
@@ -220,7 +254,21 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                             "progress": min(invoice_base + int(invoice_span * 0.75), 95),
                         }
                     )
-                    invoice.pdf_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status, invoice.data_emissao)
+                    try:
+                        invoice.pdf_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status, invoice.data_emissao)
+                    except Exception as e:
+                        logger.warning(f"Falha ao baixar PDF da nota {invoice.numero}: {e}")
+                        invoice.pdf_path = None
+                    db.add(invoice)
+
+                # Se falhou o download do PDF ou não possui URL, mas temos o XML local, geramos localmente
+                if (not invoice.pdf_path or not Path(invoice.pdf_path).exists()) and invoice.xml_path:
+                    tasks_status[task_id].update(
+                        {
+                            "message": f"Gerando PDF local da nota {invoice.numero} ({idx + 1}/{total})...",
+                        }
+                    )
+                    invoice.pdf_path = _gerar_pdf_local(invoice)
                     db.add(invoice)
 
                 db.commit()
