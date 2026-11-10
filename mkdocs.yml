@@ -1,5 +1,5 @@
 site_name: NFSe Manager Pro — Documentação Oficial
-site_description: Sistema de gestão e consulta de NFS-e Nacional em Python (FastAPI + SQLAlchemy + PostgreSQL), com autenticação A1/credenciais, downloads em lote de XML/PDF, dashboard analítico e exportação de relatórios em JSON, CSV e XLSX."
+site_description: Sistema de gestão e consulta de NFS-e Nacional em Python (FastAPI + SQLAlchemy + PostgreSQL), com autenticação A1/credenciais, downloads em lote de XML/PDF, dashboard analítico e exportação de relatórios em JSON, CSV e XLSX.
 site_author: Cleiton Leonel Creton
 site_url: https://cleitonleonel.github.io/nfse_manager/
 repo_url: https://github.com/cleitonleonel/nfse_manager
