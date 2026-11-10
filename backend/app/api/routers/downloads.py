@@ -10,15 +10,18 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 
-from backend.api.deps import get_nfse_client
-from backend.api.state import tasks_status
-from backend.database import SessionLocal
-from backend.models import Client, Invoice
-from backend.schemas import DownloadRequest
-from core.xml_parser import extrair_dados_nfse
+from app.api.deps import get_nfse_client
+from app.api.state import tasks_status
+from app.database import SessionLocal
+from app.models import Client, Invoice
+from app.schemas import DownloadRequest
+from pynfse.xml_parser import extrair_dados_nfse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/download", tags=["download"])
+
+BACKEND_DIR = Path(__file__).resolve().parents[3]
+DOWNLOADS_DIR = BACKEND_DIR / "downloads"
 
 
 def _path_candidates(path: str) -> List[str]:
@@ -43,8 +46,14 @@ def _path_candidates(path: str) -> List[str]:
         else:
             candidates.append(os.path.join(*stripped_parts))
 
+    expanded_candidates = list(candidates)
+    for c in candidates:
+        p = Path(c)
+        if not p.is_absolute():
+            expanded_candidates.append(str(BACKEND_DIR / p))
+
     unique_candidates = []
-    for candidate in candidates:
+    for candidate in expanded_candidates:
         if candidate and candidate not in unique_candidates:
             unique_candidates.append(candidate)
     return unique_candidates
@@ -110,7 +119,8 @@ def _gerar_pdf_local(invoice: Invoice) -> Optional[str]:
 
     try:
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
-        from core.danfse_generator import DanfseGenerator
+        from pynfse.danfse_generator import DanfseGenerator
+
         generator = DanfseGenerator(str(xml_path), status=invoice.status or "NORMAL")
         generator.gerar_pdf(str(pdf_path))
         logger.info(f"PDF gerado offline com sucesso em: {pdf_path}")
@@ -146,7 +156,7 @@ def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optiona
                 new_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status or "gerada", invoice.data_emissao)
             except Exception as e:
                 logger.warning(f"Falha ao baixar PDF do portal: {e}")
-        
+
         # Se falhou o download do PDF ou não possuir URL, mas temos o XML local, geramos localmente
         if (not new_path or not Path(new_path).exists()) and invoice.xml_path:
             new_path = _gerar_pdf_local(invoice)
@@ -255,7 +265,9 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                         }
                     )
                     try:
-                        invoice.pdf_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status, invoice.data_emissao)
+                        invoice.pdf_path = nfse.baixar_pdf(
+                            invoice.download_url_pdf, invoice.status, invoice.data_emissao
+                        )
                     except Exception as e:
                         logger.warning(f"Falha ao baixar PDF da nota {invoice.numero}: {e}")
                         invoice.pdf_path = None
@@ -335,9 +347,10 @@ def create_batch_zip(payload: dict):
     if not resolved_paths:
         raise HTTPException(status_code=404, detail="Nenhum arquivo pôde ser recuperado para gerar o lote.")
 
-    os.makedirs("downloads/temp", exist_ok=True)
+    temp_dir = DOWNLOADS_DIR / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     zip_name = f"lote_{os.urandom(4).hex()}.zip"
-    zip_path = os.path.join("downloads/temp", zip_name)
+    zip_path = str(temp_dir / zip_name)
 
     with zipfile.ZipFile(zip_path, "w") as zipf:
         for p in resolved_paths:

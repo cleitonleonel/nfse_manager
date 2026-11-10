@@ -7,11 +7,11 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.database import get_db, SessionLocal
-from backend.models import Client, Invoice
-from backend.schemas import SyncRequest, InvoiceResponse
-from backend.api.deps import get_nfse_client
-from backend.api.state import tasks_status
+from app.database import get_db, SessionLocal
+from app.models import Client, Invoice
+from app.schemas import SyncRequest, InvoiceResponse
+from app.api.deps import get_nfse_client
+from app.api.state import tasks_status
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["invoices", "sync"])

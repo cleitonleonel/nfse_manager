@@ -9,7 +9,7 @@ Este diretório contém o shell Tauri que transforma o NFSe Manager em um **app 
 │           Tauri (Rust)              │  ← janela nativa, system tray
 │  WebView → http://localhost:8000    │  ← carrega a UI existente
 ├─────────────────────────────────────┤
-│       FastAPI + SQLite (Python)     │  ← mesmo server.py atual
+│       FastAPI + PostgreSQL (Python) │  ← mesmo server.py atual
 │       Sidecar / processo externo    │
 └─────────────────────────────────────┘
 ```

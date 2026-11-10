@@ -9,8 +9,8 @@ from fastapi.responses import StreamingResponse
 import openpyxl
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Invoice
+from app.database import get_db
+from app.models import Invoice
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 

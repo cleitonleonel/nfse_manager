@@ -63,7 +63,7 @@ pyinstaller \
     --hidden-import requests \
     --hidden-import requests_pkcs12 \
     --add-data "frontend:frontend" \
-    --add-data "downloads:downloads" \
+    --add-data "backend/downloads:backend/downloads" \
     server.py
 
 # Criar diretório de binários do Tauri

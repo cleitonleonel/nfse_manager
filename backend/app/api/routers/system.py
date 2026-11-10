@@ -21,12 +21,12 @@ import time
 import zipfile
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from backend.api.state import tasks_status
-from backend.schemas import SupportMessage, UpdateApplyRequest, UpdateDownloadRequest
-from backend.version import VERSION as CURRENT_VERSION
+from app.api.state import tasks_status
+from app.schemas import SupportMessage, UpdateApplyRequest, UpdateDownloadRequest
+from app.version import VERSION as CURRENT_VERSION
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["system", "support"])
@@ -35,7 +35,7 @@ REPO_OWNER = "cleitonleonel"
 REPO_NAME = "nfse_manager"
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json"}
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 RELEASE_ROOT = PROJECT_ROOT / "release"
 STAGING_ROOT = RELEASE_ROOT / "staging"
 DOWNLOAD_ROOT = RELEASE_ROOT / "downloads"
@@ -188,7 +188,15 @@ def _copy_tree_transactional(source_dir: Path, target_dir: Path) -> None:
 
     def _should_skip(rel: Path) -> bool:
         parts = rel.parts
-        return bool(parts) and parts[0] in {"release", "downloads", "__pycache__", ".git"}
+        if not parts:
+            return False
+        if rel.suffix == ".db":
+            return True
+        if parts[0] in {"release", "downloads", "certificados", "__pycache__", ".git"}:
+            return True
+        if len(parts) >= 2 and parts[0] == "backend" and parts[1] in {"downloads", "certificados", "__pycache__"}:
+            return True
+        return False
 
     try:
         for file_path in sorted(source_dir.rglob("*")):

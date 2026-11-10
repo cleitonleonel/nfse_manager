@@ -4,33 +4,35 @@ package-mode = false
 [project]
 name = "nfse_manager"
 version = "0.1.0"
-description = ""
+description = "Sistema de gestão e consulta de NFS-e Nacional em Python (FastAPI + SQLAlchemy + PostgreSQL), com autenticação A1/credenciais, downloads em lote de XML/PDF, dashboard analítico e exportação de relatórios em JSON, CSV e XLSX."
 authors = [
     {name = "cleiton",email = "cleiton.leonel@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "lxml (>=6.1.0,<7.0.0)",
     "fastapi (>=0.136.1,<0.137.0)",
     "sqlalchemy (>=2.0.49,<3.0.0)",
     "python-multipart (>=0.0.28,<0.0.29)",
     "uvicorn (>=0.47.0,<0.48.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
-    "httpx (>=0.28.1,<0.29.0)",
-    "emissor-nfse @ git+https://github.com/cleitonleonel/emissor_nfse.git"
+    "psycopg2-binary (>=2.9.10,<3.0.0)",
+    "pynfse @ git+https://github.com/cleitonleonel/emissor_nfse.git",
 ]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
 ruff = ">=0.6.0,<1.0.0"
 pytest-cov = "^4.0.0"
+mkdocs-material = "^9.5.0"
 
 [tool.pytest.ini_options]
+pythonpath = ["backend"]
 testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.ruff]
+src = ["backend", "tests"]
 line-length = 120
 target-version = "py311"
 

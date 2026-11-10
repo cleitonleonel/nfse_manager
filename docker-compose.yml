@@ -1,0 +1,8 @@
+# Orquestrador global que inclui os docker-compose individuais de cada camada.
+# Permite subir tudo junto (`docker compose up -d --build`) ou cada camada separadamente
+# (`docker compose -f database/docker-compose.yml up -d`, etc.).
+
+include:
+  - path: ./database/docker-compose.yml
+  - path: ./backend/docker-compose.yml
+  - path: ./frontend/docker-compose.yml

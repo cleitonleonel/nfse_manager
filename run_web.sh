@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 PORT="${PORT:-8000}"
 HOST="${HOST:-0.0.0.0}"
-APP_MODULE="backend.main:app"
+APP_MODULE="app.main:app"
 
 if command -v poetry >/dev/null 2>&1; then
   RUNNER=(poetry run python -m uvicorn)
@@ -15,10 +15,10 @@ else
 fi
 
 echo "🚀 Iniciando a versão web do Emissor NFSe"
-echo "   App: ${APP_MODULE}"
+echo "   App: ${APP_MODULE} (--app-dir backend)"
 echo "   URL: http://localhost:${PORT}"
 echo "   Host: ${HOST}"
 echo ""
 
-"${RUNNER[@]}" "$APP_MODULE" --host "$HOST" --port "$PORT" --reload
+"${RUNNER[@]}" "$APP_MODULE" --app-dir backend --host "$HOST" --port "$PORT" --reload
 

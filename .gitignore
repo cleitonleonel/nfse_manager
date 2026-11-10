@@ -1,12 +1,38 @@
-.idea
-.github
+# IDE / OS
+.idea/
+.vscode/
 .DS_Store
-node_modules
-dist
-coverage
-ui/node_modules
-ui/src-tauri
+
+# Python / Poetry / Testes / Lint
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Build / Empacotamento / Docs
+build/
+dist/
+site/
+*.spec
+release/
+
+# Node / Tauri
+node_modules/
+ui/node_modules/
+ui/src-tauri/target/
+ui/src-tauri/binaries/
+
+# Dados locais e certificados
 *.log
 *.env
-*.db
+backend/certificados/
+backend/downloads/
+certificados/
+downloads/
 

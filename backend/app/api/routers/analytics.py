@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Client, Invoice
-from backend.schemas import DashboardStats, ChartData, ChartPoint
-from core.xml_parser import extrair_dados_nfse
+from app.database import get_db
+from app.models import Client, Invoice
+from app.schemas import DashboardStats, ChartData, ChartPoint
+from pynfse.xml_parser import extrair_dados_nfse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
