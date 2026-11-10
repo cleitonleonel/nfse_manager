@@ -1,0 +1,92 @@
+name: Auto Release on label
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nfse_db
+          POSTGRES_USER: nfse_user
+          POSTGRES_PASSWORD: nfse_pass
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://nfse_user:nfse_pass@localhost:5434/nfse_db
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry and dependencies
+        run: |
+          pip install poetry
+          poetry install --with dev
+
+      - name: Run tests and lint
+        run: |
+          poetry run ruff check backend tests
+          poetry run pytest -v
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(PYTHONPATH=backend poetry run python -c "from app.version import VERSION; print(VERSION)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Skip pre-releases
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Detected version: $VERSION"
+          if [[ "$VERSION" == *"-"* || "$VERSION" == *"+"* ]]; then
+            echo "Pre-release detected. Release will not be created automatically."
+            exit 0
+          fi
+
+      - name: Create tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; skipping."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
