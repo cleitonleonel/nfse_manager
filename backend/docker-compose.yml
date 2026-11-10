@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: nfse_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://nfse_user:nfse_pass@database:5432/nfse_db}
+      PYTHONPATH: /workspace/backend
+      TZ: America/Sao_Paulo
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./certificados:/workspace/backend/certificados
+      - ./downloads:/workspace/backend/downloads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nfse_network
+
+networks:
+  nfse_network:
+    name: nfse_network
+    driver: bridge

@@ -1,17 +1,16 @@
 export function maskCnpj(input) {
-    let v = input.value.replace(/\D/g, '');
+    let v = input.value.replace(/\D/g, '').slice(0, 14);
+    input.maxLength = 18;
     if (v.length <= 11) {
         v = v.replace(/(\d{3})(\d)/, '$1.$2');
         v = v.replace(/(\d{3})(\d)/, '$1.$2');
         v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-        input.maxLength = 14;
         input.placeholder = '000.000.000-00';
     } else {
         v = v.replace(/^(\d{2})(\d)/, '$1.$2');
         v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
         v = v.replace(/\.(\d{3})(\d)/, '.$1/$2');
         v = v.replace(/(\d{4})(\d)/, '$1-$2');
-        input.maxLength = 18;
         input.placeholder = '00.000.000/0000-00';
     }
     input.value = v;
