@@ -54,12 +54,13 @@ export async function loadRecentInvoices() {
             if (n.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Baixar PDF">PDF</a>`;
             
             const dataFmt = n.data_emissao ? new Date(n.data_emissao).toLocaleDateString('pt-BR') : '-';
+            const chaveDisplay = (n.chave && n.chave !== 'null') ? n.chave : (n.numero || 'Chave não sincronizada');
             return `
                 <tr>
                     <td>${dataFmt}</td>
                     <td>
-                        <div style="font-size:14px; font-weight:600; color:var(--text);">${n.numero || 'S/N'}</div>
-                        <div style="font-size:11px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break:break-all;">${n.chave && n.chave !== 'null' ? n.chave : 'Chave não sincronizada'}</div>
+                        <div style="font-size:13px; font-weight:600; color:var(--text); font-family:var(--mono); word-break:break-all;">${chaveDisplay}</div>
+                        <div style="font-size:11px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break:break-all;">${chaveDisplay}</div>
                     </td>
                     <td style="font-weight:600; color:var(--text);">${fmt(n.valor)}</td>
                     <td><span class="badge" style="background:var(--green-bg); color:var(--green);"><div class="badge-dot"></div> ${n.status}</span></td>

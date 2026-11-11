@@ -22,6 +22,9 @@ cp .env.example .env
 | `DATABASE_URL` | `postgresql+psycopg2://nfse_user:nfse_pass@localhost:5434/nfse_db` | URI de conexão SQLAlchemy |
 | `BACKEND_PORT` | `8000` | Porta HTTP do Backend FastAPI |
 | `FRONTEND_PORT` | `3000` | Porta HTTP do Frontend Nginx |
+| `NFSE_ENCRYPTION_KEY` | *(chave mestra padrão de dev)* | Chave simétrica para criptografia em repouso das senhas de clientes e certificados (AES/Fernet) |
+
+> 🔒 **Dica de Segurança:** Em produção, gere uma chave criptográfica forte para `NFSE_ENCRYPTION_KEY` (por exemplo: `python -c "import secrets; print(secrets.token_hex(32))"`).
 
 ---
 

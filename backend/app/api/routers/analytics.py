@@ -4,28 +4,40 @@ import logging
 import datetime
 from typing import Optional, cast
 from fastapi import APIRouter, Depends
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
+from app.constants import DEFAULT_PERIOD, PERIOD_DAYS_MAP
 from app.database import get_db
 from app.models import Client, Invoice
 from app.schemas import DashboardStats, ChartData, ChartPoint
-from pynfse.xml_parser import extrair_dados_nfse
+from app.services.html_xml_service import enriquecer_nota_com_xml
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
+def filtro_nota_valida_para_calculo():
+    """Retorna expressão SQL para filtrar notas ativas/faturáveis (exclui canceladas e substituídas/substitutas)."""
+    status_lower = func.lower(func.coalesce(Invoice.status, ""))
+    return and_(
+        status_lower.notlike("%cancelad%"),
+        status_lower.notlike("%substitu%"),
+    )
+
+
 @router.get("/stats", response_model=DashboardStats)
 def get_dashboard_stats(client_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Obter estatísticas gerais do dashboard."""
+    """Obter estatísticas gerais do dashboard (exclui notas canceladas e substituídas dos totais financeiros)."""
     base = db.query(Invoice)
     if client_id:
         base = base.filter(Invoice.client_id == client_id)
 
     total_notas = base.count()
-    total_emitidas = base.filter(Invoice.tipo == "emitidas").count()
-    total_recebidas = base.filter(Invoice.tipo == "recebidas").count()
+    status_valido = filtro_nota_valida_para_calculo()
+
+    total_emitidas = base.filter(Invoice.tipo == "emitidas", status_valido).count()
+    total_recebidas = base.filter(Invoice.tipo == "recebidas", status_valido).count()
     total_clientes = db.query(Client).count()
     downloads_pendentes = base.filter(Invoice.xml_path.is_(None)).count()
 
@@ -33,9 +45,9 @@ def get_dashboard_stats(client_id: Optional[int] = None, db: Session = Depends(g
     if client_id:
         v_base = v_base.filter(Invoice.client_id == client_id)
 
-    valor_total = v_base.scalar() or 0.0
-    valor_emitidas = v_base.filter(Invoice.tipo == "emitidas").scalar() or 0.0
-    valor_recebidas = v_base.filter(Invoice.tipo == "recebidas").scalar() or 0.0
+    valor_total = v_base.filter(status_valido).scalar() or 0.0
+    valor_emitidas = v_base.filter(Invoice.tipo == "emitidas", status_valido).scalar() or 0.0
+    valor_recebidas = v_base.filter(Invoice.tipo == "recebidas", status_valido).scalar() or 0.0
 
     return {
         "total_notas": total_notas,
@@ -50,21 +62,23 @@ def get_dashboard_stats(client_id: Optional[int] = None, db: Session = Depends(g
 
 
 @router.get("/chart", response_model=ChartData)
-def get_chart_data(period: str = "30d", client_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Obter dados de gráfico por período."""
-    days = {"7d": 7, "30d": 30, "90d": 90, "12m": 365}.get(period, 30)
+def get_chart_data(period: str = DEFAULT_PERIOD, client_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Obter dados de gráfico por período (desconsidera notas canceladas e substituídas no faturamento)."""
+    days = PERIOD_DAYS_MAP.get(period, 30)
     date_limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
     base_filter = [Invoice.data_emissao >= date_limit]
     if client_id:
         base_filter.append(Invoice.client_id == client_id)
 
+    status_valido = filtro_nota_valida_para_calculo()
+
     results = (
         db.query(
             func.date(Invoice.data_emissao).label("dia"),
-            func.count(Invoice.id).filter(Invoice.tipo == "emitidas").label("emitidas"),
-            func.count(Invoice.id).filter(Invoice.tipo == "recebidas").label("recebidas"),
-            func.coalesce(func.sum(Invoice.valor), 0.0).label("valor"),
+            func.count(Invoice.id).filter(Invoice.tipo == "emitidas", status_valido).label("emitidas"),
+            func.count(Invoice.id).filter(Invoice.tipo == "recebidas", status_valido).label("recebidas"),
+            func.coalesce(func.sum(Invoice.valor).filter(Invoice.tipo == "emitidas", status_valido), 0.0).label("valor"),
         )
         .filter(*base_filter)
         .group_by("dia")
@@ -93,23 +107,22 @@ def enrich_from_xml(db: Session = Depends(get_db)):
             if not xml_path:
                 continue
 
-            dados = extrair_dados_nfse(cast(str, xml_path))
-            changed = False
-            valor_atual = getattr(invoice, "valor", None)
-            numero_atual = getattr(invoice, "numero", None)
+            valor_antigo = getattr(invoice, "valor", None)
+            numero_antigo = getattr(invoice, "numero", None)
+            data_antiga = getattr(invoice, "data_emissao", None)
 
-            if dados.get("valor", 0) > 0 and (valor_atual is None or valor_atual == 0):
-                invoice.valor = dados["valor"]
-                changed = True
+            enriquecer_nota_com_xml(
+                invoice,
+                xml_path=cast(str, xml_path),
+                atualizar_data=True,
+                apenas_se_vazio=True,
+            )
 
-            if dados.get("numero") and (not numero_atual or numero_atual == invoice.chave):
-                invoice.numero = dados["numero"]
-                changed = True
-
-            if dados.get("data_emissao"):
-                invoice.data_emissao = dados["data_emissao"]
-                changed = True
-
+            changed = (
+                getattr(invoice, "valor", None) != valor_antigo
+                or getattr(invoice, "numero", None) != numero_antigo
+                or getattr(invoice, "data_emissao", None) != data_antiga
+            )
             if changed:
                 db.add(invoice)
                 updated += 1
@@ -122,17 +135,18 @@ def enrich_from_xml(db: Session = Depends(get_db)):
 
 
 @router.get("/ranking")
-def get_ranking(period: str = "30d", db: Session = Depends(get_db)):
-    """Obter ranking de clientes por período."""
-    days = {"7d": 7, "30d": 30, "90d": 90, "12m": 365}.get(period, 30)
+def get_ranking(period: str = DEFAULT_PERIOD, db: Session = Depends(get_db)):
+    """Obter ranking de clientes por período (desconsidera notas canceladas e substituídas)."""
+    days = PERIOD_DAYS_MAP.get(period, 30)
     date_limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
+    status_valido = filtro_nota_valida_para_calculo()
 
     results = (
         db.query(
             Invoice.client_id,
             Client.razao_social,
-            func.sum(Invoice.valor).filter(Invoice.tipo == "emitidas").label("emitidas"),
-            func.sum(Invoice.valor).filter(Invoice.tipo == "recebidas").label("recebidas"),
+            func.sum(Invoice.valor).filter(Invoice.tipo == "emitidas", status_valido).label("emitidas"),
+            func.sum(Invoice.valor).filter(Invoice.tipo == "recebidas", status_valido).label("recebidas"),
         )
         .join(Client)
         .filter(Invoice.data_emissao >= date_limit)

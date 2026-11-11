@@ -173,12 +173,30 @@ export async function saveClient() {
 }
 
 export async function deleteClient(id) {
-    if (confirm('Tem certeza que deseja excluir este cliente? Todas as notas associadas serão perdidas.')) {
+    if (confirm('Tem certeza que deseja excluir este cliente? Toda a configuração, notas e arquivos físicos (certificados e downloads) serão apagados permanentemente.')) {
         try {
             await api(`/clients/${id}`, 'DELETE');
+            
+            // Se o cliente excluído estava ativo no filtro global, reseta para Todos os Clientes
+            const currentSelected = state.getGlobalClientId();
+            if (String(currentSelected) === String(id)) {
+                state.setGlobalClient('', 'Todos os Clientes (Visão Geral)');
+            }
+            
+            // Recarrega lista de clientes na tabela e no dropdown
             await loadClients();
+            
+            // Atualiza estatísticas, gráficos, ranking e lista de notas em tempo real
+            if (window.App) {
+                if (window.App.loadDashboardStats) window.App.loadDashboardStats();
+                if (window.App.loadDashboardChart) window.App.loadDashboardChart(window.App.chartPeriod || '12m');
+                if (window.App.loadRanking) window.App.loadRanking();
+                if (window.App.activePage === 'invoices' && window.App.loadInvoices) {
+                    window.App.loadInvoices();
+                }
+            }
         } catch (e) {
-            alert("Erro: " + e.message);
+            alert("Erro ao excluir cliente: " + e.message);
         }
     }
 }

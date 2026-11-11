@@ -10,18 +10,23 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 
-from app.api.deps import get_nfse_client
+from app.api.deps import BACKEND_DIR, DOWNLOADS_DIR, get_nfse_client, has_valid_certificate
 from app.api.state import tasks_status
 from app.database import SessionLocal
 from app.models import Client, Invoice
-from app.schemas import DownloadRequest
+from app.schemas import DownloadRequest, HtmlToXmlRequest, XmlToPdfRequest
+from app.services.html_xml_service import (
+    converter_arquivo_html_para_xml,
+    converter_html_para_xml,
+    converter_xml_para_pdf_pynfse,
+    enriquecer_nota_com_xml,
+    extrair_chave_do_xml,
+    obter_html_e_gerar_xml_pdf,
+)
 from pynfse.xml_parser import extrair_dados_nfse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/download", tags=["download"])
-
-BACKEND_DIR = Path(__file__).resolve().parents[3]
-DOWNLOADS_DIR = BACKEND_DIR / "downloads"
 
 
 def _path_candidates(path: str) -> List[str]:
@@ -102,32 +107,153 @@ def _clear_stale_reference(db, invoice: Invoice, kind: str) -> None:
     db.commit()
 
 
-def _gerar_pdf_local(invoice: Invoice) -> Optional[str]:
-    """Gera o PDF localmente a partir do XML da nota utilizando DanfseGenerator."""
-    if not invoice.xml_path:
+def _converter_html_para_xml_local(invoice: Optional[Invoice], html_path: str) -> Optional[str]:
+    """Converte um arquivo HTML de impressão baixado em XML padrão SPED e enriquece a nota."""
+    resolved_html = _resolve_existing_path(html_path) or html_path
+    if not resolved_html or not Path(resolved_html).exists():
         return None
-    xml_path = Path(invoice.xml_path)
-    if not xml_path.exists():
-        resolved = _resolve_existing_path(str(xml_path))
-        if resolved:
-            xml_path = Path(resolved)
-        else:
-            return None
-
-    pdf_path_str = str(xml_path.with_suffix(".pdf")).replace("/xmls/", "/pdfs/").replace("\\xmls\\", "\\pdfs\\")
-    pdf_path = Path(pdf_path_str)
 
     try:
-        pdf_path.parent.mkdir(parents=True, exist_ok=True)
-        from pynfse.danfse_generator import DanfseGenerator
+        xml_path = converter_arquivo_html_para_xml(resolved_html)
+        if invoice and xml_path:
+            enriquecer_nota_com_xml(invoice, xml_path=xml_path)
+        return xml_path
+    except Exception as e:
+        logger.error(f"Erro ao converter HTML '{resolved_html}' para XML: {e}")
+        return None
 
-        generator = DanfseGenerator(str(xml_path), status=invoice.status or "NORMAL")
-        generator.gerar_pdf(str(pdf_path))
-        logger.info(f"PDF gerado offline com sucesso em: {pdf_path}")
-        return str(pdf_path)
+
+def _gerar_pdf_local(invoice: Invoice) -> Optional[str]:
+    """Gera o PDF localmente a partir do XML da nota utilizando DanfseGenerator do pynfse."""
+    if not invoice.xml_path:
+        return None
+    resolved_xml = _resolve_existing_path(str(invoice.xml_path))
+    if not resolved_xml:
+        return None
+
+    try:
+        res = converter_xml_para_pdf_pynfse(
+            xml_path=resolved_xml,
+            status=invoice.status or "NORMAL",
+        )
+        return res.get("pdf_path")
     except Exception as e:
         logger.error(f"Erro ao gerar PDF local a partir do XML para a nota {invoice.numero}: {e}")
         return None
+
+
+def _usa_usuario_senha_sem_certificado(nfse, client_db: Optional[Client] = None) -> bool:
+    """Verifica se o cliente utiliza autenticação por usuário e senha e não possui certificado digital."""
+    if hasattr(nfse, "usa_apenas_credenciais"):
+        return bool(nfse.usa_apenas_credenciais())
+    if getattr(nfse, "caminho_pfx", None) and getattr(nfse, "senha_pfx", None):
+        return False
+    return not has_valid_certificate(client_db)
+
+
+def _obter_xml_e_pdf_via_html_impressao(nfse, invoice: Invoice) -> dict:
+    """
+    Obtém diretamente o HTML de impressão da nota (evitando chamadas diretas de download
+    de XML/PDF que falham com 403) e gera o XML e o PDF localmente.
+    """
+    if (
+        invoice.pdf_path
+        and invoice.pdf_path.lower().endswith(".html")
+        and (not invoice.xml_path or not _resolve_existing_path(invoice.xml_path))
+    ):
+        existing_html = _resolve_existing_path(invoice.pdf_path)
+        if existing_html:
+            _converter_html_para_xml_local(invoice, existing_html)
+
+    existing_xml = _resolve_existing_path(invoice.xml_path) if invoice.xml_path else None
+    existing_pdf = (
+        _resolve_existing_path(invoice.pdf_path)
+        if invoice.pdf_path and not invoice.pdf_path.lower().endswith(".html")
+        else None
+    )
+
+    if existing_xml and not existing_pdf:
+        generated_pdf = _gerar_pdf_local(invoice)
+        if generated_pdf:
+            invoice.pdf_path = generated_pdf
+            existing_pdf = generated_pdf
+
+    if existing_xml and existing_pdf:
+        return {"xml_path": existing_xml, "pdf_path": existing_pdf}
+
+    ref_chave = invoice.chave or invoice.download_url_xml or invoice.download_url_pdf
+    if not ref_chave:
+        return {"xml_path": invoice.xml_path, "pdf_path": invoice.pdf_path}
+
+    res = obter_html_e_gerar_xml_pdf(
+        nfse=nfse,
+        url_ou_chave=ref_chave,
+        status=invoice.status or "gerada",
+        data_emissao=invoice.data_emissao,
+    )
+
+    xml_path = res.get("xml_path")
+    pdf_path = res.get("pdf_path")
+    dados = res.get("dados") or {}
+
+    if xml_path:
+        enriquecer_nota_com_xml(invoice, xml_path=xml_path, dados=dados)
+
+    if pdf_path:
+        invoice.pdf_path = pdf_path
+    elif invoice.xml_path:
+        generated_pdf = _gerar_pdf_local(invoice)
+        if generated_pdf:
+            invoice.pdf_path = generated_pdf
+
+    return {"xml_path": invoice.xml_path, "pdf_path": invoice.pdf_path}
+
+
+def _sincronizar_arquivos_nota_certificado(
+    nfse,
+    invoice: Invoice,
+    baixar_xml: bool = True,
+    baixar_pdf: bool = True,
+    old_pdf_path: Optional[str] = None,
+    on_progress=None,
+) -> None:
+    """Executa o download de XML e/ou PDF para clientes com certificado, com fallbacks locais."""
+    status_nota = invoice.status or "gerada"
+
+    if baixar_xml and invoice.download_url_xml and not invoice.xml_path:
+        if on_progress:
+            on_progress("xml")
+        xml_path = nfse.baixar_xml(invoice.download_url_xml, status_nota, invoice.data_emissao)
+        if not xml_path and old_pdf_path and old_pdf_path.lower().endswith(".html"):
+            xml_path = _converter_html_para_xml_local(invoice, old_pdf_path)
+        elif xml_path:
+            enriquecer_nota_com_xml(invoice, xml_path=xml_path)
+
+    if baixar_pdf:
+        if invoice.download_url_pdf and not invoice.pdf_path:
+            if on_progress:
+                on_progress("pdf")
+            try:
+                invoice.pdf_path = nfse.baixar_pdf(invoice.download_url_pdf, status_nota, invoice.data_emissao)
+            except Exception as e:
+                logger.warning(f"Falha ao baixar PDF da nota {invoice.numero}: {e}")
+                invoice.pdf_path = None
+
+        if invoice.pdf_path and invoice.pdf_path.lower().endswith(".html") and not invoice.xml_path:
+            if on_progress:
+                on_progress("html_to_xml")
+            _converter_html_para_xml_local(invoice, invoice.pdf_path)
+
+        if (
+            not invoice.pdf_path
+            or invoice.pdf_path.lower().endswith(".html")
+            or not Path(invoice.pdf_path).exists()
+        ) and invoice.xml_path:
+            if on_progress:
+                on_progress("local_pdf")
+            generated_pdf = _gerar_pdf_local(invoice)
+            if generated_pdf:
+                invoice.pdf_path = generated_pdf
 
 
 def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optional[str]:
@@ -137,45 +263,80 @@ def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optiona
         logger.warning(f"Cliente {invoice.client_id} não encontrado para recuperar {requested_path}")
         return None
 
-    nfse = get_nfse_client(client_db)
-    nfse.autenticar()
-    nfse.define_tipo_consulta(invoice.tipo or "outros")
-
     kind = _infer_file_kind(requested_path, invoice)
     if not kind:
         return None
 
+    old_pdf_path = invoice.pdf_path
+    old_xml_path = invoice.xml_path
+
+    # Se já temos HTML ou XML local, tenta gerar localmente antes de autenticar no portal
+    if kind == "xml" and old_pdf_path and old_pdf_path.lower().endswith(".html"):
+        existing_html = _resolve_existing_path(old_pdf_path)
+        if existing_html:
+            xml_local = _converter_html_para_xml_local(invoice, existing_html)
+            if xml_local:
+                db.add(invoice)
+                db.commit()
+                return xml_local
+
+    nfse = get_nfse_client(client_db)
+    if kind == "pdf" and old_xml_path and _resolve_existing_path(old_xml_path):
+        if _usa_usuario_senha_sem_certificado(nfse, client_db):
+            pdf_local = _gerar_pdf_local(invoice)
+            if pdf_local:
+                invoice.pdf_path = pdf_local
+                db.add(invoice)
+                db.commit()
+                return pdf_local
+
+    nfse.autenticar()
+    nfse.define_tipo_consulta(invoice.tipo or "outros")
+
     _clear_stale_reference(db, invoice, kind)
 
-    new_path = None
-    if kind == "xml" and invoice.download_url_xml:
-        new_path = nfse.baixar_xml(invoice.download_url_xml, invoice.status or "gerada", invoice.data_emissao)
-    elif kind == "pdf":
-        if invoice.download_url_pdf:
-            try:
-                new_path = nfse.baixar_pdf(invoice.download_url_pdf, invoice.status or "gerada", invoice.data_emissao)
-            except Exception as e:
-                logger.warning(f"Falha ao baixar PDF do portal: {e}")
+    if _usa_usuario_senha_sem_certificado(nfse, client_db):
+        if old_pdf_path and old_pdf_path.lower().endswith(".html") and not invoice.pdf_path:
+            invoice.pdf_path = old_pdf_path
+        if old_xml_path and not invoice.xml_path:
+            invoice.xml_path = old_xml_path
+        _obter_xml_e_pdf_via_html_impressao(nfse, invoice)
+    else:
+        _sincronizar_arquivos_nota_certificado(
+            nfse,
+            invoice,
+            baixar_xml=(kind == "xml"),
+            baixar_pdf=(kind == "pdf"),
+            old_pdf_path=old_pdf_path,
+        )
 
-        # Se falhou o download do PDF ou não possuir URL, mas temos o XML local, geramos localmente
-        if (not new_path or not Path(new_path).exists()) and invoice.xml_path:
-            new_path = _gerar_pdf_local(invoice)
-
-    if new_path:
-        if kind == "xml":
-            invoice.xml_path = new_path
-        if kind == "pdf":
-            invoice.pdf_path = new_path
-        db.add(invoice)
-        db.commit()
-
-    return new_path or None
+    db.add(invoice)
+    db.commit()
+    return invoice.xml_path if kind == "xml" else invoice.pdf_path
 
 
 def _ensure_file_available(db, path: str) -> Optional[str]:
     """Tenta localizar o arquivo no disco ou recuperá-lo pelo portal."""
     existing = _resolve_existing_path(path)
     if existing:
+        if existing.lower().endswith(".html"):
+            invoice = _find_invoice_by_path(db, path)
+            xml_conv = _converter_html_para_xml_local(invoice, existing)
+            if xml_conv:
+                try:
+                    res = converter_xml_para_pdf_pynfse(
+                        xml_path=xml_conv,
+                        status=(invoice.status if invoice else "NORMAL") or "NORMAL",
+                    )
+                    pdf_conv = res.get("pdf_path")
+                    if pdf_conv and Path(pdf_conv).exists():
+                        if invoice:
+                            invoice.pdf_path = pdf_conv
+                            db.add(invoice)
+                            db.commit()
+                        return pdf_conv
+                except Exception as exc:
+                    logger.warning(f"Falha ao converter XML gerado para PDF via pynfse: {exc}")
         return existing
 
     invoice = _find_invoice_by_path(db, path)
@@ -199,7 +360,6 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
         tasks_status[task_id] = {"status": "running", "message": "Iniciando downloads...", "progress": 0}
 
         clients_cache = {}
-
         invoices = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
         total = len(invoices)
 
@@ -238,51 +398,45 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                     }
                 )
 
-                if invoice.download_url_xml and not invoice.xml_path:
-                    tasks_status[task_id].update(
-                        {
-                            "message": f"Baixando XML da nota {invoice.numero} ({idx + 1}/{total})...",
-                            "progress": min(invoice_base + int(invoice_span * 0.35), 95),
-                        }
+                if _usa_usuario_senha_sem_certificado(nfse):
+                    precisa_xml = not invoice.xml_path or not _resolve_existing_path(invoice.xml_path)
+                    precisa_pdf = (
+                        not invoice.pdf_path
+                        or invoice.pdf_path.lower().endswith(".html")
+                        or not _resolve_existing_path(invoice.pdf_path)
                     )
-                    invoice.xml_path = nfse.baixar_xml(invoice.download_url_xml, invoice.status, invoice.data_emissao)
-                    if invoice.xml_path:
-                        try:
-                            dados = extrair_dados_nfse(invoice.xml_path)
-                            if dados.get("valor", 0) > 0:
-                                invoice.valor = dados.get("valor")
-                            if dados.get("numero"):
-                                invoice.numero = dados.get("numero")
-                            db.add(invoice)
-                        except Exception:
-                            pass
-
-                if invoice.download_url_pdf and not invoice.pdf_path:
-                    tasks_status[task_id].update(
-                        {
-                            "message": f"Baixando PDF da nota {invoice.numero} ({idx + 1}/{total})...",
-                            "progress": min(invoice_base + int(invoice_span * 0.75), 95),
-                        }
-                    )
-                    try:
-                        invoice.pdf_path = nfse.baixar_pdf(
-                            invoice.download_url_pdf, invoice.status, invoice.data_emissao
+                    if precisa_xml or precisa_pdf:
+                        tasks_status[task_id].update(
+                            {
+                                "message": f"Obtendo HTML de impressão e gerando XML/PDF da nota {invoice.numero} ({idx + 1}/{total})...",
+                                "progress": min(invoice_base + int(invoice_span * 0.5), 95),
+                            }
                         )
-                    except Exception as e:
-                        logger.warning(f"Falha ao baixar PDF da nota {invoice.numero}: {e}")
-                        invoice.pdf_path = None
-                    db.add(invoice)
+                        _obter_xml_e_pdf_via_html_impressao(nfse, invoice)
+                else:
+                    def _update_step(step: str, _num=invoice.numero, _i=idx + 1, _base=invoice_base, _span=invoice_span):
+                        if step == "xml":
+                            tasks_status[task_id].update(
+                                {
+                                    "message": f"Baixando XML da nota {_num} ({_i}/{total})...",
+                                    "progress": min(_base + int(_span * 0.35), 95),
+                                }
+                            )
+                        elif step == "pdf":
+                            tasks_status[task_id].update(
+                                {
+                                    "message": f"Baixando PDF da nota {_num} ({_i}/{total})...",
+                                    "progress": min(_base + int(_span * 0.75), 95),
+                                }
+                            )
+                        elif step == "html_to_xml":
+                            tasks_status[task_id]["message"] = f"Convertendo HTML da nota {_num} para XML ({_i}/{total})..."
+                        elif step == "local_pdf":
+                            tasks_status[task_id]["message"] = f"Gerando PDF local da nota {_num} ({_i}/{total})..."
 
-                # Se falhou o download do PDF ou não possui URL, mas temos o XML local, geramos localmente
-                if (not invoice.pdf_path or not Path(invoice.pdf_path).exists()) and invoice.xml_path:
-                    tasks_status[task_id].update(
-                        {
-                            "message": f"Gerando PDF local da nota {invoice.numero} ({idx + 1}/{total})...",
-                        }
-                    )
-                    invoice.pdf_path = _gerar_pdf_local(invoice)
-                    db.add(invoice)
+                    _sincronizar_arquivos_nota_certificado(nfse, invoice, on_progress=_update_step)
 
+                db.add(invoice)
                 db.commit()
                 tasks_status[task_id].update(
                     {"progress": invoice_end, "message": f"Nota {invoice.numero} concluída ({idx + 1}/{total})."}
@@ -359,3 +513,162 @@ def create_batch_zip(payload: dict):
                 zipf.write(p, f"{ext}/{os.path.basename(p)}")
 
     return {"zip_path": zip_path}
+
+
+@router.post("/html-to-xml")
+def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
+    """
+    Converte o HTML de impressão baixado da NFS-e em XML padrão SPED.
+    Aceita `html_content`, `html_path` ou `invoice_id`.
+    """
+    db = SessionLocal()
+    try:
+        invoice: Optional[Invoice] = None
+        if payload.invoice_id:
+            invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+
+        html_path = payload.html_path
+        if not html_path and invoice and invoice.pdf_path and invoice.pdf_path.lower().endswith(".html"):
+            html_path = invoice.pdf_path
+
+        resolved_html = _resolve_existing_path(html_path) if html_path else None
+        if resolved_html and not invoice:
+            invoice = _find_invoice_by_path(db, html_path or resolved_html)
+
+        xml_path: Optional[str] = None
+        if payload.html_content:
+            xml_content = converter_html_para_xml(payload.html_content)
+            chave = extrair_chave_do_xml(xml_content)
+            if payload.xml_output_path:
+                out_p = Path(payload.xml_output_path)
+            elif resolved_html:
+                out_str = (
+                    str(Path(resolved_html).with_suffix(".xml"))
+                    .replace("/pdfs/", "/xmls/")
+                    .replace("\\pdfs\\", "\\xmls\\")
+                )
+                out_p = Path(out_str)
+            else:
+                out_dir = DOWNLOADS_DIR / "converted" / "xmls"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_p = out_dir / f"{chave or 'nfse_convertida'}.xml"
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(xml_content, encoding="utf-8")
+            xml_path = str(out_p)
+        elif resolved_html and Path(resolved_html).exists():
+            xml_path = converter_arquivo_html_para_xml(resolved_html, payload.xml_output_path)
+            xml_content = Path(xml_path).read_text(encoding="utf-8")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Informe um `html_content` válido ou um `html_path` / `invoice_id` com HTML existente.",
+            )
+
+        dados = extrair_dados_nfse(xml_path) if xml_path else {}
+        if not invoice and dados.get("chave"):
+            invoice = db.query(Invoice).filter(Invoice.chave == dados["chave"]).first()
+
+        if invoice and xml_path:
+            enriquecer_nota_com_xml(invoice, xml_path=xml_path, dados=dados)
+            db.add(invoice)
+            db.commit()
+
+        return {
+            "xml_path": xml_path,
+            "xml_content": xml_content,
+            "chave": dados.get("chave") or extrair_chave_do_xml(xml_content),
+            "invoice_id": invoice.id if invoice else None,
+            "dados": dados,
+        }
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        logger.error(f"Erro ao converter HTML em XML: {exc}")
+        raise HTTPException(status_code=500, detail=f"Falha ao converter HTML em XML: {exc}")
+    finally:
+        db.close()
+
+
+@router.post("/xml-to-pdf")
+def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False):
+    """
+    Recebe o XML gerado (`xml_content`, `xml_path` ou `invoice_id`) e converte
+    em PDF (DANFSe) utilizando `pynfse.danfse_generator.DanfseGenerator`.
+    """
+    db = SessionLocal()
+    try:
+        invoice: Optional[Invoice] = None
+        if payload.invoice_id:
+            invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+
+        xml_path = payload.xml_path
+        if not xml_path and invoice and invoice.xml_path:
+            xml_path = invoice.xml_path
+
+        resolved_xml = _resolve_existing_path(xml_path) if xml_path else None
+        if resolved_xml and not invoice:
+            invoice = _find_invoice_by_path(db, xml_path or resolved_xml)
+
+        if not payload.xml_content and not resolved_xml:
+            raise HTTPException(
+                status_code=400,
+                detail="Informe `xml_content`, `xml_path` ou `invoice_id` com XML disponível para gerar o PDF.",
+            )
+
+        status_nota = payload.status or (invoice.status if invoice else "NORMAL") or "NORMAL"
+        default_dir = DOWNLOADS_DIR / "converted"
+
+        res = converter_xml_para_pdf_pynfse(
+            xml_content=payload.xml_content,
+            xml_path=resolved_xml or xml_path,
+            pdf_output_path=payload.pdf_output_path,
+            status=status_nota,
+            default_dir=default_dir,
+        )
+
+        pdf_path = res.get("pdf_path")
+        saved_xml_path = res.get("xml_path")
+        chave = res.get("chave")
+        dados = res.get("dados") or {}
+
+        if not invoice and chave:
+            invoice = db.query(Invoice).filter(Invoice.chave == chave).first()
+
+        if invoice:
+            if pdf_path:
+                invoice.pdf_path = pdf_path
+            enriquecer_nota_com_xml(
+                invoice,
+                xml_path=saved_xml_path if (saved_xml_path and not invoice.xml_path) else None,
+                dados=dados,
+                apenas_se_vazio=True,
+            )
+            db.add(invoice)
+            db.commit()
+
+        if download and pdf_path and os.path.exists(pdf_path):
+            filename = os.path.basename(pdf_path)
+            return FileResponse(
+                pdf_path,
+                media_type="application/pdf",
+                filename=filename,
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+
+        return {
+            "pdf_path": pdf_path,
+            "xml_path": saved_xml_path,
+            "chave": chave,
+            "invoice_id": invoice.id if invoice else None,
+        }
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        logger.error(f"Erro ao converter XML em PDF via pynfse: {exc}")
+        raise HTTPException(status_code=500, detail=f"Falha ao converter XML em PDF via pynfse: {exc}")
+    finally:
+        db.close()

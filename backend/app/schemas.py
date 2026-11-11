@@ -115,6 +115,21 @@ class DownloadRequest(BaseModel):
     action_type: str
 
 
+class HtmlToXmlRequest(BaseModel):
+    html_content: Optional[str] = Field(None, description="Conteúdo HTML da página de impressão da NFS-e")
+    html_path: Optional[str] = Field(None, description="Caminho do arquivo .html já baixado no servidor")
+    xml_output_path: Optional[str] = Field(None, description="Caminho opcional de saída para o arquivo .xml")
+    invoice_id: Optional[int] = Field(None, description="ID opcional da nota no banco para atualizar xml_path")
+
+
+class XmlToPdfRequest(BaseModel):
+    xml_content: Optional[str] = Field(None, description="Conteúdo XML da NFS-e gerado para conversão em PDF")
+    xml_path: Optional[str] = Field(None, description="Caminho do arquivo .xml no servidor")
+    pdf_output_path: Optional[str] = Field(None, description="Caminho opcional de saída para o arquivo .pdf")
+    invoice_id: Optional[int] = Field(None, description="ID opcional da nota no banco para atualizar pdf_path")
+    status: Optional[str] = Field("NORMAL", description="Status da nota para marca d'água (NORMAL, CANCELADA, etc.)")
+
+
 class DashboardStats(BaseModel):
     total_notas: int
     total_emitidas: int

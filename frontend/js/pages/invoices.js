@@ -9,6 +9,33 @@ export function triggerDownload(path) {
     window.location.href = '/api/download/file?path=' + encodeURIComponent(path);
 }
 
+export async function convertHtmlToXmlAndPdf(invoiceId, htmlPath, status = 'NORMAL') {
+    try {
+        showTaskToast('Convertendo HTML', 'Gerando XML a partir do HTML baixado...');
+        const resXml = await api('/download/html-to-xml', 'POST', {
+            invoice_id: invoiceId || null,
+            html_path: htmlPath || null,
+        });
+
+        showTaskToast('Gerando PDF (pynfse)', 'Enviando XML gerado para conversão em PDF...');
+        const resPdf = await api('/download/xml-to-pdf', 'POST', {
+            invoice_id: invoiceId || resXml.invoice_id || null,
+            xml_content: resXml.xml_content,
+            xml_path: resXml.xml_path,
+            status: status || 'NORMAL',
+        });
+
+        await loadInvoices();
+        closeProgressIndicatorsAfterDelay(3000);
+        if (resPdf && resPdf.pdf_path) {
+            triggerDownload(resPdf.pdf_path);
+        }
+    } catch (e) {
+        alert("Erro ao converter HTML em XML/PDF: " + e.message);
+        closeProgressIndicatorsAfterDelay(2000);
+    }
+}
+
 export async function loadInvoices() {
     const tbody = document.getElementById('invoices-table-body');
     if (!tbody) return;
@@ -61,20 +88,23 @@ function renderInvoiceRow(i, fmt) {
     if (i.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.xml_path}" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
     if (i.pdf_path) {
         const isHtml = i.pdf_path.toLowerCase().endsWith('.html') || i.pdf_path.toLowerCase().endsWith('.htm');
-        const label = isHtml ? 'HTML' : 'PDF';
-        const color = isHtml ? 'var(--amber)' : 'var(--accent)';
-        files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:${color}; font-weight:700; font-size:11px; text-decoration:none;" title="Download ${label}">${label}</a>`;
+        if (isHtml) {
+            files += `<a href="#" onclick="window.App.convertHtmlToXmlAndPdf(${i.id}, this.dataset.path, '${i.status || 'NORMAL'}'); return false;" data-path="${i.pdf_path}" style="color:var(--amber); font-weight:700; font-size:11px; text-decoration:none;" title="Converter HTML em XML e PDF via pynfse">HTML → XML/PDF</a>`;
+        } else {
+            files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Download PDF">PDF</a>`;
+        }
     }
     
     const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
+    const chaveDisplay = (i.chave && i.chave !== 'null') ? i.chave : (i.numero || 'Chave não sincronizada');
     
     return `
         <tr>
             <td><input type="checkbox" class="row-check" value="${i.id}" data-xml="${i.xml_path}" data-pdf="${i.pdf_path}" data-client-id="${i.client_id}"></td>
             <td>${dataFmt}</td>
             <td>
-                <div style="font-size:14px; font-weight:600; color:var(--text);">${i.numero || 'S/N'}</div>
-                <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${i.chave && i.chave !== 'null' ? i.chave : 'Chave não sincronizada'}</div>
+                <div style="font-size:13px; font-weight:600; color:var(--text); font-family:var(--mono); word-break: break-all;">${chaveDisplay}</div>
+                <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${chaveDisplay}</div>
             </td>
             <td style="font-weight:600; color:var(--text);">${fmt(i.valor)}</td>
             <td><span class="status-badge status-${i.status || 'unknown'}">${i.status || 'desconhecido'}</span></td>

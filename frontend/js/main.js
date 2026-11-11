@@ -4,7 +4,7 @@ import { maskCnpj, maskPhone, openModal, closeModal, toggleTheme } from './core/
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder } from './pages/clients.js';
-import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload } from './pages/invoices.js';
+import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf } from './pages/invoices.js';
 import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate } from './pages/about.js';
 
 // Construct the global App object for HTML onclick handlers
@@ -32,7 +32,7 @@ window.App = {
     toggleExplorer, browseFolders, selectCurrentFolder,
     
     // Invoices
-    loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload,
+    loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf,
     
     // System/About
     sendSupportMessage, checkUpdates, startUpdateDownload, applyDownloadedUpdate,

@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 import openpyxl
 from sqlalchemy.orm import Session
 
+from app.constants import DEFAULT_PERIOD, PERIOD_DAYS_MAP
 from app.database import get_db
 from app.models import Invoice
 
@@ -16,9 +17,14 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 @router.get("/export")
-def export_report(format: str, period: str = "30d", client_id: Optional[int] = None, db: Session = Depends(get_db)):
+def export_report(
+    format: str,
+    period: str = DEFAULT_PERIOD,
+    client_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     """Exportar relatório em JSON, CSV ou XLSX."""
-    days = {"7d": 7, "30d": 30, "90d": 90, "12m": 365}.get(period, 30)
+    days = PERIOD_DAYS_MAP.get(period, 30)
     date_limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
     query = db.query(Invoice).filter(Invoice.data_emissao >= date_limit)
@@ -27,8 +33,12 @@ def export_report(format: str, period: str = "30d", client_id: Optional[int] = N
 
     invoices = query.order_by(Invoice.data_emissao.desc()).all()
 
-    total_emitidas = sum(n.valor or 0 for n in invoices if n.tipo == "emitidas")
-    total_recebidas = sum(n.valor or 0 for n in invoices if n.tipo == "recebidas")
+    def nota_valida_para_calculo(n: Invoice) -> bool:
+        st = (n.status or "").lower()
+        return "cancelad" not in st and "substitu" not in st
+
+    total_emitidas = sum(n.valor or 0 for n in invoices if n.tipo == "emitidas" and nota_valida_para_calculo(n))
+    total_recebidas = sum(n.valor or 0 for n in invoices if n.tipo == "recebidas" and nota_valida_para_calculo(n))
     saldo = total_emitidas - total_recebidas
 
     if format == "json":

@@ -103,9 +103,9 @@ erDiagram
 | `id` | `INTEGER` | PK Auto | Identificador interno do cliente |
 | `cnpj` | `VARCHAR` | Único | CNPJ ou CPF do prestador/tomador |
 | `razao_social` | `VARCHAR` | — | Nome empresarial / Razão Social |
-| `username` / `password` | `VARCHAR` | — | Credenciais de acesso ao portal |
-| `cert_path` | `VARCHAR` | `NULL` | Caminho do certificado `.pfx` em `backend/certificados/` |
-| `cert_password` | `VARCHAR` | `NULL` | Senha do certificado digital A1 |
+| `username` / `password` | `VARCHAR` | — | Credenciais de acesso ao portal (`password` utiliza `EncryptedString` com AES/Fernet) |
+| `cert_path` | `VARCHAR` | `NULL` | Caminho do certificado `.pfx` em `backend/certificados/{CNPJ}/` |
+| `cert_password` | `VARCHAR` | `NULL` | Senha do certificado digital A1 (`EncryptedString` com AES/Fernet) |
 | `save_path` | `VARCHAR` | `NULL` | Diretório base customizado (padrão: `backend/downloads/`) |
 | `path_structure` | `VARCHAR` | `NULL` | Máscara de subpastas (ex.: `{CLIENTE}/{TIPO}/{ANO}/{MES}`) |
 | `inscricao_municipal` | `VARCHAR` | `NULL` | Inscrição Municipal do prestador |
@@ -138,3 +138,18 @@ erDiagram
 | `xml_dps_path` / `xml_evento_path` | `VARCHAR` | Caminhos dos XMLs assinados de DPS e de eventos (`e101101` / `e105102`) |
 | `valor_iss` / `valor_ibs` / `valor_cbs` / `valor_liquido` | `DOUBLE PRECISION` | Valores calculados de ISSQN, IBS, CBS e valor líquido da nota |
 | `c_trib_nac` / `c_nbs` / `c_class_trib` / `cst_ibscbs` | `VARCHAR` | Classificações fiscais aplicadas na emissão |
+
+---
+
+## 4. Segurança e Criptografia em Repouso (Encryption at Rest)
+
+Para autenticar no Portal Nacional da NFS-e e assinar lotes/eventos via mTLS com certificados A1 (`.pfx`), a aplicação necessita das senhas originais dos clientes (`password` e `cert_password`) em tempo de execução. Logo, **não é viável utilizar funções hash unidirecionais** (como BCrypt ou Argon2), pois elas impossibilitariam o envio das senhas reais aos serviços externos.
+
+Para proteger os dados em caso de vazamento acidental do banco de dados ou despejos (`pg_dump`), o sistema adota **Criptografia Simétrica Autenticada em Repouso** via `backend/app/core/security.py`:
+
+- **Algoritmo**: Fernet (AES-128 em modo CBC com HMAC-SHA256 para autenticação e integridade de dados).
+- **Chave Mestra**: Definida na variável de ambiente `NFSE_ENCRYPTION_KEY` (com derivação determinística de 32 bytes via SHA-256).
+- **Transparência ORM**: Implementado através do `EncryptedString(TypeDecorator)` em `backend/app/models.py`. As senhas são criptografadas antes do `INSERT`/`UPDATE` e decifradas na leitura pelo SQLAlchemy, mantendo o restante do código desacoplado.
+- **Formato no Banco**: As strings criptografadas recebem o prefixo `enc:` seguido do payload Base64 seguro do Fernet (ex: `enc:gAAAAABn...`).
+- **Migração Automática**: Na inicialização (`init_db()`), o sistema verifica se há credenciais legadas armazenadas em texto plano e as criptografa automaticamente de forma idempotente.
+

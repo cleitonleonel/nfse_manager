@@ -1,7 +1,32 @@
+import datetime
+import logging
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, text
 from sqlalchemy.orm import relationship
-import datetime
+from sqlalchemy.types import TypeDecorator
+from app.core.security import decrypt_secret, encrypt_secret, is_encrypted
 from app.database import Base, engine
+
+logger = logging.getLogger(__name__)
+
+
+class EncryptedString(TypeDecorator):
+    """
+    Tipo SQLAlchemy que armazena dados criptografados em repouso (AES/Fernet)
+    e decifra automaticamente ao carregar em memória.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value != "":
+            return encrypt_secret(str(value))
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value != "":
+            return decrypt_secret(str(value))
+        return value
 
 
 class Client(Base):
@@ -11,9 +36,9 @@ class Client(Base):
     cnpj = Column(String, unique=True, index=True)
     razao_social = Column(String)
     username = Column(String)
-    password = Column(String)
+    password = Column(EncryptedString, nullable=True)
     cert_path = Column(String, nullable=True)
-    cert_password = Column(String, nullable=True)
+    cert_password = Column(EncryptedString, nullable=True)
     description = Column(String, nullable=True)
     save_path = Column(String, nullable=True)
     path_structure = Column(String, nullable=True)
@@ -36,7 +61,7 @@ class Client(Base):
     ultimo_numero_dps = Column(Integer, nullable=True, default=0)
     ambiente_padrao = Column(String, nullable=True, default="homologacao")
 
-    invoices = relationship("Invoice", back_populates="client")
+    invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
 
 
 class Invoice(Base):
@@ -144,3 +169,30 @@ def init_db():
                         conn.commit()
                     except Exception:
                         pass
+
+        # Migração transparente de senhas legadas para o formato criptografado em repouso
+        try:
+            rows = conn.execute(text("SELECT id, password, cert_password FROM clients")).fetchall()
+            for row in rows:
+                row_id = row[0]
+                pwd = row[1]
+                cert_pwd = row[2]
+                needs_update = False
+                new_pwd = pwd
+                new_cert_pwd = cert_pwd
+
+                if pwd and not is_encrypted(pwd):
+                    new_pwd = encrypt_secret(pwd)
+                    needs_update = True
+                if cert_pwd and not is_encrypted(cert_pwd):
+                    new_cert_pwd = encrypt_secret(cert_pwd)
+                    needs_update = True
+
+                if needs_update:
+                    conn.execute(
+                        text("UPDATE clients SET password = :p, cert_password = :cp WHERE id = :id"),
+                        {"p": new_pwd, "cp": new_cert_pwd, "id": row_id},
+                    )
+            conn.commit()
+        except Exception as e:
+            logger.warning(f"Aviso durante verificação/migração de credenciais criptografadas: {e}")

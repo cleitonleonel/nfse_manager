@@ -63,6 +63,8 @@ nfse_manager/
 │       ├── models.py          # Entidades Client e Invoice + init_db()
 │       ├── schemas.py         # Schemas Pydantic v2
 │       ├── version.py         # Leitura centralizada da versão no pyproject.toml
+│       ├── core/
+│       │   └── security.py    # Criptografia simétrica em repouso (AES/Fernet)
 │       ├── services/
 │       │   └── adn_service.py # Orquestração ADN / Sefin Nacional v1.01
 │       └── api/
