@@ -84,7 +84,7 @@ flowchart LR
 
     subgraph Backend["Camada de Aplicação (backend/app)"]
         API["FastAPI (:8000)<br/>app.main:app"]
-        Routers["10 Routers REST<br/>(/api/*)"]
+        Routers["11 Routers REST<br/>(/api/*)"]
         AdnSvc["AdnService<br/>(pynfse.adn)"]
         PortalBot["ClienteNfseNacional<br/>(pynfse)"]
     end

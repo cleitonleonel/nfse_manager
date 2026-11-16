@@ -135,12 +135,12 @@ erDiagram
 
 ```mermaid
 sequenceDiagram
-    participant UI as Frontend SPA
-    participant API as FastAPI (invoices.py / downloads.py)
-    participant Bot as ClienteNfseNacional (pynfse)
-    participant Portal as Portal Nacional NFS-e
-    participant DB as PostgreSQL
-    participant Disk as backend/downloads/
+    participant UI as "Frontend SPA"
+    participant API as "FastAPI (invoices.py / downloads.py)"
+    participant Bot as "ClienteNfseNacional (pynfse)"
+    participant Portal as "Portal Nacional NFS-e"
+    participant DB as "PostgreSQL"
+    participant Disk as "backend/downloads/"
 
     UI->>API: POST /api/sync (client_id, data_inicio, data_fim, tipo)
     API-->>UI: 200 OK {"task_id": "sync_1_a1b2c3d4"}
@@ -164,12 +164,12 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant UI as Cliente API / Frontend
-    participant Router as emission.py
-    participant Svc as AdnService
-    participant PyNfse as pynfse.adn
-    participantADN as Sefin Nacional / ADN (mTLS)
-    participant DB as PostgreSQL
+    participant UI as "Cliente API / Frontend"
+    participant Router as "emission.py"
+    participant Svc as "AdnService"
+    participant PyNfse as "pynfse.adn"
+    participant ADN as "Sefin Nacional / ADN (mTLS)"
+    participant DB as "PostgreSQL"
 
     UI->>Router: POST /api/adn/dps/emitir (EmitirDpsRequest)
     Router->>Svc: emitir_dps(db, req)
@@ -180,8 +180,8 @@ sequenceDiagram
     Svc->>PyNfse: XsdValidator.validar_dps(xml_assinado)
     Svc->>Svc: Salva XML em backend/downloads/adn/dps/{id_dps}.xml
     alt transmitir == True e assinado com certificado
-        Svc->>participantADN: POST mTLS (AdnNfseClient.emitir_dps)
-        participantADN-->>Svc: Status 201 + chave_acesso (50 dígitos) + nfse_xml
+        Svc->>ADN: POST mTLS (AdnNfseClient.emitir_dps)
+        ADN-->>Svc: Status 201 + chave_acesso (50 dígitos) + nfse_xml
     end
     Svc->>DB: Persiste Invoice e incrementa Client.ultimo_numero_dps
     Svc-->>UI: JSON completo (id_dps, chave_acesso, validacao_xsd, tributacao, xml_assinado)

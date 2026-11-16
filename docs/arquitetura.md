@@ -15,7 +15,7 @@ flowchart LR
 
     subgraph AppLayer["Backend FastAPI (backend/app/)"]
         Main["app.main:app (:8000)"]
-        Routers["api/routers/*<br/>(9 domínios REST)"]
+        Routers["api/routers/*<br/>(11 domínios REST)"]
         AdnService["services/adn_service.py"]
         Deps["api/deps.py"]
     end
