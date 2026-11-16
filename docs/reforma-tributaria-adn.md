@@ -9,10 +9,9 @@ O **NFSe Manager Pro** integra o pacote `pynfse.adn` através da camada [`AdnSer
 A aplicação disponibiliza para consulta instantânea:
 
 - **18 Códigos de Situação Tributária (`CST`)** do IBS/CBS (`/api/catalogs/cst`).
-- **138 Classificações Tributárias (`cClassTrib`)** da Reforma Tributária (`/api/catalogs/cclasstrib`), incluindo indicadores de redução de alíquota, diferimento, crédito presumido e estorno.
-- **27 Classificações do Anexo VIII** específicas para a NFS-e (`apenas_anexo_viii=true`).
-- **338 Códigos de Tributação Nacional (`cTribNac` — 6 dígitos)** desdobrados a partir da **LC 116/2003** (`/api/catalogs/servicos` e `/api/catalogs/lc116`).
-- **1.739 Correlações Oficiais do Anexo VIII** cruzando `Item LC 116 x cTribNac x NBS x cIndOp x cClassTrib` (`/api/catalogs/correlacoes`).
+- **138 Classificações Tributárias (`cClassTrib`)** da Reforma Tributária (`/api/catalogs/cclasstrib`), sendo **66 aplicáveis à NFS-e** (`apenas_nfse=true`) e **27 do Anexo VIII** (`apenas_anexo_viii=true`), com indicadores de redução de alíquota, diferimento, crédito presumido e estorno.
+- **338 Códigos de Tributação Nacional (`cTribNac` — 6 dígitos)** distribuídos nos 41 grupos da **LC 116/2003** (`/api/catalogs/servicos` e `/api/catalogs/lc116`), integrados na tela de emissão via seletor pesquisável.
+- **1.739 Correlações Oficiais do Anexo VIII** (cobrindo **676 códigos NBS distintos**) cruzando `Item LC 116 x cTribNac x NBS x cIndOp x cClassTrib` (`/api/catalogs/correlacoes`), com filtro automático por `cTribNac` ou listagem completa na interface.
 - **28 Códigos Indicadores de Operação (`cIndOp`)** definindo o local de incidência do IBS/CBS (`/api/catalogs/indop`).
 
 ---
@@ -63,6 +62,12 @@ Antes de gerar ou transmitir uma DPS, o validador verifica as regras da Nota Té
    - Todo XML de evento (`e101101` cancelamento e `e105102` cancelamento por substituição) é validado contra `pedRegEvento_v1.01.xsd`.
 3. **Assinatura Digital XML-DSig (`DpsSigner`)**:
    - Assina a tag `<infDPS>` (na emissão/substituição) ou `<infPedReg>` (nos eventos) com certificado A1 `.pfx` (`RSA-SHA256`, `C14N` sem comentários, `enveloped-signature`).
-4. **Persistência Local e Transmissão mTLS (`AdnNfseClient`)**:
-   - Os XMLs assinados são salvos em `backend/downloads/adn/dps/`, `backend/downloads/adn/nfse/` e `backend/downloads/adn/eventos/`.
+4. **Persistência Local, DANFSe Automático e Transmissão mTLS (`AdnNfseClient`)**:
+   - Os XMLs assinados são salvos em `backend/downloads/adn/dps/`, `backend/downloads/adn/nfse/` e `backend/downloads/adn/eventos/`, e o PDF do DANFSe é gerado automaticamente em `backend/downloads/adn/pdfs/`.
    - Quando `transmitir=True` e o cliente possui certificado A1 configurado, a transmissão ocorre via mTLS para o endpoint nacional de homologação ou produção.
+5. **Fila de Contingência Offline (`/api/adn/fila` e `/api/adn/fila/reenviar`)**:
+   - Se ocorrer falha de rede, timeout ou erro 5xx na Sefin durante a emissão, a nota é salva com `status="fila_contingencia"` para retransmissão posterior em lote sem perda de dados.
+6. **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{invoice_id}/enviar-email`)**:
+   - Utiliza prioritariamente o SMTP configurado no cadastro do Prestador (`origem_smtp="cliente"`) ou o fallback global do servidor (`DEFAULT_SMTP_HOST`, `DEFAULT_SMTP_USER`, `DEFAULT_SMTP_PASSWORD` — `origem_smtp="sistema"`), adicionando automaticamente o cabeçalho `Reply-To` apontando para o e-mail do prestador.
+7. **Cofre de Notas ADN por NSU (`/api/adn/cofre/sincronizar`)**:
+   - Sincroniza incrementalmente todas as notas emitidas e recebidas em que o CNPJ do cliente figura diretamente da distribuição DFe do Ambiente Nacional (`ultimo_nsu_adn`).

@@ -700,3 +700,232 @@ def test_emission_api_endpoints_offline_and_online_mocked(
     assert r_mun.status_code == 200
     assert r_mun.json()["sucesso"] is True
     assert r_mun.json()["dados"]["convenio"] == "ATIVO"
+
+
+# ==============================================================================
+# 5. TESTES DE CADASTROS RECORRENTES, LOOKUP CNPJ/CEP, FILA DE CONTINGÊNCIA,
+#    ENVIO DE E-MAIL SMTP E COFRE ADN (DistDFe / NSU)
+# ==============================================================================
+
+
+def test_recurring_customers_and_service_items_and_one_click_emission(
+    api_client: TestClient, test_pfx_file: tuple[str, str, bytes]
+):
+    pfx_path, pfx_password, _ = test_pfx_file
+
+    db = SessionLocal()
+    try:
+        client_obj = db.query(Client).filter(Client.cnpj == "12345678000113").first()
+        assert client_obj is not None
+        client_obj.smtp_host = "smtp.teste.com.br"
+        client_obj.smtp_port = 587
+        client_obj.smtp_user = "fiscal@empresa.com.br"
+        client_obj.smtp_password = "senha_smtp_secreta"
+        client_obj.smtp_from = "fiscal@empresa.com.br"
+        db.commit()
+        client_id = client_obj.id
+    finally:
+        db.close()
+
+    # 1. Cadastra Tomador Recorrente (/api/customers)
+    r_cust = api_client.post(
+        "/api/customers",
+        json={
+            "client_id": client_id,
+            "documento": "12.345.678/0001-95",
+            "razao_social": "TOMADOR RECORRENTE S.A.",
+            "email": "financeiro@tomador.com.br",
+            "cep": "74805-100",
+            "logradouro": "AV T-63",
+            "numero": "900",
+            "bairro": "SETOR BUENO",
+            "codigo_municipio": "5208707",
+            "uf": "GO",
+        },
+    )
+    assert r_cust.status_code == 200, r_cust.text
+    customer_id = r_cust.json()["id"]
+    assert r_cust.json()["documento"] == "12345678000195"
+
+    # 2. Cadastra Serviço Recorrente (/api/service-items) informando apenas c_trib_nac (autocompleta Anexo VIII)
+    r_srv = api_client.post(
+        "/api/service-items",
+        json={
+            "client_id": client_id,
+            "titulo": "Consultoria Mensal em TI",
+            "descricao": "Servicos mensais de desenvolvimento e arquitetura de software",
+            "valor_unitario": 3800.00,
+            "c_trib_nac": "010101",
+            "aliquota_iss": 2.5,
+        },
+    )
+    assert r_srv.status_code == 200, r_srv.text
+    srv_json = r_srv.json()
+    service_item_id = srv_json["id"]
+    assert srv_json["c_trib_nac"] == "010101"
+    assert len(srv_json["c_nbs"]) == 9
+    assert len(srv_json["c_class_trib"]) == 6
+
+    # 3. Emissão em 1 clique usando customer_id + service_item_id, simulando queda de conexão -> Fila de Contingência
+    with patch(
+        "app.services.adn_service.AdnNfseClient.emitir_dps",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("Timeout ao conectar na Sefin Nacional"),
+    ):
+        r_contingencia = api_client.post(
+            "/api/adn/dps/emitir",
+            json={
+                "client_id": client_id,
+                "customer_id": customer_id,
+                "service_item_id": service_item_id,
+                "transmitir": True,
+            },
+        )
+    assert r_contingencia.status_code == 200, r_contingencia.text
+    cont_data = r_contingencia.json()
+    assert cont_data["status_nota"] == "fila_contingencia"
+    invoice_fila_id = cont_data["invoice_id"]
+
+    # 4. Verifica que a nota aparece em GET /api/adn/fila
+    r_fila = api_client.get("/api/adn/fila", params={"client_id": client_id})
+    assert r_fila.status_code == 200
+    ids_na_fila = [item["id"] for item in r_fila.json()]
+    assert invoice_fila_id in ids_na_fila
+
+    # 5. Reenvia a fila (/api/adn/fila/reenviar) quando a conexão retorna
+    chave_reenviada = "52087072212345678000113202604000000000009910777777"
+    with patch(
+        "app.services.adn_service.AdnNfseClient.emitir_dps",
+        new_callable=AsyncMock,
+        return_value={
+            "sucesso": True,
+            "status_code": 201,
+            "chave_acesso": chave_reenviada,
+            "nfse_xml": "<NFSe versao='1.01'><infNFSe Id='NFS52087072212345678000113202604000000000009910777777'/></NFSe>",
+        },
+    ):
+        r_reenvio = api_client.post(
+            "/api/adn/fila/reenviar",
+            json={"client_id": client_id, "invoice_ids": [invoice_fila_id]},
+        )
+    assert r_reenvio.status_code == 200, r_reenvio.text
+    assert r_reenvio.json()["autorizadas"] == 1
+    assert r_reenvio.json()["falhas"] == 0
+
+    # 6. Envia a NFS-e por e-mail (/api/adn/nfse/{id}/enviar-email) via SMTP do cliente e via fallback do sistema
+    with patch("app.services.email_service.smtplib.SMTP") as mock_smtp:
+        r_email = api_client.post(
+            f"/api/adn/nfse/{invoice_fila_id}/enviar-email",
+            json={"mensagem": "Segue sua nota fiscal referente à competência atual."},
+        )
+    assert r_email.status_code == 200, r_email.text
+    assert r_email.json()["sucesso"] is True
+    assert r_email.json()["origem_smtp"] == "cliente"
+    assert r_email.json()["destinatario"] == "financeiro@tomador.com.br"
+    assert "xml" in r_email.json()["anexos"]
+    assert mock_smtp.called
+
+    # 6b. Testa fallback para DEFAULT_SMTP_* do sistema + Reply-To do cliente quando o cliente não tem SMTP próprio
+    db = SessionLocal()
+    try:
+        cli_no_smtp = db.query(Client).filter(Client.id == client_id).first()
+        cli_no_smtp.smtp_host = None
+        cli_no_smtp.smtp_user = None
+        cli_no_smtp.smtp_password = None
+        cli_no_smtp.email = "contato@minhaempresa.com.br"
+        db.commit()
+    finally:
+        db.close()
+
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "DEFAULT_SMTP_HOST": "smtp.sistema-global.com.br",
+                "DEFAULT_SMTP_PORT": "587",
+                "DEFAULT_SMTP_USER": "notificacoes@sistema-global.com.br",
+                "DEFAULT_SMTP_PASSWORD": "senha_global_123",
+            },
+        ),
+        patch("app.services.email_service.smtplib.SMTP") as mock_smtp_global,
+    ):
+        r_email_global = api_client.post(
+            f"/api/adn/nfse/{invoice_fila_id}/enviar-email",
+            json={"mensagem": "Envio via fallback SMTP do sistema."},
+        )
+    assert r_email_global.status_code == 200, r_email_global.text
+    assert r_email_global.json()["sucesso"] is True
+    assert r_email_global.json()["origem_smtp"] == "sistema"
+    assert r_email_global.json()["reply_to"] == "contato@minhaempresa.com.br"
+    assert mock_smtp_global.called
+
+    # 7. Sincroniza o Cofre de Notas ADN (/api/adn/cofre/sincronizar) via DistDFe / NSU
+    chave_cofre = "52087072299999999000199202604000000000055510888888"
+    xml_cofre = (
+        f'<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">'
+        f'<infNFSe Id="NFS{chave_cofre}">'
+        f"<emit><CNPJ>99999999000199</CNPJ><xNome>FORNECEDOR SERVICO LTDA</xNome></emit>"
+        f"<valores><vServ>1250.50</vServ></valores>"
+        f"</infNFSe></NFSe>"
+    )
+    with patch(
+        "app.services.adn_service.AdnNfseClient.listar_dfe_adn",
+        new_callable=AsyncMock,
+        return_value={
+            "sucesso": True,
+            "status_code": 200,
+            "dados": {
+                "LoteDFe": [
+                    {
+                        "NSU": 42,
+                        "ChaveAcesso": chave_cofre,
+                        "xml_descompactado": xml_cofre,
+                    }
+                ]
+            },
+        },
+    ):
+        r_cofre = api_client.post(
+            "/api/adn/cofre/sincronizar",
+            json={"client_id": client_id, "max_paginas": 1},
+        )
+    assert r_cofre.status_code == 200, r_cofre.text
+    cofre_data = r_cofre.json()
+    assert cofre_data["sucesso"] is True
+    assert cofre_data["ultimo_nsu"] == 42
+    assert cofre_data["novas_notas"] >= 1
+
+    # 8. Testa lookup de CEP e CNPJ (/api/lookup/cep e /api/lookup/cnpj)
+    with patch(
+        "app.services.lookup_service.LookupService.consultar_cep",
+        new_callable=AsyncMock,
+        return_value={
+            "cep": "74805100",
+            "logradouro": "Avenida T-63",
+            "bairro": "Setor Bueno",
+            "municipio": "Goiânia",
+            "uf": "GO",
+            "codigo_municipio": "5208707",
+        },
+    ):
+        r_cep = api_client.get("/api/lookup/cep/74805-100")
+        assert r_cep.status_code == 200
+        assert r_cep.json()["codigo_municipio"] == "5208707"
+
+    with patch(
+        "app.services.lookup_service.LookupService.consultar_cnpj",
+        new_callable=AsyncMock,
+        return_value={
+            "cnpj": "12345678000195",
+            "razao_social": "EMPRESA CONSULTADA S.A.",
+            "codigo_municipio": "5208707",
+            "regime_tributario": "simples",
+        },
+    ):
+        r_cnpj = api_client.get("/api/lookup/cnpj/12.345.678/0001-95")
+        assert r_cnpj.status_code == 200
+        assert r_cnpj.json()["razao_social"] == "EMPRESA CONSULTADA S.A."
+
+    # Cleanup dos cadastros recorrentes criados no teste
+    api_client.delete(f"/api/customers/{customer_id}")
+    api_client.delete(f"/api/service-items/{service_item_id}")

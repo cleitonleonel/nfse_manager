@@ -245,9 +245,7 @@ def _sincronizar_arquivos_nota_certificado(
             _converter_html_para_xml_local(invoice, invoice.pdf_path)
 
         if (
-            not invoice.pdf_path
-            or invoice.pdf_path.lower().endswith(".html")
-            or not Path(invoice.pdf_path).exists()
+            not invoice.pdf_path or invoice.pdf_path.lower().endswith(".html") or not Path(invoice.pdf_path).exists()
         ) and invoice.xml_path:
             if on_progress:
                 on_progress("local_pdf")
@@ -414,7 +412,10 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                         )
                         _obter_xml_e_pdf_via_html_impressao(nfse, invoice)
                 else:
-                    def _update_step(step: str, _num=invoice.numero, _i=idx + 1, _base=invoice_base, _span=invoice_span):
+
+                    def _update_step(
+                        step: str, _num=invoice.numero, _i=idx + 1, _base=invoice_base, _span=invoice_span
+                    ):
                         if step == "xml":
                             tasks_status[task_id].update(
                                 {
@@ -430,7 +431,9 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                                 }
                             )
                         elif step == "html_to_xml":
-                            tasks_status[task_id]["message"] = f"Convertendo HTML da nota {_num} para XML ({_i}/{total})..."
+                            tasks_status[task_id]["message"] = (
+                                f"Convertendo HTML da nota {_num} para XML ({_i}/{total})..."
+                            )
                         elif step == "local_pdf":
                             tasks_status[task_id]["message"] = f"Gerando PDF local da nota {_num} ({_i}/{total})..."
 

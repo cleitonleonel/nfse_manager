@@ -1,7 +1,7 @@
 # 🚀 NFSe Manager Pro
 
 <p align="center">
-  <img src="assets/nfse_manager.png" alt="NFSe Manager Pro" width="45%">
+  <img src="assets/nfse_manager.png" alt="NFSe Manager Pro" width="140" height="140">
 </p>
 
 Bem-vindo à documentação oficial do **NFSe Manager Pro** — plataforma completa para **gestão multi-CNPJ, sincronização com o Portal Nacional, cálculo tributário da Reforma Tributária (IBS/CBS e ISSQN) e emissão de NFS-e Nacional (ADN / Sefin Nacional v1.01)**.

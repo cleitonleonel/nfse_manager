@@ -140,9 +140,7 @@ def converter_xml_para_pdf_pynfse(
             target_pdf = Path(pdf_output_path)
         elif not temp_xml_file:
             pdf_str = (
-                str(resolved_xml_path.with_suffix(".pdf"))
-                .replace("/xmls/", "/pdfs/")
-                .replace("\\xmls\\", "\\pdfs\\")
+                str(resolved_xml_path.with_suffix(".pdf")).replace("/xmls/", "/pdfs/").replace("\\xmls\\", "\\pdfs\\")
             )
             target_pdf = Path(pdf_str)
         else:
@@ -212,9 +210,7 @@ def montar_caminho_destino_nfse(
         except Exception:
             pass
 
-    cnpj_usuario = getattr(nfse, "_cnpj_usuario", None) or (
-        nfse.obter_cnpj() if hasattr(nfse, "obter_cnpj") else None
-    )
+    cnpj_usuario = getattr(nfse, "_cnpj_usuario", None) or (nfse.obter_cnpj() if hasattr(nfse, "obter_cnpj") else None)
     razao_social = getattr(nfse, "razao_social", None)
     tipo_consulta = getattr(nfse, "_tipo_consulta", None) or "outros"
     save_path = getattr(nfse, "save_path", None) or "downloads"

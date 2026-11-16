@@ -26,7 +26,7 @@ body.theme-light .sidebar-logo { box-shadow: 0 4px 15px rgba(59,130,246,0.4); }
 .nav-item svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 .sidebar-spacer { flex: 1; }
 
-.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 .topbar {
   height: 64px; background: rgba(18, 22, 31, 0.8); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 32px; gap: 20px; z-index: 50;
@@ -36,8 +36,28 @@ body.theme-light .topbar { background: rgba(255, 255, 255, 0.8); }
 .topbar-actions { display: flex; gap: 12px; }
 
 .content {
-  flex: 1; overflow-y: auto; padding: 32px; background: radial-gradient(circle at top right, rgba(59,130,246,0.03), transparent 400px);
+  flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 32px; background: radial-gradient(circle at top right, rgba(59,130,246,0.03), transparent 400px);
   display: flex; flex-direction: column;
 }
-.page, .page-content { display: none; opacity: 0; transform: translateY(10px); transition: all 0.4s; }
-.page.active, .page-content.active { display: block; opacity: 1; transform: translateY(0); }
+.page, .page-content { display: none; opacity: 0; transform: translateY(10px); transition: opacity 0.4s, transform 0.4s; min-width: 0; }
+.page.active, .page-content.active { display: block; opacity: 1; transform: none; }
+
+/* --- RESPONSIVIDADE GLOBAL DO SHELL --- */
+@media (max-width: 900px) {
+  .content { padding: 20px 16px; }
+  .topbar { padding: 0 16px; gap: 10px; }
+  .topbar-title { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar-actions { gap: 8px; min-width: 0; }
+  #global-client-btn { min-width: 0 !important; max-width: 42vw; }
+  #global-client-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  .sidebar { width: 56px; padding: 12px 0; gap: 8px; }
+  .sidebar-logo { width: 38px; height: 38px; margin-bottom: 8px; }
+  .nav-item { width: 42px; height: 42px; }
+  .nav-item.active::after { left: -7px; }
+  .content { padding: 14px 10px; }
+  .topbar-title { display: none; }
+  .topbar-actions { flex: 1; justify-content: flex-end; }
+  #global-client-btn { max-width: 52vw; }
+}

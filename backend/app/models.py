@@ -29,6 +29,32 @@ class EncryptedString(TypeDecorator):
         return value
 
 
+class User(Base):
+    """Operador / Administrador do sistema (criado via `python manage.py create_admin`)."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=True)
+    full_name = Column(String, nullable=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="admin")  # admin | operador
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class SchemaMigration(Base):
+    """Histórico de migrações aplicadas pelo `python manage.py migrate`."""
+
+    __tablename__ = "schema_migrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    version = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    applied_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class Client(Base):
     __tablename__ = "clients"
 
@@ -60,8 +86,93 @@ class Client(Base):
     serie_dps_padrao = Column(String, nullable=True, default="900")
     ultimo_numero_dps = Column(Integer, nullable=True, default=0)
     ambiente_padrao = Column(String, nullable=True, default="homologacao")
+    ultimo_nsu_adn = Column(Integer, nullable=True, default=0)
+
+    # Configurações de E-mail (SMTP próprio por Prestador)
+    smtp_host = Column(String, nullable=True)
+    smtp_port = Column(Integer, nullable=True, default=587)
+    smtp_user = Column(String, nullable=True)
+    smtp_password = Column(EncryptedString, nullable=True)
+    smtp_from = Column(String, nullable=True)
+    smtp_tls = Column(Integer, nullable=True, default=1)
+    enviar_email_automatico = Column(Integer, nullable=True, default=0)
+
+    # Metadados de validade do Certificado Digital A1 (.pfx)
+    cert_valid_until = Column(DateTime, nullable=True)
+    cert_subject = Column(String, nullable=True)
 
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
+    customers = relationship("Customer", back_populates="client", cascade="all, delete-orphan")
+    service_items = relationship("ServiceItem", back_populates="client", cascade="all, delete-orphan")
+
+    @property
+    def dias_para_vencer(self) -> int | None:
+        if not self.cert_valid_until:
+            return None
+        now = datetime.datetime.now(datetime.UTC)
+        valid_dt = self.cert_valid_until
+        if valid_dt.tzinfo is None:
+            valid_dt = valid_dt.replace(tzinfo=datetime.UTC)
+        return (valid_dt - now).days
+
+    @property
+    def status_certificado(self) -> str:
+        if not self.cert_path:
+            return "sem_certificado"
+        dias = self.dias_para_vencer
+        if dias is None:
+            return "configurado"
+        if dias <= 0:
+            return "vencido"
+        if dias <= 30:
+            return "expirando"
+        return "valido"
+
+
+class Customer(Base):
+    """Cadastro recorrente de Tomadores de Serviço (clientes para quem se emite NFS-e)."""
+
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    documento = Column(String, index=True)  # CPF ou CNPJ
+    razao_social = Column(String)
+    inscricao_municipal = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    codigo_municipio = Column(String, nullable=True, default="3201308")
+    uf = Column(String, nullable=True, default="ES")
+
+    client = relationship("Client", back_populates="customers")
+
+
+class ServiceItem(Base):
+    """Cadastro recorrente de Serviços para emissão rápida de NFS-e em poucos cliques."""
+
+    __tablename__ = "service_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    codigo_interno = Column(String, nullable=True)
+    titulo = Column(String)
+    descricao = Column(String)
+    valor_unitario = Column(Float, nullable=True, default=0.0)
+    c_trib_nac = Column(String, nullable=True, default="010101")
+    c_nbs = Column(String, nullable=True)
+    c_class_trib = Column(String, nullable=True, default="000001")
+    cst_ibscbs = Column(String, nullable=True, default="000")
+    c_ind_op = Column(String, nullable=True, default="100301")
+    aliquota_iss = Column(Float, nullable=True, default=2.0)
+    iss_retido = Column(Integer, nullable=True, default=0)
+    reter_federais = Column(Integer, nullable=True, default=0)
+
+    client = relationship("Client", back_populates="service_items")
 
 
 class Invoice(Base):
@@ -69,7 +180,7 @@ class Invoice(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
-    data_emissao = Column(DateTime, default=datetime.datetime.utcnow)
+    data_emissao = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
     numero = Column(String)
     chave = Column(String, unique=True, index=True)
     status = Column(String)
@@ -98,6 +209,12 @@ class Invoice(Base):
     c_nbs = Column(String, nullable=True)
     c_class_trib = Column(String, nullable=True)
     cst_ibscbs = Column(String, nullable=True)
+    tomador_documento = Column(String, nullable=True)
+    tomador_nome = Column(String, nullable=True)
+    tomador_email = Column(String, nullable=True)
+    tentativas_envio = Column(Integer, nullable=True, default=0)
+    ultimo_erro_envio = Column(String, nullable=True)
+    payload_dps_json = Column(String, nullable=True)
 
     client = relationship("Client", back_populates="invoices")
 
@@ -124,6 +241,16 @@ def init_db():
         ("serie_dps_padrao", "VARCHAR"),
         ("ultimo_numero_dps", "INTEGER"),
         ("ambiente_padrao", "VARCHAR"),
+        ("ultimo_nsu_adn", "INTEGER"),
+        ("smtp_host", "VARCHAR"),
+        ("smtp_port", "INTEGER"),
+        ("smtp_user", "VARCHAR"),
+        ("smtp_password", "VARCHAR"),
+        ("smtp_from", "VARCHAR"),
+        ("smtp_tls", "INTEGER"),
+        ("enviar_email_automatico", "INTEGER"),
+        ("cert_valid_until", "TIMESTAMP"),
+        ("cert_subject", "VARCHAR"),
         ("save_path", "VARCHAR"),
         ("path_structure", "VARCHAR"),
     ]
@@ -147,6 +274,12 @@ def init_db():
         ("c_nbs", "VARCHAR"),
         ("c_class_trib", "VARCHAR"),
         ("cst_ibscbs", "VARCHAR"),
+        ("tomador_documento", "VARCHAR"),
+        ("tomador_nome", "VARCHAR"),
+        ("tomador_email", "VARCHAR"),
+        ("tentativas_envio", "INTEGER"),
+        ("ultimo_erro_envio", "VARCHAR"),
+        ("payload_dps_json", "VARCHAR"),
     ]
 
     for attempt in range(1, 11):

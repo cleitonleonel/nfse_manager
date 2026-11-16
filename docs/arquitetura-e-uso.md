@@ -42,12 +42,18 @@ O diretório `backend/` é a raiz de execução Python (`PYTHONPATH=backend` / `
 
 | Caminho | Responsabilidade |
 | :--- | :--- |
-| `backend/app/main.py` | Inicializa o FastAPI, configura CORS, chama `init_db()`, expõe `/api/health`, registra os 9 routers e monta o `frontend/` estático quando presente. |
-| `backend/app/database.py` | Configura a `engine` SQLAlchemy (`pool_pre_ping=True`) conectada ao PostgreSQL via `DATABASE_URL` e fornece a dependência `get_db()`. |
-| `backend/app/models.py` | Declara os modelos ORM `Client` e `Invoice` e a função `init_db()` com retry automático de conexão e inspeção de colunas via `sqlalchemy.inspect`. |
+| `backend/app/main.py` | Inicializa o FastAPI, configura CORS, chama `init_db()`, gerencia o ciclo de vida (`lifespan`) do `SchedulerService`, expõe `/api/health`, registra os 11 routers e monta o `frontend/` estático quando presente. |
+| `backend/app/database.py` | Resolve a conexão de banco de dados de forma híbrida via `resolve_database_url()` (PostgreSQL no Docker `@database`, PostgreSQL em `@localhost` ou fallback automático para SQLite local `backend/nfse.db`) e fornece `get_db()`. |
+| `backend/app/models.py` | Declara os modelos ORM (`User`, `SchemaMigration`, `Client`, `Customer`, `ServiceItem`, `Invoice`) e a função `init_db()`. |
+| `backend/app/core/config.py` | Carrega variáveis de ambiente do arquivo `.env` (`load_dotenv_if_present()`). |
+| `backend/app/core/migrations.py` | Motor de migrações versionadas (`makemigrations`, `migrate`, `showmigrations`, `create_admin_user`) utilizado pelo `manage.py`. |
+| `backend/app/core/security.py` | Criptografia simétrica em repouso (`Fernet` AES-128-CBC + HMAC-SHA256), hash de senhas (`PBKDF2-HMAC-SHA256`) e tokens JWT (`HS256`). |
 | `backend/app/schemas.py` | Define todos os schemas Pydantic para validação de payloads e serialização de respostas. |
 | `backend/app/version.py` | Lê a versão oficial diretamente do `pyproject.toml` na raiz do repositório (`VERSION`). |
-| `backend/app/services/adn_service.py` | Fachada unificada que integra o banco PostgreSQL e o armazenamento em `backend/downloads/adn/` ao pacote `pynfse.adn`. |
+| `backend/app/services/adn_service.py` | Fachada unificada que integra o banco de dados e o armazenamento em `backend/downloads/adn/` ao pacote `pynfse.adn`. |
+| `backend/app/services/scheduler_service.py` | Worker assíncrono em background para retransmissão periódica da fila de contingência e envio automático de e-mail pós-autorização. |
+| `backend/app/services/email_service.py` | Disparo de XML + DANFSe por e-mail via SMTP próprio do cliente ou fallback global (`DEFAULT_SMTP_*`) com `Reply-To`. |
+| `backend/app/services/lookup_service.py` | Consulta automática de CNPJ e CEP com resolução de código IBGE de 7 dígitos e cache em memória. |
 | `backend/app/api/deps.py` | Constrói instâncias do `ClienteNfseNacional` configurando `save_path` padrão em `backend/downloads/` e resolvendo certificados em `backend/certificados/`. |
 | `backend/app/api/state.py` | Mantém o dicionário em memória `tasks_status` para acompanhamento assíncrono de tarefas em background. |
 
@@ -233,6 +239,7 @@ Para estender a API com um novo domínio:
 
    router = APIRouter(prefix="/api/meu-dominio", tags=["meu_dominio"])
 
+
    @router.get("")
    def listar_itens(db: Session = Depends(get_db)):
        return {"status": "ok"}
@@ -240,6 +247,7 @@ Para estender a API com um novo domínio:
 2. Registre o router em [`backend/app/main.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/main.py):
    ```python
    from app.api.routers import meu_dominio
+
    app.include_router(meu_dominio.router)
    ```
 3. Adicione os testes correspondentes na pasta `tests/` e execute `poetry run pytest -v` e `poetry run ruff check backend tests`.

@@ -22,11 +22,7 @@ class ClienteNfsePortalWrapper(ClienteNfseNacional):
 
     def usa_apenas_credenciais(self) -> bool:
         """Retorna True se o cliente usa usuário/senha e não possui certificado digital ativo."""
-        tem_certificado = bool(
-            self.caminho_pfx
-            and self.senha_pfx
-            and getattr(self, "_usando_certificado", True)
-        )
+        tem_certificado = bool(self.caminho_pfx and self.senha_pfx and getattr(self, "_usando_certificado", True))
         return not tem_certificado and bool(self.usuario and self.senha)
 
     def autenticar(self, usar_certificado: bool = True) -> bool:

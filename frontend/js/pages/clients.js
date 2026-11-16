@@ -51,10 +51,19 @@ export function renderClients() {
         return;
     }
     
-    tbody.innerHTML = state.clients.map(c => `
+    tbody.innerHTML = state.clients.map(c => {
+        let certBadge = '';
+        if (c.status_certificado === 'vencido') {
+            certBadge = `<span class="badge" style="background:rgba(239,68,68,0.15); color:var(--red); margin-left:8px;">❌ A1 Vencido</span>`;
+        } else if (c.status_certificado === 'expirando') {
+            certBadge = `<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; margin-left:8px;">⚠️ A1 (${c.dias_para_vencer}d)</span>`;
+        } else if (c.status_certificado === 'valido') {
+            certBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:var(--green); margin-left:8px;">✓ A1 (${c.dias_para_vencer}d)</span>`;
+        }
+        return `
         <tr>
             <td style="font-family:var(--mono);">${c.cnpj}</td>
-            <td style="font-weight:500;">${c.razao_social}</td>
+            <td style="font-weight:500;">${c.razao_social}${certBadge}</td>
             <td style="color:var(--text3);">${c.description || '-'}</td>
             <td>
                 <div style="display:flex; gap:8px;">
@@ -63,7 +72,8 @@ export function renderClients() {
                 </div>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 export function editClient(id) {

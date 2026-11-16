@@ -1,11 +1,12 @@
 """Router de Clientes - CRUD de clientes NFSe."""
 
+import datetime
 import logging
 import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.constants import (
@@ -20,6 +21,7 @@ from app.constants import (
 from app.database import get_db
 from app.models import Client, Invoice
 from app.schemas import ClientResponse
+from pynfse.adn import DpsSigner
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,27 @@ def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str
                 pass
 
     return str(cert_file_path)
+
+
+def extrair_metadados_certificado_pfx(
+    cert_path: Optional[str], cert_password: Optional[str]
+) -> tuple[Optional[datetime.datetime], Optional[str]]:
+    """Inspeciona o arquivo .pfx A1 e retorna `(cert_valid_until_utc, cert_subject)`."""
+    if not cert_path or not Path(cert_path).is_file():
+        return None, None
+    try:
+        signer = DpsSigner(pfx_path=str(cert_path), pfx_password=cert_password or "")
+        cert = getattr(signer, "certificate", None) or getattr(signer, "_certificate", None)
+        if cert is None:
+            return None, None
+        valid_until = getattr(cert, "not_valid_after_utc", None) or getattr(cert, "not_valid_after", None)
+        if valid_until and valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=datetime.UTC)
+        subject_str = cert.subject.rfc4514_string() if hasattr(cert, "subject") else None
+        return valid_until, subject_str
+    except Exception as exc:
+        logger.debug(f"Não foi possível extrair validade do certificado {cert_path}: {exc}")
+        return None, None
 
 
 def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -> Dict[str, Any]:
@@ -182,6 +205,61 @@ def list_clients(db: Session = Depends(get_db)):
     return db.query(Client).all()
 
 
+@router.get("/certificados/alertas")
+def get_certificate_alerts(
+    dias_aviso: int = Query(30, ge=1, le=365, description="Quantidade de dias para alerta preventivo de vencimento"),
+    db: Session = Depends(get_db),
+):
+    """Lista os certificados A1 vencidos, prestes a vencer (<= dias_aviso) e válidos."""
+    clients = db.query(Client).all()
+    vencidos = []
+    expirando = []
+    validos = []
+    alterou_banco = False
+
+    for c in clients:
+        if c.cert_path and c.cert_valid_until is None and Path(c.cert_path).is_file():
+            v_dt, subj = extrair_metadados_certificado_pfx(c.cert_path, c.cert_password)
+            if v_dt:
+                c.cert_valid_until = v_dt
+                c.cert_subject = subj
+                db.add(c)
+                alterou_banco = True
+
+        dias = c.dias_para_vencer
+        if dias is None:
+            continue
+
+        item = {
+            "client_id": c.id,
+            "cnpj": c.cnpj,
+            "razao_social": c.razao_social,
+            "cert_valid_until": c.cert_valid_until.isoformat() if c.cert_valid_until else None,
+            "cert_subject": c.cert_subject,
+            "dias_para_vencer": dias,
+            "status_certificado": "vencido" if dias <= 0 else ("expirando" if dias <= dias_aviso else "valido"),
+        }
+        if dias <= 0:
+            vencidos.append(item)
+        elif dias <= dias_aviso:
+            expirando.append(item)
+        else:
+            validos.append(item)
+
+    if alterou_banco:
+        db.commit()
+
+    return {
+        "dias_aviso": dias_aviso,
+        "total_monitorados": len(vencidos) + len(expirando) + len(validos),
+        "total_vencidos": len(vencidos),
+        "total_expirando": len(expirando),
+        "vencidos": vencidos,
+        "expirando": expirando,
+        "validos": validos,
+    }
+
+
 @router.post("", response_model=ClientResponse)
 def create_client(
     cnpj: str = Form(...),
@@ -208,11 +286,20 @@ def create_client(
     serie_dps_padrao: Optional[str] = Form(DEFAULT_SERIE_DPS),
     ultimo_numero_dps: Optional[int] = Form(0),
     ambiente_padrao: Optional[str] = Form(DEFAULT_AMBIENTE),
+    ultimo_nsu_adn: Optional[int] = Form(0),
+    smtp_host: Optional[str] = Form(None),
+    smtp_port: Optional[int] = Form(587),
+    smtp_user: Optional[str] = Form(None),
+    smtp_password: Optional[str] = Form(None),
+    smtp_from: Optional[str] = Form(None),
+    smtp_tls: Optional[int] = Form(1),
+    enviar_email_automatico: Optional[int] = Form(0),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
     """Criar novo cliente com certificado e dados fiscais opcionais."""
     cert_path = salvar_arquivo_certificado(cert_file, cnpj)
+    cert_valid_until, cert_subject = extrair_metadados_certificado_pfx(cert_path, cert_password)
 
     db_client = Client(
         cnpj=cnpj,
@@ -222,6 +309,8 @@ def create_client(
         description=description,
         cert_password=cert_password,
         cert_path=cert_path or "",
+        cert_valid_until=cert_valid_until,
+        cert_subject=cert_subject,
         save_path=save_path or "",
         path_structure=path_structure or "",
         inscricao_municipal=inscricao_municipal,
@@ -240,6 +329,14 @@ def create_client(
         serie_dps_padrao=serie_dps_padrao or DEFAULT_SERIE_DPS,
         ultimo_numero_dps=ultimo_numero_dps or 0,
         ambiente_padrao=ambiente_padrao or DEFAULT_AMBIENTE,
+        ultimo_nsu_adn=ultimo_nsu_adn or 0,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port if smtp_port is not None else 587,
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        smtp_from=smtp_from,
+        smtp_tls=smtp_tls if smtp_tls is not None else 1,
+        enviar_email_automatico=enviar_email_automatico or 0,
     )
     db.add(db_client)
     db.commit()
@@ -305,6 +402,14 @@ def update_client(
     serie_dps_padrao: Optional[str] = Form(None),
     ultimo_numero_dps: Optional[int] = Form(None),
     ambiente_padrao: Optional[str] = Form(None),
+    ultimo_nsu_adn: Optional[int] = Form(None),
+    smtp_host: Optional[str] = Form(None),
+    smtp_port: Optional[int] = Form(None),
+    smtp_user: Optional[str] = Form(None),
+    smtp_password: Optional[str] = Form(None),
+    smtp_from: Optional[str] = Form(None),
+    smtp_tls: Optional[int] = Form(None),
+    enviar_email_automatico: Optional[int] = Form(None),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
@@ -337,6 +442,14 @@ def update_client(
         "serie_dps_padrao": serie_dps_padrao,
         "ultimo_numero_dps": ultimo_numero_dps,
         "ambiente_padrao": ambiente_padrao,
+        "ultimo_nsu_adn": ultimo_nsu_adn,
+        "smtp_host": smtp_host,
+        "smtp_port": smtp_port,
+        "smtp_user": smtp_user,
+        "smtp_password": smtp_password,
+        "smtp_from": smtp_from,
+        "smtp_tls": smtp_tls,
+        "enviar_email_automatico": enviar_email_automatico,
     }
     for field, value in update_fields.items():
         if value is not None:
@@ -345,6 +458,11 @@ def update_client(
     saved_cert_path = salvar_arquivo_certificado(cert_file, db_client.cnpj)
     if saved_cert_path:
         db_client.cert_path = saved_cert_path
+    if saved_cert_path or cert_password is not None:
+        v_dt, subj = extrair_metadados_certificado_pfx(db_client.cert_path, db_client.cert_password)
+        if v_dt:
+            db_client.cert_valid_until = v_dt
+            db_client.cert_subject = subj
 
     db.commit()
     db.refresh(db_client)

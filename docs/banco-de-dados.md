@@ -4,23 +4,22 @@ O **NFSe Manager Pro** utiliza **PostgreSQL 16** gerenciado pelo **SQLAlchemy 2.
 
 ---
 
-## 1. Configuração de Conexão (`backend/app/database.py`)
+## 1. Resolução Híbrida de Conexão (`backend/app/database.py`)
 
-A conexão é resolvida através da variável `DATABASE_URL` ou montada a partir das variáveis individuais `POSTGRES_*`:
+A função `resolve_database_url()` em `backend/app/database.py` permite que a aplicação funcione de forma transparente tanto em containers Docker quanto localmente (com PostgreSQL ou SQLite), sem precisar alterar o `.env` ao alternar de ambiente:
 
-```python
-POSTGRES_USER = os.getenv("POSTGRES_USER", "nfse_user")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "nfse_pass")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5434")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "nfse_db")
-```
+1. **Execução dentro do Docker (`nfse_backend`)**:
+   - Quando `DATABASE_URL` aponta para o serviço `@database:5432` e o DNS interno da rede `nfse_network` resolve `database`, a conexão é feita diretamente com o container `nfse_database`.
+2. **Execução Local no Host com PostgreSQL ativo (via Docker ou local)**:
+   - Se `DATABASE_URL` no `.env` contiver `@database:5432`, mas o backend estiver rodando diretamente no host (`./run_web.sh`, `./run_ui.sh` ou `python manage.py`), o sistema detecta que o hostname `database` não existe fora do Docker e substitui automaticamente por `@localhost:<porta>` (verificando `POSTGRES_PORT`, `5434` e `5432`).
+3. **Execução Local / Desktop (Tauri) sem PostgreSQL ativo (Fallback SQLite)**:
+   - Se nenhum servidor PostgreSQL estiver escutando em `localhost` e `DB_FALLBACK_SQLITE=1` (padrão), o sistema faz *fallback* automático para o banco SQLite local em `backend/nfse.db` (`sqlite:///.../backend/nfse.db`).
 
-Na inicialização da aplicação (`init_db()` em `backend/app/models.py`), o sistema:
+Na inicialização da aplicação (`init_db()` em `backend/app/models.py`) ou via CLI (`python manage.py migrate`), o sistema:
 
-1. Aguarda o banco ficar disponível com *retry* automático (até 10 tentativas).
-2. Executa `Base.metadata.create_all(bind=engine)` para criar as tabelas caso não existam.
-3. Inspeciona as colunas existentes via `sqlalchemy.inspect(engine)` e aplica `ALTER TABLE ... ADD COLUMN` automaticamente para manter compatibilidade evolutiva.
+1. Aguarda o banco ficar disponível com *retry* automático.
+2. Executa as migrações versionadas de `backend/migrations/versions/` (registradas na tabela `schema_migrations`) e sincroniza o schema atual.
+3. Criptografa automaticamente em repouso (`EncryptedString` AES/Fernet) eventuais senhas legadas em texto puro.
 
 ---
 
@@ -106,6 +105,7 @@ erDiagram
 | `username` / `password` | `VARCHAR` | — | Credenciais de acesso ao portal (`password` utiliza `EncryptedString` com AES/Fernet) |
 | `cert_path` | `VARCHAR` | `NULL` | Caminho do certificado `.pfx` em `backend/certificados/{CNPJ}/` |
 | `cert_password` | `VARCHAR` | `NULL` | Senha do certificado digital A1 (`EncryptedString` com AES/Fernet) |
+| `cert_valid_until` / `cert_subject` | `TIMESTAMP` / `VARCHAR` | `NULL` | Data de expiração (UTC) e titular X.509 extraídos automaticamente do certificado A1 |
 | `save_path` | `VARCHAR` | `NULL` | Diretório base customizado (padrão: `backend/downloads/`) |
 | `path_structure` | `VARCHAR` | `NULL` | Máscara de subpastas (ex.: `{CLIENTE}/{TIPO}/{ANO}/{MES}`) |
 | `inscricao_municipal` | `VARCHAR` | `NULL` | Inscrição Municipal do prestador |
@@ -117,6 +117,20 @@ erDiagram
 | `serie_dps_padrao` | `VARCHAR` | `"900"` | Série padrão para emissão de DPS |
 | `ultimo_numero_dps` | `INTEGER` | `0` | Último número sequencial de DPS emitido pelo cliente |
 | `ambiente_padrao` | `VARCHAR` | `"homologacao"` | Ambiente padrão ADN (`homologacao` ou `producao`) |
+| `ultimo_nsu_adn` | `INTEGER` | `0` | Último NSU sincronizado via Cofre de Notas ADN (`DistDFe`) |
+| `smtp_host` / `smtp_port` | `VARCHAR` / `INTEGER` | `NULL` / `587` | Servidor e porta SMTP próprio do Prestador |
+| `smtp_user` / `smtp_password` | `VARCHAR` | `NULL` | Credenciais SMTP (`smtp_password` usa `EncryptedString` AES/Fernet) |
+| `smtp_from` / `smtp_tls` / `enviar_email_automatico` | `VARCHAR` / `INTEGER` | `NULL` / `1` / `0` | Remetente, uso de STARTTLS e disparo automático na emissão |
+
+### Tabelas `users` (Operadores) e `schema_migrations` (Controle de Migrações)
+
+- **`users`**: armazena os operadores do sistema (`id`, `username` único, `email` único, `full_name`, `password_hash` via `PBKDF2-HMAC-SHA256`, `role` (`admin` ou `operador`), `is_active` e `created_at`). O primeiro superusuário é criado via `python manage.py create_admin`.
+- **`schema_migrations`**: controla o histórico de migrações aplicadas pelo utilitário `python manage.py migrate` (`id`, `version` ex.: `0001`, `name` ex.: `initial` e `applied_at`).
+
+### Tabelas `customers` (Tomadores Recorrentes) e `service_items` (Serviços Recorrentes)
+
+- **`customers`**: armazena `id`, `client_id` (FK opcional — `NULL` permite tomadores globais compartilhados), `documento` (CPF/CNPJ), `razao_social`, `inscricao_municipal`, `email`, `telefone`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `codigo_municipio` (IBGE 7 dígitos) e `uf`.
+- **`service_items`**: armazena `id`, `client_id` (FK opcional), `codigo_interno`, `titulo`, `descricao`, `valor_unitario`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`, `c_ind_op`, `aliquota_iss`, `iss_retido` e `reter_federais`.
 
 ### Tabela `invoices`
 
@@ -138,6 +152,8 @@ erDiagram
 | `xml_dps_path` / `xml_evento_path` | `VARCHAR` | Caminhos dos XMLs assinados de DPS e de eventos (`e101101` / `e105102`) |
 | `valor_iss` / `valor_ibs` / `valor_cbs` / `valor_liquido` | `DOUBLE PRECISION` | Valores calculados de ISSQN, IBS, CBS e valor líquido da nota |
 | `c_trib_nac` / `c_nbs` / `c_class_trib` / `cst_ibscbs` | `VARCHAR` | Classificações fiscais aplicadas na emissão |
+| `tomador_documento` / `tomador_nome` / `tomador_email` | `VARCHAR` | Dados do tomador salvos na emissão para consulta rápida e envio de e-mail |
+| `tentativas_envio` / `ultimo_erro_envio` / `payload_dps_json` | `INTEGER` / `VARCHAR` | Controle da Fila de Contingência Offline e diagnóstico de retransmissão |
 
 ---
 

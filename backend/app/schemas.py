@@ -27,11 +27,19 @@ class ClientBase(BaseModel):
     serie_dps_padrao: Optional[str] = "900"
     ultimo_numero_dps: Optional[int] = 0
     ambiente_padrao: Optional[str] = "homologacao"
+    ultimo_nsu_adn: Optional[int] = 0
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = 587
+    smtp_user: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_tls: Optional[int] = 1
+    enviar_email_automatico: Optional[int] = 0
 
 
 class ClientCreate(ClientBase):
     password: str
     cert_password: Optional[str] = None
+    smtp_password: Optional[str] = None
 
 
 class ClientUpdate(BaseModel):
@@ -59,9 +67,146 @@ class ClientUpdate(BaseModel):
     serie_dps_padrao: Optional[str] = None
     ultimo_numero_dps: Optional[int] = None
     ambiente_padrao: Optional[str] = None
+    ultimo_nsu_adn: Optional[int] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_tls: Optional[int] = None
+    enviar_email_automatico: Optional[int] = None
 
 
 class ClientResponse(ClientBase):
+    id: int
+    cert_valid_until: Optional[datetime] = None
+    cert_subject: Optional[str] = None
+    dias_para_vencer: Optional[int] = None
+    status_certificado: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    password: str
+    role: str = "operador"
+
+
+class UserRegister(BaseModel):
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: str
+    is_active: int
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = 86400
+    user: UserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class CustomerBase(BaseModel):
+    client_id: Optional[int] = None
+    documento: str
+    razao_social: str
+    inscricao_municipal: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    codigo_municipio: Optional[str] = "3201308"
+    uf: Optional[str] = "ES"
+
+
+class CustomerCreate(CustomerBase):
+    pass
+
+
+class CustomerUpdate(BaseModel):
+    client_id: Optional[int] = None
+    documento: Optional[str] = None
+    razao_social: Optional[str] = None
+    inscricao_municipal: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    codigo_municipio: Optional[str] = None
+    uf: Optional[str] = None
+
+
+class CustomerResponse(CustomerBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ServiceItemBase(BaseModel):
+    client_id: Optional[int] = None
+    codigo_interno: Optional[str] = None
+    titulo: str
+    descricao: str
+    valor_unitario: Optional[float] = 0.0
+    c_trib_nac: Optional[str] = "010101"
+    c_nbs: Optional[str] = None
+    c_class_trib: Optional[str] = "000001"
+    cst_ibscbs: Optional[str] = "000"
+    c_ind_op: Optional[str] = "100301"
+    aliquota_iss: Optional[float] = 2.0
+    iss_retido: Optional[bool] = False
+    reter_federais: Optional[bool] = False
+
+
+class ServiceItemCreate(ServiceItemBase):
+    pass
+
+
+class ServiceItemUpdate(BaseModel):
+    client_id: Optional[int] = None
+    codigo_interno: Optional[str] = None
+    titulo: Optional[str] = None
+    descricao: Optional[str] = None
+    valor_unitario: Optional[float] = None
+    c_trib_nac: Optional[str] = None
+    c_nbs: Optional[str] = None
+    c_class_trib: Optional[str] = None
+    cst_ibscbs: Optional[str] = None
+    c_ind_op: Optional[str] = None
+    aliquota_iss: Optional[float] = None
+    iss_retido: Optional[bool] = None
+    reter_federais: Optional[bool] = None
+
+
+class ServiceItemResponse(ServiceItemBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +237,11 @@ class InvoiceBase(BaseModel):
     c_nbs: Optional[str] = None
     c_class_trib: Optional[str] = None
     cst_ibscbs: Optional[str] = None
+    tomador_documento: Optional[str] = None
+    tomador_nome: Optional[str] = None
+    tomador_email: Optional[str] = None
+    tentativas_envio: Optional[int] = 0
+    ultimo_erro_envio: Optional[str] = None
 
 
 class InvoiceResponse(InvoiceBase):
@@ -139,6 +289,8 @@ class DashboardStats(BaseModel):
     valor_total: float
     valor_emitidas: float
     valor_recebidas: float
+    certificados_expirando: int = 0
+    certificados_vencidos: int = 0
 
 
 class ChartPoint(BaseModel):
@@ -266,11 +418,17 @@ class EmitirDpsRequest(BaseModel):
     client_id: Optional[int] = Field(
         None, description="ID do cliente cadastrado no banco (usa o certificado .pfx salvo)"
     )
+    customer_id: Optional[int] = Field(
+        None, description="ID do Tomador recorrente cadastrado no banco (preenche tomador automaticamente)"
+    )
+    service_item_id: Optional[int] = Field(
+        None, description="ID do Serviço recorrente cadastrado no banco (preenche servico automaticamente)"
+    )
     ambiente: str = Field("homologacao", description="homologacao | producao")
     prestador: Optional[Dict[str, Any]] = Field(default_factory=dict)
     tomador: Optional[Dict[str, Any]] = Field(default_factory=dict)
     intermediario: Optional[Dict[str, Any]] = None
-    servico: Dict[str, Any]
+    servico: Dict[str, Any] = Field(default_factory=dict)
     tributacao: Optional[Dict[str, Any]] = None
     substituicao: Optional[Dict[str, Any]] = None
     serie_dps: str = "900"
@@ -280,6 +438,25 @@ class EmitirDpsRequest(BaseModel):
     certificado_pfx_b64: Optional[str] = None
     senha_certificado: Optional[str] = None
     transmitir: bool = True
+    enviar_email: bool = False
+    email_destinatario: Optional[str] = None
+
+
+class ReenviarFilaRequest(BaseModel):
+    client_id: Optional[int] = Field(None, description="Filtrar reenvio apenas para as notas deste cliente")
+    invoice_ids: Optional[List[int]] = Field(None, description="Lista específica de IDs de notas na fila para reenviar")
+
+
+class EnviarEmailNfseRequest(BaseModel):
+    destinatario: Optional[str] = Field(None, description="E-mail do destinatário (usa o e-mail do tomador se omitido)")
+    assunto: Optional[str] = Field(None, description="Assunto personalizado do e-mail")
+    mensagem: Optional[str] = Field(None, description="Mensagem adicional no corpo do e-mail")
+
+
+class SincronizarCofreAdnRequest(BaseModel):
+    client_id: int = Field(..., description="ID do cliente (prestador/tomador) com Certificado A1 configurado")
+    ultimo_nsu: Optional[int] = Field(None, description="NSU inicial (se omitido, usa ultimo_nsu_adn salvo no cliente)")
+    max_paginas: int = Field(5, ge=1, le=50, description="Máximo de lotes de NSU a consultar por chamada")
 
 
 class CancelarNfseRequest(BaseModel):

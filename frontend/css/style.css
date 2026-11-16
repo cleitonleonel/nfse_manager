@@ -11,8 +11,11 @@
 @import './components/modals.css';
 @import './components/dropdowns.css';
 @import './components/utils.css';
+@import './components/custom-select.css';
 
 @import './pages/dashboard.css';
+@import './pages/emission.css';
+@import './pages/auth.css';
  
 /* --- FLATPICKR CUSTOM THEME --- */
 .flatpickr-calendar {

@@ -1,4 +1,6 @@
 <div class="page-content" id="page-dashboard">
+  <!-- BANNER DE ALERTA DE CERTIFICADOS A1 -->
+  <div id="cert-alerts-banner" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:var(--r2); border:1px solid rgba(245,158,11,0.35); background:rgba(245,158,11,0.1); font-size:13px;"></div>
 <div class="metrics">
         <div class="card metric-card">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -56,7 +58,7 @@
       <div class="card" style="margin-bottom: 24px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
           <h3 style="font-weight:600;">Evolução de Emissões</h3>
-          <div style="display:flex; gap:8px; align-items:center;">
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <div class="dropdown">
               <button class="btn btn-secondary btn-sm" onclick="this.nextElementSibling.classList.toggle('show')" style="margin-right: 8px;">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -85,7 +87,7 @@
       </div>
 
       <!-- RANKING SECTION -->
-      <div id="ranking-section" style="display: flex; gap: 24px; margin-bottom: 24px;">
+      <div id="ranking-section">
         <div class="card flex-card" style="flex: 1;">
           <h3 style="font-weight:600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
             <svg viewBox="0 0 24 24" width="18" height="18" style="color:#10b981;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>

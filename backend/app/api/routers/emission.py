@@ -6,12 +6,23 @@ Delega toda a orquestração ao `AdnService`, que utiliza as classes e funções
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import CancelarNfseRequest, EmitirDpsRequest, SubstituirNfseRequest
+from app.schemas import (
+    CancelarNfseRequest,
+    EmitirDpsRequest,
+    EnviarEmailNfseRequest,
+    InvoiceResponse,
+    ReenviarFilaRequest,
+    SincronizarCofreAdnRequest,
+    SubstituirNfseRequest,
+)
 from app.services.adn_service import AdnService
+from app.services.scheduler_service import SchedulerService
 
 router = APIRouter(prefix="/api/adn", tags=["adn", "emission", "events"])
 
@@ -44,3 +55,42 @@ async def substituir_nfse_adn(req: SubstituirNfseRequest, db: Session = Depends(
 async def get_parametros_municipais(cod_ibge: str, ambiente: str = "homologacao"):
     """Consulta parâmetros municipais (convênio e alíquotas) no ADN."""
     return await AdnService.consultar_parametros_municipais(cod_ibge=cod_ibge, ambiente=ambiente)
+
+
+@router.get("/fila", response_model=List[InvoiceResponse])
+def listar_fila_contingencia(
+    client_id: Optional[int] = Query(None, description="Filtrar fila por ID do Prestador"),
+    db: Session = Depends(get_db),
+):
+    """Lista todas as notas na fila de contingência / aguardando transmissão (dps_gerada ou fila_contingencia)."""
+    return AdnService.listar_fila_contingencia(db=db, client_id=client_id)
+
+
+@router.post("/fila/reenviar")
+async def reenviar_fila_contingencia(req: ReenviarFilaRequest, db: Session = Depends(get_db)):
+    """Retransmite para o ADN/Sefin Nacional as DPS pendentes na fila de contingência."""
+    return await AdnService.reenviar_fila_contingencia(db=db, req=req)
+
+
+@router.post("/nfse/{invoice_id}/enviar-email")
+def enviar_nfse_email(invoice_id: int, req: EnviarEmailNfseRequest, db: Session = Depends(get_db)):
+    """Envia o XML e o DANFSe (PDF) da NFS-e para o e-mail do tomador utilizando o SMTP do Prestador."""
+    return AdnService.enviar_email_nfse(db=db, invoice_id=invoice_id, req=req)
+
+
+@router.post("/cofre/sincronizar")
+async def sincronizar_cofre_adn(req: SincronizarCofreAdnRequest, db: Session = Depends(get_db)):
+    """Sincroniza o Cofre de Notas (emitidas e recebidas) diretamente do Ambiente Nacional via Certificado A1 (DistDFe/NSU)."""
+    return await AdnService.sincronizar_cofre_adn(db=db, req=req)
+
+
+@router.get("/worker/status")
+def get_worker_status():
+    """Retorna o status, intervalo e resultado da última execução do Worker Automático da Fila de Contingência."""
+    return SchedulerService.get_status()
+
+
+@router.post("/worker/trigger")
+async def trigger_worker_cycle():
+    """Dispara imediatamente um ciclo do Worker de Retransmissão Automática da Fila de Contingência."""
+    return await SchedulerService.run_fila_retry_cycle()

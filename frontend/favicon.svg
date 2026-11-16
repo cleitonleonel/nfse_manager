@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="nfse-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="nfse-shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#nfse-bg)"/>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#nfse-shine)"/>
+
+  <!-- Camada superior -->
+  <polygon points="32,14 50,23 32,32 14,23" fill="#ffffff"/>
+  <!-- Camada intermediária -->
+  <polyline points="14,32 32,41 50,32" fill="none" stroke="#ffffff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.95"/>
+  <!-- Camada base -->
+  <polyline points="14,41 32,50 50,41" fill="none" stroke="#ffffff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.86"/>
+</svg>

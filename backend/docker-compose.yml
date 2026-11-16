@@ -6,9 +6,20 @@ services:
     container_name: nfse_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://nfse_user:nfse_pass@database:5432/nfse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-nfse_user}:${POSTGRES_PASSWORD:-nfse_pass}@database:5432/${POSTGRES_DB:-nfse_db}
       PYTHONPATH: /workspace/backend
       TZ: America/Sao_Paulo
+      NFSE_ENCRYPTION_KEY: ${NFSE_ENCRYPTION_KEY:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      DEFAULT_SMTP_HOST: ${DEFAULT_SMTP_HOST:-}
+      DEFAULT_SMTP_PORT: ${DEFAULT_SMTP_PORT:-587}
+      DEFAULT_SMTP_USER: ${DEFAULT_SMTP_USER:-}
+      DEFAULT_SMTP_PASSWORD: ${DEFAULT_SMTP_PASSWORD:-}
+      DEFAULT_SMTP_FROM: ${DEFAULT_SMTP_FROM:-}
+      DEFAULT_SMTP_TLS: ${DEFAULT_SMTP_TLS:-1}
+      AUTO_RETRY_FILA_ENABLED: ${AUTO_RETRY_FILA_ENABLED:-1}
+      AUTO_RETRY_FILA_INTERVAL_SECONDS: ${AUTO_RETRY_FILA_INTERVAL_SECONDS:-300}
+      AUTO_RETRY_MAX_TENTATIVAS: ${AUTO_RETRY_MAX_TENTATIVAS:-10}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

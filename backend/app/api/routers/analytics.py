@@ -49,6 +49,19 @@ def get_dashboard_stats(client_id: Optional[int] = None, db: Session = Depends(g
     valor_emitidas = v_base.filter(Invoice.tipo == "emitidas", status_valido).scalar() or 0.0
     valor_recebidas = v_base.filter(Invoice.tipo == "recebidas", status_valido).scalar() or 0.0
 
+    c_query = db.query(Client)
+    if client_id:
+        c_query = c_query.filter(Client.id == client_id)
+    certificados_expirando = 0
+    certificados_vencidos = 0
+    for cli in c_query.all():
+        dias = cli.dias_para_vencer
+        if dias is not None:
+            if dias <= 0:
+                certificados_vencidos += 1
+            elif dias <= 30:
+                certificados_expirando += 1
+
     return {
         "total_notas": total_notas,
         "total_emitidas": total_emitidas,
@@ -58,6 +71,8 @@ def get_dashboard_stats(client_id: Optional[int] = None, db: Session = Depends(g
         "valor_total": valor_total,
         "valor_emitidas": valor_emitidas,
         "valor_recebidas": valor_recebidas,
+        "certificados_expirando": certificados_expirando,
+        "certificados_vencidos": certificados_vencidos,
     }
 
 
@@ -78,7 +93,9 @@ def get_chart_data(period: str = DEFAULT_PERIOD, client_id: Optional[int] = None
             func.date(Invoice.data_emissao).label("dia"),
             func.count(Invoice.id).filter(Invoice.tipo == "emitidas", status_valido).label("emitidas"),
             func.count(Invoice.id).filter(Invoice.tipo == "recebidas", status_valido).label("recebidas"),
-            func.coalesce(func.sum(Invoice.valor).filter(Invoice.tipo == "emitidas", status_valido), 0.0).label("valor"),
+            func.coalesce(func.sum(Invoice.valor).filter(Invoice.tipo == "emitidas", status_valido), 0.0).label(
+                "valor"
+            ),
         )
         .filter(*base_filter)
         .group_by("dia")

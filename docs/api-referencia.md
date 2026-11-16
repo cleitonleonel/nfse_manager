@@ -4,11 +4,19 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 
 ---
 
-## 1. Saúde e Sistema (`/api/health`, `/api/system`, `/api/support`)
+## 1. Saúde, Autenticação JWT e Sistema (`/api/health`, `/api/auth`, `/api/system`, `/api/support`)
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Healthcheck leve (`{"status": "ok", "version": "..."}`) |
+| `GET` | `/api/auth/status` | Indica se já existem operadores cadastrados no banco (`{"has_users": bool, "total_users": int}`) |
+| `POST` | `/api/auth/register` | Cadastra novo operador e retorna token JWT Bearer (o 1º usuário criado recebe `role == "admin"`, demais `"operador"`) |
+| `POST` | `/api/auth/login` | Autentica um operador por `username` ou `email` e retorna token JWT Bearer |
+| `GET` | `/api/auth/me` | Retorna os dados do operador autenticado pelo cabeçalho `Authorization: Bearer <token>` |
+| `POST` | `/api/auth/change-password` | Altera a senha do operador autenticado |
+| `GET` | `/api/auth/users` | Lista todos os operadores cadastrados (restrito a `role == "admin"`) |
+| `POST` | `/api/auth/users` | Cadastra novo operador (restrito a `role == "admin"`) |
+| `DELETE` | `/api/auth/users/{user_id}` | Remove um operador pelo ID (restrito a `role == "admin"`) |
 | `GET` | `/api/system/version` | Retorna a versão atual lida do `pyproject.toml` |
 | `GET` | `/api/system/check-update` | Consulta a última release no GitHub e compara com a versão local |
 | `POST` | `/api/system/update/download` | Baixa o pacote ZIP da release em background para `release/staging/` |
@@ -18,12 +26,13 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 
 ---
 
-## 2. Clientes (`/api/clients`)
+## 2. Clientes e Monitoramento de Certificados A1 (`/api/clients`)
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
-| `GET` | `/api/clients` | Lista todos os clientes cadastrados |
-| `POST` | `/api/clients` | Cria novo cliente via `multipart/form-data` (dados + certificado `.pfx`) |
+| `GET` | `/api/clients` | Lista todos os clientes cadastrados (incluindo `cert_valid_until`, `dias_para_vencer` e `status_certificado`) |
+| `GET` | `/api/clients/certificados/alertas` | Lista certificados A1 vencidos ($\le 0$ dias), expirando ($\le$ `dias_aviso`, padrão `30`) e válidos |
+| `POST` | `/api/clients` | Cria novo cliente via `multipart/form-data` (dados + certificado `.pfx` com extração automática da validade X.509) |
 | `PUT` | `/api/clients/{client_id}` | Atualiza dados cadastrais, fiscais ou certificado do cliente |
 | `DELETE` | `/api/clients/{client_id}` | Remove um cliente pelo ID |
 
@@ -101,15 +110,38 @@ curl -X POST "http://localhost:8000/api/clients" \
 
 ---
 
-## 7. Emissão e Eventos ADN (`/api/adn`)
+## 7. Emissão, Fila de Contingência, E-mail, Cofre ADN e Eventos (`/api/adn`)
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
 | `POST` | `/api/adn/dps/preview` | Gera XML da DPS v1.01, calcula tributos e valida XSD sem transmitir |
-| `POST` | `/api/adn/dps/emitir` | Gera, valida XSD, assina com Certificado A1, salva em disco e transmite ao ADN |
+| `POST` | `/api/adn/dps/emitir` | Gera, valida XSD, assina com Certificado A1, gera PDF DANFSE e transmite ao ADN (aceita `customer_id` e `service_item_id` ou vai para `fila_contingencia` se sem rede) |
+| `GET` | `/api/adn/fila` | Lista notas pendentes na fila de contingência (`dps_gerada` ou `fila_contingencia`) |
+| `POST` | `/api/adn/fila/reenviar` | Retransmite individualmente ou em lote as DPS pendentes na fila |
+| `GET` | `/api/adn/worker/status` | Retorna o estado atual, intervalo e resultado da última execução do worker automático de contingência (`SchedulerService`) |
+| `POST` | `/api/adn/worker/trigger` | Dispara imediatamente um ciclo do worker de retransmissão da fila de contingência |
+| `POST` | `/api/adn/nfse/{invoice_id}/enviar-email` | Envia o XML e o DANFSe (PDF) por e-mail via SMTP do Prestador ou fallback global do sistema (`DEFAULT_SMTP_*`) com `Reply-To` |
+| `POST` | `/api/adn/cofre/sincronizar` | Sincroniza o Cofre de Notas (emitidas e recebidas) diretamente do Ambiente Nacional via Certificado A1 (`DistDFe` por NSU) |
 | `POST` | `/api/adn/nfse/cancelar` | Gera e transmite o evento `e101101` de cancelamento de NFS-e |
 | `POST` | `/api/adn/nfse/substituir` | Emite DPS substituta (`<subst>`) e gera evento `e105102` |
 | `GET` | `/api/adn/parametros-municipais/{cod_ibge}` | Consulta parâmetros municipais no ADN |
+
+---
+
+## 7.1. Cadastros Recorrentes e Consultas CNPJ/CEP (`/api/customers`, `/api/service-items`, `/api/lookup`)
+
+| Método | Rota | Descrição |
+| :--- | :--- | :--- |
+| `GET` | `/api/lookup/cnpj/{cnpj}` | Consulta dados cadastrais, regime tributário (`simples`, `mei`, `normal`) e código IBGE de 7 dígitos pelo CNPJ (aceita 14 caracteres alfanuméricos) |
+| `GET` | `/api/lookup/cep/{cep}` | Consulta logradouro, bairro, UF e código IBGE de 7 dígitos pelo CEP |
+| `GET` | `/api/customers` | Lista tomadores recorrentes (filtra por `client_id` + globais e busca por `q`) |
+| `POST` | `/api/customers` | Cria um tomador recorrente |
+| `PUT` | `/api/customers/{customer_id}` | Atualiza dados de um tomador recorrente |
+| `DELETE` | `/api/customers/{customer_id}` | Remove um tomador recorrente |
+| `GET` | `/api/service-items` | Lista serviços recorrentes (filtra por `client_id` + globais e busca por `q`) |
+| `POST` | `/api/service-items` | Cria um serviço recorrente preenchendo automaticamente `c_nbs`, `c_class_trib`, `cst_ibscbs` e `c_ind_op` pelo Anexo VIII |
+| `PUT` | `/api/service-items/{item_id}` | Atualiza dados de um serviço recorrente |
+| `DELETE` | `/api/service-items/{item_id}` | Remove um serviço recorrente |
 
 ```json title="POST /api/adn/dps/emitir — Exemplo de Payload"
 {

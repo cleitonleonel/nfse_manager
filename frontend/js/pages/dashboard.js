@@ -25,9 +25,33 @@ export async function loadDashboardStats() {
         const pendingEl = document.getElementById('stat-pending-dl');
         if (pendingEl) pendingEl.innerText = `${data.downloads_pendentes || 0} downloads pendentes`;
         
-        await loadRecentInvoices();
+        await Promise.all([loadRecentInvoices(), loadCertificateAlertsBanner()]);
     } catch (e) {
         console.error("Erro dashboard stats:", e);
+    }
+}
+
+export async function loadCertificateAlertsBanner() {
+    const banner = document.getElementById('cert-alerts-banner');
+    if (!banner) return;
+    try {
+        const res = await api('/clients/certificados/alertas?dias_aviso=30');
+        const vencidos = res.vencidos || [];
+        const expirando = res.expirando || [];
+        if (vencidos.length === 0 && expirando.length === 0) {
+            banner.style.display = 'none';
+            return;
+        }
+        const msgs = [];
+        vencidos.forEach(c => msgs.push(`❌ <strong>${c.razao_social}</strong>: Certificado A1 VENCIDO há ${Math.abs(c.dias_para_vencer)} dia(s)`));
+        expirando.forEach(c => msgs.push(`⚠️ <strong>${c.razao_social}</strong>: Certificado A1 vence em <strong>${c.dias_para_vencer} dia(s)</strong>`));
+        banner.style.display = 'block';
+        banner.style.borderColor = vencidos.length > 0 ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)';
+        banner.style.background = vencidos.length > 0 ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)';
+        banner.innerHTML = `<div style="font-weight:700; margin-bottom:4px;">Alerta de Validade de Certificados Digitais A1 (.pfx)</div>` +
+            msgs.map(m => `<div style="font-size:12px; margin-top:2px;">${m}</div>`).join('');
+    } catch (e) {
+        banner.style.display = 'none';
     }
 }
 

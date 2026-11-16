@@ -94,12 +94,14 @@ nfse_manager/
 
 | Router | Prefixo | Descrição |
 | :--- | :--- | :--- |
-| `clients.py` | `/api/clients` | CRUD de clientes, upload de certificado `.pfx` para `backend/certificados/` e parâmetros fiscais ADN. |
+| `auth.py` | `/api/auth` | Autenticação JWT (`HS256`) de operadores, cadastro público com bootstrap do 1º admin (`/register`), perfil (`/me`), troca de senha e gestão de usuários. |
+| `clients.py` | `/api/clients` | CRUD de clientes, SMTP próprio, upload de certificado `.pfx` (com inspeção de validade X.509 e `/certificados/alertas`) e parâmetros fiscais ADN. |
+| `registry.py` | `/api/customers`, `/api/service-items`, `/api/lookup` | CRUD de Tomadores e Serviços Recorrentes (com autocompletar pelo Anexo VIII) e consulta automática de CNPJ/CEP com código IBGE. |
 | `invoices.py` | `/api/sync`, `/api/invoices`, `/api/tasks` | Sincronização em background com o portal nacional, consulta de progresso e listagem filtrada de notas. |
-| `downloads.py` | `/api/download` | Download de XML/PDF do portal, geração local de PDF DANFSE a partir do XML e criação de lotes `.zip` em `backend/downloads/temp/`. |
-| `analytics.py` | `/api/analytics` | Estatísticas do dashboard, gráfico temporal, ranking de clientes e enriquecimento de notas via XML. |
+| `downloads.py` | `/api/download` | Download de XML/PDF do portal, conversão de HTML em XML/PDF e criação de lotes `.zip` em `backend/downloads/temp/`. |
+| `analytics.py` | `/api/analytics` | Estatísticas do dashboard (incluindo alertas de certificados), gráfico temporal, ranking de clientes e enriquecimento de notas via XML. |
 | `reports.py` | `/api/reports` | Exportação de relatórios financeiros em `JSON`, `CSV` e `XLSX`. |
 | `catalogs.py` | `/api/catalogs` | Consulta aos catálogos oficiais (`CST`, `cClassTrib`, `cTribNac`, `LC 116`, `Anexo VIII`, `cIndOp`, `favoritos`). |
 | `tax.py` | `/api/tax` | Cálculo tributário completo (`ISSQN` + Federais + `IBS/CBS`) e validação de regras da `NT 1.101`. |
-| `emission.py` | `/api/adn` | Preview de DPS, emissão assinada mTLS, cancelamento (`e101101`), substituição (`e105102`) e parâmetros municipais. |
+| `emission.py` | `/api/adn` | Preview/emissão de DPS, Fila de Contingência Offline, Worker em Background (`/worker/*`), envio de XML/PDF por e-mail, Cofre ADN por NSU, cancelamento (`e101101`) e substituição (`e105102`). |
 | `system.py` | `/api/system`, `/api/support` | Versão atual, verificação/download/aplicação de updates via GitHub Releases, suporte e navegação de pastas. |

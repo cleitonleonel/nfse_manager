@@ -1,6 +1,9 @@
+import { closeCustomSelects, enhanceSelects } from './custom-select.js';
+
 export async function loadView(pageId) {
     const contentDiv = document.getElementById('app-content');
     if (!contentDiv) return false;
+    closeCustomSelects();
     
     // Simple caching mechanism
     if (!window.viewCache) window.viewCache = {};
@@ -36,6 +39,7 @@ export async function loadView(pageId) {
     }
     
     contentDiv.insertBefore(newPage, footer || null);
+    enhanceSelects(newPage);
     
     // Trigger animation
     setTimeout(() => {
@@ -50,7 +54,7 @@ export async function showPage(pageId) {
     const navItem = document.getElementById(`nav-${pageId}`);
     if (navItem) navItem.classList.add('active');
     
-    const titles = {dashboard: 'Dashboard', clients: 'Clientes', invoices: 'Notas Fiscais', about: 'Sobre o Sistema'};
+    const titles = {dashboard: 'Dashboard', clients: 'Clientes', invoices: 'Notas Fiscais', emission: 'Emissor NFS-e Nacional (ADN)', about: 'Sobre o Sistema'};
     const titleEl = document.getElementById('page-title');
     if (titleEl) titleEl.innerText = titles[pageId] || 'Dashboard';
     
@@ -72,6 +76,9 @@ export async function showPage(pageId) {
          }
          if (pageId === 'about') {
              if (window.App.initAbout) window.App.initAbout();
+         }
+         if (pageId === 'emission') {
+             if (window.App.initEmissionPage) window.App.initEmissionPage();
          }
      }
 }

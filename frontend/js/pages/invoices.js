@@ -91,8 +91,12 @@ function renderInvoiceRow(i, fmt) {
         if (isHtml) {
             files += `<a href="#" onclick="window.App.convertHtmlToXmlAndPdf(${i.id}, this.dataset.path, '${i.status || 'NORMAL'}'); return false;" data-path="${i.pdf_path}" style="color:var(--amber); font-weight:700; font-size:11px; text-decoration:none;" title="Converter HTML em XML e PDF via pynfse">HTML → XML/PDF</a>`;
         } else {
-            files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Download PDF">PDF</a>`;
+            files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:var(--accent); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download PDF">PDF</a>`;
         }
+    }
+    files += `<a href="#" onclick="window.App.sendInvoiceEmailPrompt(${i.id}, '${i.tomador_email || ''}'); return false;" style="color:var(--text2); font-weight:600; font-size:11px; margin-right:8px; text-decoration:none;" title="Enviar XML + PDF por E-mail">E-mail</a>`;
+    if (i.status !== 'cancelada' && i.chave && i.chave.length === 50) {
+        files += `<a href="#" onclick="window.App.cancelInvoicePrompt(${i.id}, '${i.chave}'); return false;" style="color:var(--red); font-weight:600; font-size:11px; text-decoration:none;" title="Cancelar NFS-e no ADN (e101101)">Cancelar</a>`;
     }
     
     const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
@@ -265,6 +269,59 @@ export async function pollTask() {
     } catch (e) {
         console.warn("Poll erro:", e);
         state.currentTask = null;
+    }
+}
+
+export async function syncCofreAdn() {
+    const client_id = state.getGlobalClientId();
+    if (!client_id) return alert("Selecione um cliente com Certificado A1 no topo para sincronizar o Cofre ADN.");
+    try {
+        showTaskToast('Cofre ADN (DistDFe/NSU)', 'Sincronizando notas emitidas e recebidas no Ambiente Nacional...');
+        const res = await api('/adn/cofre/sincronizar', 'POST', {
+            client_id: parseInt(client_id, 10),
+            max_paginas: 5,
+        });
+        await loadInvoices();
+        showTaskToast('Cofre ADN Sincronizado', `${res.novas_notas} nova(s) nota(s), NSU atual: ${res.ultimo_nsu}.`);
+        closeProgressIndicatorsAfterDelay(4000);
+    } catch (e) {
+        alert("Erro ao sincronizar Cofre ADN: " + e.message);
+        closeProgressIndicatorsAfterDelay(2000);
+    }
+}
+
+export async function sendInvoiceEmailPrompt(invoiceId, defaultEmail = '') {
+    const destinatario = prompt("Informe o e-mail do destinatário para envio do XML e DANFSe (PDF):", defaultEmail || "");
+    if (!destinatario) return;
+    try {
+        showTaskToast('Enviando E-mail', `Enviando XML e DANFSe para ${destinatario}...`);
+        const res = await api(`/adn/nfse/${invoiceId}/enviar-email`, 'POST', { destinatario });
+        showTaskToast('E-mail Enviado', `Enviado com sucesso para ${res.destinatario}!`);
+        closeProgressIndicatorsAfterDelay(3000);
+    } catch (e) {
+        alert("Erro ao enviar e-mail: " + e.message);
+        closeProgressIndicatorsAfterDelay(2000);
+    }
+}
+
+export async function cancelInvoicePrompt(invoiceId, chaveNfse) {
+    const motivo = prompt("Informe a justificativa do cancelamento (mínimo 15 caracteres):", "Cancelamento efetuado devido a erro no preenchimento da nota fiscal.");
+    if (!motivo || motivo.trim().length < 15) return;
+    try {
+        showTaskToast('Cancelando NFS-e', 'Gerando e assinando evento e101101...');
+        await api('/adn/nfse/cancelar', 'POST', {
+            invoice_id: invoiceId,
+            chave_nfse: chaveNfse,
+            motivo_codigo: 1,
+            motivo_descricao: motivo.trim(),
+            transmitir: true,
+        });
+        await loadInvoices();
+        showTaskToast('NFS-e Cancelada', 'Evento de cancelamento processado com sucesso.');
+        closeProgressIndicatorsAfterDelay(3000);
+    } catch (e) {
+        alert("Erro ao cancelar NFS-e: " + e.message);
+        closeProgressIndicatorsAfterDelay(2000);
     }
 }
 

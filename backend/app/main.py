@@ -4,6 +4,7 @@ Inicializa a aplicação, registra os routers por domínio e monta a pasta de
 frontend como conteúdo estático.
 """
 
+from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 import sys
@@ -19,6 +20,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from app.models import init_db  # noqa: E402
 from app.api.routers import (  # noqa: E402
+    auth,
     clients,
     invoices,
     downloads,
@@ -28,17 +30,30 @@ from app.api.routers import (  # noqa: E402
     catalogs,
     tax,
     emission,
+    registry,
 )
+from app.services.scheduler_service import SchedulerService  # noqa: E402
 from app.version import VERSION as __PROJECT_VERSION  # noqa: E402
 
 # Initialize database
 init_db()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    SchedulerService.start()
+    try:
+        yield
+    finally:
+        await SchedulerService.stop()
+
 
 # Create FastAPI app
 app = FastAPI(
     title="NFSe Download Manager API",
     description="API para gerenciamento e sincronização de NFSe",
     version=__PROJECT_VERSION,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -53,6 +68,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Register routers
+app.include_router(auth.router)
 app.include_router(clients.router)
 app.include_router(invoices.router)
 app.include_router(downloads.router)
@@ -62,6 +78,7 @@ app.include_router(system.router)
 app.include_router(catalogs.router)
 app.include_router(tax.router)
 app.include_router(emission.router)
+app.include_router(registry.router)
 
 
 @app.get("/api/health", tags=["system"])

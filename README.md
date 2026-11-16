@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/cleitonleonel/nfse_manager">
-    <img src="docs/assets/nfse_manager.png" alt="nfse_manager logo" width="45%" height="auto">
+    <img src="docs/assets/nfse_manager.png" alt="nfse_manager logo" width="140" height="140">
   </a>
 </p>
 
@@ -43,14 +43,23 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
 
 - **Gestão Multi-CNPJ de Clientes**:
   - Cadastro de credenciais do portal, upload de certificado digital A1 (`.pfx`) e senha.
+  - **Monitoramento e Alerta de Vencimento do Certificado A1 (`.pfx`)**: extração automática da data de expiração (`cert_valid_until`) e titular (`cert_subject`) no upload, banner de aviso no Dashboard quando faltar $\le 30$ dias e coluna visual de validade na listagem de clientes (`/api/clients/certificados/alertas`).
   - Configuração de parâmetros fiscais ADN v1.01 (Inscrição Municipal, código IBGE, regime tributário `normal | simples | mei`, regime de apuração SN, série e numeração de DPS, ambiente `homologacao | producao`).
   - Personalização de diretório de saída e máscara dinâmica de pastas (`{CLIENTE}/{TIPO}/{ANO}/{MES}`).
+- **Autenticação JWT de Operadores e CLI Estilo Django (`manage.py`)**:
+  - Utilitário `python manage.py` com comandos `makemigrations`, `migrate`, `showmigrations` e `create_admin` (`createsuperuser`).
+  - Tela inicial obrigatória de Login e Cadastro (`#auth-screen`) com verificação síncrona de sessão (sem flash ao recarregar), bootstrap automático do primeiro administrador via `/api/auth/register`, alternância de tema e suporte aos endpoints `/api/auth/login`, `/api/auth/me`, `/api/auth/users` e `/api/auth/change-password` com hash `PBKDF2-HMAC-SHA256`.
 - **Sincronização e Downloads Inteligentes**:
   - Sincronização assíncrona em background de notas `emitidas` e `recebidas` com barra de progresso em tempo real.
-  - Download individual ou em lote (`.zip`), recuperação automática de arquivos ausentes e **geração local de PDF (DANFSE)** a partir do XML.
-- **Emissão de NFS-e e Eventos no ADN (Sefin Nacional v1.01)**:
-  - Preview e validação XSD de XML da DPS antes do envio.
-  - Assinatura digital A1 (`RSA-SHA256`) e transmissão mTLS para o Ambiente de Dados Nacional (ADN).
+  - **Cofre de Notas ADN (DistDFe / NSU via mTLS)**: sincronização incremental direta com o Ambiente Nacional da NFS-e usando o Certificado A1 (`/api/adn/cofre/sincronizar`).
+  - Download individual ou em lote (`.zip`), recuperação automática de arquivos ausentes, **conversão automática de HTML de impressão em XML SPED** e **geração local de PDF (DANFSE)** a partir do XML.
+- **Emissão de NFS-e, Fila de Contingência, Worker Agendado e Eventos no ADN (Sefin Nacional v1.01)**:
+  - **Cadastros Recorrentes de Tomadores (`/api/customers`) e Serviços (`/api/service-items`)**: emissão rápida em 1 clique com preenchimento automático de `cNBS`, `cClassTrib`, `CST` e `cIndOp` pela matriz do Anexo VIII.
+  - **CNPJ Alfanumérico e Consulta Automática de CNPJ/CEP (`/api/lookup/*`)**: campo exclusivo para CNPJ (numérico ou alfanumérico, com máscara `XX.XXX.XXX/XXXX-XX`) e disparo automático ao completar os 14 caracteres do CNPJ ou 8 dígitos do CEP, preenchendo razão social, endereço e código IBGE de 7 dígitos.
+  - **Seletores Pesquisáveis com Catálogo Oficial Completo**: dropdown customizado (`CustomSelect`, imune ao bug de popup GTK/Linux) com busca sem acentos integrando todos os **338 serviços `cTribNac`** (41 grupos da LC 116), **676 códigos NBS** (com vínculo automático ou listagem completa), **66 `cClassTrib`** aplicáveis à NFS-e e **28 `cIndOp`**.
+  - **Card de Conferência Prévia e Validação XSD**: prévia de impostos e validação `DPS_v1.01.xsd` antes do envio.
+  - **Fila de Contingência Offline (`/api/adn/fila`) e Worker em Background (`/api/adn/worker/*`)**: armazenamento seguro de DPS assinadas quando há queda de conexão/instabilidade na Sefin, com retransmissão manual em lote (`/api/adn/fila/reenviar`) ou automática periódica pelo `SchedulerService`.
+  - **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{id}/enviar-email`)**: disparo via SMTP próprio do Prestador ou fallback global do sistema (`DEFAULT_SMTP_*` no `.env`) com cabeçalho `Reply-To` apontando para o e-mail do cliente.
   - Cancelamento de NFS-e (`e101101`) e Substituição de NFS-e (`<subst>` + evento `e105102`).
   - Consulta de parâmetros municipais (convênio e alíquotas por código IBGE).
 - **Motor Tributário da Reforma Tributária (NT 1.101 / LC 214/2025)**:
@@ -75,7 +84,7 @@ flowchart LR
 
     subgraph Backend["Camada de Aplicação (backend/app)"]
         API["FastAPI (:8000)<br/>app.main:app"]
-        Routers["9 Routers REST<br/>(/api/*)"]
+        Routers["10 Routers REST<br/>(/api/*)"]
         AdnSvc["AdnService<br/>(pynfse.adn)"]
         PortalBot["ClienteNfseNacional<br/>(pynfse)"]
     end
@@ -126,16 +135,23 @@ nfse_manager/
 │   └── 📦 app/                          # Pacote Python principal da aplicação (app)
 │       ├── main.py                      # Entrypoint FastAPI, middlewares, healthcheck e static mount
 │       ├── database.py                  # Engine SQLAlchemy (PostgreSQL) e dependência get_db()
-│       ├── models.py                    # Tabelas SQLAlchemy (Client, Invoice) e init_db()
+│       ├── models.py                    # Tabelas SQLAlchemy (Client, Invoice, Customer, ServiceItem) e init_db()
 │       ├── schemas.py                   # Schemas Pydantic de entrada e saída
 │       ├── version.py                   # Leitura dinâmica da versão a partir do pyproject.toml
+│       ├── core/
+│       │   └── security.py              # Criptografia simétrica autenticada em repouso (AES/Fernet)
 │       ├── services/
-│       │   └── adn_service.py           # Orquestração fiscal ADN / Sefin Nacional v1.01
+│       │   ├── adn_service.py           # Orquestração fiscal ADN / Sefin Nacional v1.01, Fila e Cofre NSU
+│       │   ├── email_service.py         # Envio de XML + DANFSe por e-mail (SMTP por cliente + fallback global)
+│       │   ├── html_xml_service.py      # Conversão de HTML de impressão em XML SPED e PDF DANFSe
+│       │   └── lookup_service.py        # Consulta automática de CNPJ e CEP (BrasilAPI / ViaCEP / ReceitaWS)
 │       └── api/
 │           ├── deps.py                  # Factory de ClienteNfseNacional com paths do backend
 │           ├── state.py                 # Estado em memória (tasks_status) das tarefas em background
-│           └── routers/                 # Rotas modulares por domínio
-│               ├── clients.py           # CRUD de clientes e upload de certificado .pfx
+│           └── routers/                 # 11 routers modulares por domínio
+│               ├── auth.py              # Login/Cadastro JWT, /me, troca de senha e gestão de operadores
+│               ├── clients.py           # CRUD de clientes, SMTP e upload de certificado .pfx
+│               ├── registry.py          # CRUD de Tomadores e Serviços Recorrentes + Lookup CNPJ/CEP
 │               ├── invoices.py          # Sincronização (/api/sync), tasks e listagem de notas
 │               ├── downloads.py         # Download individual, lote ZIP e geração de DANFSE local
 │               ├── analytics.py         # KPIs, série temporal, ranking e enriquecimento XML
@@ -143,28 +159,36 @@ nfse_manager/
 │               ├── system.py            # Versão, auto-update, suporte e navegador de pastas
 │               ├── catalogs.py          # Catálogos CST, cClassTrib, cTribNac, LC 116, Anexo VIII, cIndOp
 │               ├── tax.py               # Cálculo e validação de regras IBS/CBS + ISSQN + Federais
-│               └── emission.py          # Preview/Emissão de DPS, Cancelamento e Substituição ADN
-├── 🎨 frontend/                         # Aplicação Web SPA (independente)
+│               └── emission.py          # Emissão DPS, Fila de Contingência, E-mail, Cofre ADN, Cancelamento e Substituição
+├── 🎨 frontend/                         # Aplicação Web SPA (responsiva com container queries)
 │   ├── Dockerfile                       # Imagem Nginx Alpine do frontend
 │   ├── docker-compose.yml               # Compose dedicado do Frontend
 │   ├── nginx.conf                       # Configuração Nginx (SPA + proxy reverso para /api)
-│   ├── index.html                       # Layout base (sidebar, topbar, modais)
-│   ├── css/                             # Estilos modulares (variables, base, layout, components, pages)
-│   ├── js/                              # Módulos ES6 (main.js, core/*, pages/*)
-│   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, about)
+│   ├── index.html                       # Layout base (tela inicial de login/cadastro, sidebar, topbar, modais)
+│   ├── css/                             # Estilos modulares (variables, base, layout, components/*, pages/{dashboard,emission,auth})
+│   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/*)
+│   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, emission, about)
 ├── 🖥️ ui/                               # Shell Desktop Nativo (Tauri / Rust)
 │   ├── dev.sh                           # Inicia servidor Python + janela Tauri em modo dev
 │   ├── build_sidecar.sh                 # Empacota o backend como binário sidecar via PyInstaller
 │   ├── release.sh                       # Gera pacotes instaláveis (.deb, .AppImage, .msi, .dmg)
 │   └── src-tauri/                       # Código Rust e configurações do Tauri
-├── 📚 docs/                             # Documentação técnica e especificações
+├── 📚 docs/                             # Documentação técnica e especificações (MkDocs Material)
+│   ├── index.md
+│   ├── arquitetura.md / banco-de-dados.md
+│   ├── reforma-tributaria-adn.md / api-referencia.md
 │   ├── arquitetura-e-uso.md             # Manual de arquitetura, banco, fluxos e contratos da API
-│   ├── nt008.pdf / nt008.txt            # Especificação técnica de referência
 │   └── assets/                          # Imagens e logotipos da documentação
-├── 🧪 tests/                            # Suíte de testes automatizados (Pytest)
+├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 45 testes)
 │   ├── conftest.py
-│   ├── test_adn_emission_and_tax.py     # Testes de CRUD fiscal, catálogos, calculadora IBS/CBS e ADN
-│   └── test_versioning_and_updates.py   # Testes de versão, healthcheck, update transacional e CI
+│   ├── test_adn_emission_and_tax.py     # CRUD fiscal, catálogos, calculadora IBS/CBS, ADN, Fila, E-mail e Cofre NSU
+│   ├── test_analytics_and_canceled_invoices.py
+│   ├── test_client_deletion_and_certs.py
+│   ├── test_full_coverage_nfse_manager.py
+│   ├── test_html_to_xml_and_pdf.py
+│   ├── test_manage_auth_worker_and_certs.py # CLI manage.py, JWT Auth/Cadastro, alertas A1, worker e CNPJ alfanumérico
+│   ├── test_security_and_credentials_encryption.py
+│   └── test_versioning_and_updates.py   # Versão, healthcheck, update transacional e CI
 ├── 🛠️ scripts/                          # Scripts de automação e manutenção
 │   ├── sync_version.py                  # Sincroniza a versão do pyproject.toml com arquivos estáticos
 │   └── release.sh                       # Criação automatizada de tags Git e GitHub Releases
@@ -193,9 +217,38 @@ cp .env.example .env
 | `POSTGRES_PASSWORD` | `nfse_pass` | Senha do banco PostgreSQL |
 | `POSTGRES_HOST` | `localhost` (local) / `database` (Docker) | Host do servidor PostgreSQL |
 | `POSTGRES_PORT` | `5434` | Porta exposta pelo container PostgreSQL no host |
-| `DATABASE_URL` | `postgresql+psycopg2://nfse_user:nfse_pass@localhost:5434/nfse_db` | URI completa de conexão SQLAlchemy |
+| `DATABASE_URL` | `postgresql+psycopg2://nfse_user:nfse_pass@localhost:5434/nfse_db` | URI de conexão SQLAlchemy (se apontar para `@database` fora do Docker, converte automaticamente para `@localhost`) |
+| `DB_FALLBACK_SQLITE` | `1` (`true`) | Faz fallback automático para SQLite local (`backend/nfse.db`) quando executado fora do Docker e sem PostgreSQL ativo |
 | `BACKEND_PORT` | `8000` | Porta HTTP exposta pelo container do Backend |
 | `FRONTEND_PORT` | `3000` | Porta HTTP exposta pelo container Nginx do Frontend |
+| `NFSE_ENCRYPTION_KEY` | Derivada automaticamente se omitida | Chave mestra (Fernet/AES) para criptografia em repouso de senhas |
+| `JWT_SECRET_KEY` | Derivada de `NFSE_ENCRYPTION_KEY` se omitida | Chave secreta para assinatura de tokens JWT (`HS256`) dos operadores |
+| `DEFAULT_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` / `FROM` / `TLS` | Vazio (`587`, `TLS=1`) | Servidor SMTP padrão no `.env` (fallback quando o Prestador não tem SMTP próprio) |
+| `AUTO_RETRY_FILA_ENABLED` | `1` (`true`) | Ativa o worker em background para reenvio automático da fila de contingência |
+| `AUTO_RETRY_FILA_INTERVAL_SECONDS` | `300` (5 min) | Intervalo em segundos entre os ciclos do worker de contingência |
+| `AUTO_RETRY_MAX_TENTATIVAS` | `10` | Limite máximo de tentativas automáticas por DPS na fila |
+
+---
+
+## 🛠️ CLI de Migrações e Administração (`manage.py`)
+
+O projeto inclui um utilitário [`manage.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/manage.py) inspirado no Django para gerenciar migrações de banco de dados (`backend/migrations/versions/`) e criar superusuários:
+
+```bash
+# 1. Detectar alterações nos models SQLAlchemy e gerar nova migração numerada
+poetry run python manage.py makemigrations
+
+# 2. Consultar migrações aplicadas [X] e pendentes [ ]
+poetry run python manage.py showmigrations
+
+# 3. Aplicar migrações pendentes no banco de dados
+poetry run python manage.py migrate
+
+# 4. Criar ou atualizar um usuário administrador (interativo ou via flags)
+poetry run python manage.py create_admin
+# ou de forma não-interativa:
+poetry run python manage.py create_admin --username admin --email admin@empresa.com.br --password MinhaSenhaForte
+```
 
 ---
 
@@ -326,11 +379,13 @@ curl -X POST "http://localhost:8000/api/sync" \
   }'
 ```
 
-### 3. Downloads e Lotes (`/api/download`)
+### 3. Downloads, Conversão HTML→XML/PDF e Lotes (`/api/download`)
 
-- `POST /api/download/sync-portal` — Baixa XMLs/PDFs pendentes do portal (ou gera o PDF DANFSE localmente a partir do XML).
-- `GET /api/download/file?path=...` — Entrega um XML ou PDF específico (recuperando do portal caso ausente no disco).
+- `POST /api/download/sync-portal` — Baixa XMLs/PDFs pendentes do portal (ou gera o PDF DANFSE localmente a partir do XML/HTML).
+- `GET /api/download/file?path=...` — Entrega um XML ou PDF específico (recuperando do portal ou convertendo de HTML caso ausente no disco).
 - `POST /api/download/batch` — Empacota uma lista de arquivos em um `.zip` em `backend/downloads/temp/`.
+- `POST /api/download/html-to-xml` — Converte o HTML da visualização de impressão do portal em XML padrão SPED (`<NFSe><infNFSe>...`).
+- `POST /api/download/xml-to-pdf` — Gera o PDF oficial da DANFSe a partir do XML utilizando `DanfseGenerator`.
 
 ### 4. Catálogos Fiscais da Reforma Tributária (`/api/catalogs`)
 
@@ -366,13 +421,24 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
   }'
 ```
 
-### 6. Emissão, Cancelamento e Substituição ADN (`/api/adn`)
+### 6. Emissão, Fila de Contingência, E-mail, Cofre ADN, Cancelamento e Substituição (`/api/adn`)
 
 - `POST /api/adn/dps/preview` — Gera o XML da DPS v1.01 com cálculo tributário integrado e valida contra `DPS_v1.01.xsd`.
-- `POST /api/adn/dps/emitir` — Gera, valida XSD, assina com Certificado A1 (`infDPS`), salva em `backend/downloads/adn/dps/` e transmite via mTLS ao ADN.
+- `POST /api/adn/dps/emitir` — Gera, valida XSD, assina com Certificado A1 (`infDPS`), gera o PDF DANFSE local e transmite via mTLS ao ADN (aceita `customer_id` e `service_item_id` para emissão em 1 clique e salva automaticamente na fila de contingência em caso de falha de rede).
+- `GET /api/adn/fila` — Lista notas pendentes na fila de contingência (`dps_gerada` ou `fila_contingencia`).
+- `POST /api/adn/fila/reenviar` — Retransmite em lote (ou individualmente) as DPS pendentes na fila de contingência.
+- `POST /api/adn/nfse/{invoice_id}/enviar-email` — Envia o XML e o DANFSe (PDF) por e-mail usando o SMTP do Prestador ou o fallback global do sistema (`DEFAULT_SMTP_*`) com `Reply-To` para o cliente.
+- `POST /api/adn/cofre/sincronizar` — Sincroniza notas emitidas e recebidas diretamente do Ambiente Nacional via Certificado A1 por NSU (`DistDFe`).
 - `POST /api/adn/nfse/cancelar` — Gera evento `e101101` (`pedRegEvento`), valida XSD, assina (`infPedReg`) e transmite o cancelamento.
 - `POST /api/adn/nfse/substituir` — Emite DPS substituta (`<subst>`) e gera o evento `e105102`, atualizando o status da nota original para `substituida`.
 - `GET /api/adn/parametros-municipais/{cod_ibge}` — Consulta convênio e alíquotas municipais no ADN.
+
+### 6.1. Cadastros Recorrentes e Consultas Automáticas (`/api/customers`, `/api/service-items`, `/api/lookup`)
+
+- `GET /api/lookup/cnpj/{cnpj}` — Consulta razão social, regime tributário (`simples | mei | normal`), endereço e código IBGE de 7 dígitos.
+- `GET /api/lookup/cep/{cep}` — Consulta logradouro, bairro, UF e código IBGE de 7 dígitos pelo CEP.
+- `GET / POST / PUT / DELETE /api/customers` — CRUD de Tomadores Recorrentes (por cliente ou globais).
+- `GET / POST / PUT / DELETE /api/service-items` — CRUD de Serviços Recorrentes (com preenchimento automático de `c_nbs`, `c_class_trib`, `cst_ibscbs` e `c_ind_op` pela matriz do Anexo VIII).
 
 ### 7. Analytics, Relatórios e Sistema (`/api/analytics`, `/api/reports`, `/api/system`)
 
@@ -390,10 +456,12 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 
 ## 🗄️ Modelo de Dados (PostgreSQL)
 
-O schema é gerenciado via SQLAlchemy em [`backend/app/models.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/models.py) e contém duas tabelas principais:
+O schema é gerenciado via SQLAlchemy em [`backend/app/models.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/models.py) e contém quatro tabelas principais:
 
-- **`clients`**: armazena `id`, `cnpj` (único), `razao_social`, `username`, `password`, `cert_path` (em `backend/certificados/`), `cert_password`, `description`, `save_path`, `path_structure` e os campos fiscais de emissão ADN (`inscricao_municipal`, `codigo_municipio`, `uf`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `telefone`, `email`, `regime_tributario`, `regime_apuracao_sn`, `regime_especial`, `serie_dps_padrao`, `ultimo_numero_dps`, `ambiente_padrao`).
-- **`invoices`**: armazena `id`, `client_id` (FK), `data_emissao`, `numero`, `chave` (única), `status`, `tipo` (`emitidas` / `recebidas`), `valor`, `xml_path`, `pdf_path`, `download_url_xml`, `download_url_pdf` e os metadados ADN/IBS/CBS (`id_dps`, `serie_dps`, `numero_dps`, `chave_substituida`, `chave_substituta`, `motivo_cancelamento`, `data_cancelamento`, `xml_dps_path`, `xml_evento_path`, `valor_iss`, `valor_ibs`, `valor_cbs`, `valor_liquido`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`).
+- **`clients`**: armazena `id`, `cnpj` (único), `razao_social`, `username`, `password` (`EncryptedString`), `cert_path` (em `backend/certificados/`), `cert_password` (`EncryptedString`), `description`, `save_path`, `path_structure`, os campos fiscais de emissão ADN (`inscricao_municipal`, `codigo_municipio`, `uf`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `telefone`, `email`, `regime_tributario`, `regime_apuracao_sn`, `regime_especial`, `serie_dps_padrao`, `ultimo_numero_dps`, `ambiente_padrao`, `ultimo_nsu_adn`) e as configurações de SMTP próprio (`smtp_host`, `smtp_port`, `smtp_user`, `smtp_password` criptografado, `smtp_from`, `smtp_tls`, `enviar_email_automatico`).
+- **`invoices`**: armazena `id`, `client_id` (FK), `data_emissao`, `numero`, `chave` (única), `status` (`gerada`, `dps_gerada`, `fila_contingencia`, `cancelada`, `substituida`), `tipo` (`emitidas` / `recebidas`), `valor`, `xml_path`, `pdf_path`, `download_url_xml`, `download_url_pdf`, metadados ADN/IBS/CBS (`id_dps`, `serie_dps`, `numero_dps`, `chave_substituida`, `chave_substituta`, `motivo_cancelamento`, `data_cancelamento`, `xml_dps_path`, `xml_evento_path`, `valor_iss`, `valor_ibs`, `valor_cbs`, `valor_liquido`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`) e dados de tomador/fila (`tomador_documento`, `tomador_nome`, `tomador_email`, `tentativas_envio`, `ultimo_erro_envio`, `payload_dps_json`).
+- **`customers`**: cadastro recorrente de Tomadores de Serviço (`id`, `client_id` opcional, `documento`, `razao_social`, `inscricao_municipal`, `email`, `telefone`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `codigo_municipio`, `uf`).
+- **`service_items`**: cadastro recorrente de Serviços (`id`, `client_id` opcional, `codigo_interno`, `titulo`, `descricao`, `valor_unitario`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`, `c_ind_op`, `aliquota_iss`, `iss_retido`, `reter_federais`).
 
 ---
 

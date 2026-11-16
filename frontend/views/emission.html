@@ -1,0 +1,349 @@
+<div class="page-content" id="page-emission">
+  <!-- HEADER & TABS -->
+  <div class="card glass emission-header-bar">
+    <div>
+      <h2 style="font-size:19px; font-weight:700; margin:0;">Emissor ADN Nacional v1.01 &amp; Reforma Tributária (IBS/CBS)</h2>
+      <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Emissão em 1 clique com validação XSD oficial, assinatura digital A1, contingência offline e matriz do Anexo VIII</div>
+    </div>
+    <div class="emission-tabs-group">
+      <button class="btn btn-primary btn-sm" id="tab-btn-emitir" onclick="App.switchEmissionTab('emitir')">Nova Emissão (DPS)</button>
+      <button class="btn btn-secondary btn-sm" id="tab-btn-fila" onclick="App.switchEmissionTab('fila')">Fila de Contingência <span id="fila-badge" class="badge" style="margin-left:4px;">0</span></button>
+      <button class="btn btn-secondary btn-sm" id="tab-btn-cadastros" onclick="App.switchEmissionTab('cadastros')">Tomadores &amp; Serviços</button>
+    </div>
+  </div>
+
+  <!-- TAB 1: EMITIR DPS -->
+  <div id="emission-tab-emitir" class="emission-grid">
+    <!-- COLUNA ESQUERDA: FORMULÁRIO COMPLETO -->
+    <div class="emission-form-column">
+      
+      <!-- CARD 1: TOMADOR DO SERVIÇO -->
+      <div class="emission-card">
+        <div class="emission-card-header">
+          <div class="emission-card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            1. Tomador do Serviço
+          </div>
+          <div class="emission-quick-toolbar">
+            <select class="form-input" id="em-customer-select" onchange="App.onSelectSavedCustomer(this.value)">
+              <option value="">-- Selecionar Tomador Salvo --</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="App.saveCurrentCustomerFromEmission()" title="Salvar este tomador para próximas emissões">+ Salvar Tomador</button>
+          </div>
+        </div>
+
+        <!-- Linha 1: Documento, Razão Social, E-mail -->
+        <div class="form-row-3col">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">CNPJ do Tomador</label>
+            <input type="text" class="form-input" id="em-tomador-doc" placeholder="00.000.000/0000-00" maxlength="18" oninput="App.handleEmissionCnpjInput(this)">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Razão Social / Nome</label>
+            <input type="text" class="form-input" id="em-tomador-nome" placeholder="Razão Social ou Nome Completo">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">E-mail para Envio</label>
+            <input type="email" class="form-input" id="em-tomador-email" placeholder="financeiro@empresa.com.br">
+          </div>
+        </div>
+
+        <!-- Linha 2: Endereço (CEP, Logradouro, Número) -->
+        <div class="form-row-address-top">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">CEP</label>
+            <input type="text" class="form-input" id="em-tomador-cep" placeholder="00000-000" maxlength="9" oninput="App.handleEmissionCepInput(this)">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Logradouro (Rua, Av.)</label>
+            <input type="text" class="form-input" id="em-tomador-logradouro" placeholder="Avenida Central">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Nº</label>
+            <input type="text" class="form-input" id="em-tomador-numero" placeholder="100" value="S/N">
+          </div>
+        </div>
+
+        <!-- Linha 3: Endereço (Bairro, Complemento, Cód. IBGE) -->
+        <div class="form-row-address-bottom">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Bairro</label>
+            <input type="text" class="form-input" id="em-tomador-bairro" placeholder="Centro">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Complemento (Opcional)</label>
+            <input type="text" class="form-input" id="em-tomador-complemento" placeholder="Sala 101">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Cód. IBGE Município</label>
+            <input type="text" class="form-input" id="em-tomador-ibge" placeholder="3201308" value="3201308">
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 2: SERVIÇO & CLASSIFICAÇÃO FISCAL -->
+      <div class="emission-card">
+        <div class="emission-card-header">
+          <div class="emission-card-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            2. Serviço Prestado &amp; Classificação Fiscal (LC 116 / Anexo VIII / IBS / CBS)
+          </div>
+          <div class="emission-quick-toolbar">
+            <select class="form-input" id="em-service-select" onchange="App.onSelectSavedService(this.value)">
+              <option value="">-- Selecionar Serviço para Emissão --</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="App.saveCurrentServiceFromEmission()" title="Salvar este serviço como recorrente">+ Salvar Serviço</button>
+          </div>
+        </div>
+
+        <!-- Linha A: Serviço Municipal LC 116 + NBS Anexo VIII -->
+        <div class="form-row-service-top">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">cTribNac (LC 116 - Catálogo Nacional)</label>
+            <select class="form-input" id="em-ctribnac" onchange="App.onChangeCTribNac(this.value)">
+              <option value="010101" selected>010101 — Análise e desenvolvimento de sistemas.</option>
+            </select>
+            <div class="field-hint-badge" id="hint-ctribnac">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span>Subitem 01.01 — Análise e desenvolvimento de sistemas</span>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <label class="form-label" style="margin-bottom:0;">Classificação NBS (Anexo VIII - 9 dígitos)</label>
+              <button type="button" id="btn-show-all-nbs" onclick="App.loadAllNbsOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Carregar todas as 676 nomenclaturas NBS do catálogo oficial">Ver todas as NBS</button>
+            </div>
+            <select class="form-input" id="em-cnbs-select" onchange="App.onSelectNbsOption(this.value)">
+              <option value="115021000">115021000 — Programas não customizados</option>
+            </select>
+            <input type="hidden" id="em-cnbs" value="115021000">
+            <div class="field-hint-badge" id="hint-cnbs">
+              <span>Nomenclatura Brasileira de Serviços (NBS) oficial vinculada ao ADN</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Linha B: Reforma Tributária IBS & CBS (NT 1.101) - 2 colunas amplas -->
+        <div class="form-row-service-reforma">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="color:var(--accent);">cClassTrib (IBS / CBS - 6 dígitos)</label>
+            <select class="form-input" id="em-cclasstrib" onchange="App.onSelectClassTrib(this.value)">
+              <option value="000001" selected>000001 — Situações tributadas integralmente pelo IBS e CBS</option>
+              <option value="000002">000002 — Exploração de via (LC 214/2025, art. 11)</option>
+              <option value="010002">010002 — Operações do serviço financeiro</option>
+              <option value="011001">011001 — Planos de assistência funerária (Red. 60%)</option>
+              <option value="011002">011002 — Planos de assistência à saúde (Red. 60%)</option>
+              <option value="011003">011003 — Intermediação de planos de assistência à saúde (Red. 60%)</option>
+              <option value="011005">011005 — Planos de assistência à saúde de animais domésticos (Red. 30%)</option>
+              <option value="200016">200016 — Serviços de P&amp;D por ICT (Red. 100%)</option>
+              <option value="200021">200021 — Transporte coletivo ferroviário e hidroviário (Red. 100%)</option>
+              <option value="200025">200025 — Serviços de educação Prouni (Red. 60%)</option>
+              <option value="200027">200027 — Locação e arrendamento de bens imóveis (Red. 70%)</option>
+              <option value="200028">200028 — Serviços de educação geral (Red. 60%)</option>
+              <option value="200029">200029 — Serviços de saúde humana (Red. 60%)</option>
+              <option value="200037">200037 — Serviços ambientais de conservação vegetal (Red. 60%)</option>
+              <option value="200038">200038 — Insumos agropecuários e aquícolas (Red. 60%)</option>
+              <option value="200039">200039 — Produções artísticas e culturais nacionais (Red. 60%)</option>
+              <option value="200040">200040 — Comunicação institucional à adm. pública (Red. 60%)</option>
+              <option value="200041">200041 — Serviços de educação desportiva (Red. 60%)</option>
+              <option value="200042">200042 — Formação desportiva e atletas (Red. 60%)</option>
+              <option value="200043">200043 — Serviços relativos à soberania nacional (Red. 60%)</option>
+              <option value="200044">200044 — Segurança da informação e segurança cibernética (Red. 60%)</option>
+              <option value="200045">200045 — Reabilitação urbana de zonas históricas (Red. 60%)</option>
+              <option value="200046">200046 — Operações com bens imóveis (Red. 50%)</option>
+              <option value="200048">200048 — Hotelaria, Parques de Diversão e Temáticos (Red. 40%)</option>
+              <option value="200051">200051 — Agências de Turismo (Red. 40%)</option>
+              <option value="200052">200052 — Profissões regulamentadas e intelectuais (Red. 30%)</option>
+              <option value="400001">400001 — Transporte coletivo rodoviário e metroviário (Isenção)</option>
+            </select>
+            <div class="field-hint-badge" id="hint-cclasstrib">
+              <span>Situações tributadas integralmente pelo IBS e CBS (Regra geral 2026+)</span>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" style="color:var(--accent);">cIndOp (Indicador de Operação / Incidência)</label>
+            <select class="form-input" id="em-cindop" onchange="App.onSelectIndOp(this.value)">
+              <option value="100301" selected>100301 — Domicílio principal do adquirente (Regra Geral Serviços)</option>
+              <option value="030101">030101 — Local da prestação do serviço</option>
+              <option value="010100">010100 — Local da entrega ou disponibilização</option>
+              <option value="020101">020101 — Local do imóvel</option>
+              <option value="040101">040101 — Local do evento</option>
+              <option value="100302">100302 — Domicílio do adquirente no Exterior</option>
+              <option value="100101">100101 — Domicílio do adquirente (Prestação onerosa no País)</option>
+              <option value="100201">100201 — Domicílio do destinatário (Prestação não onerosa no País)</option>
+              <option value="050100">050100 — Local da prestação (Outros serviços)</option>
+              <option value="301001">301001 — Local da prestação (Específico)</option>
+            </select>
+            <div class="field-hint-badge" id="hint-cindop">
+              <span>Define o local do recolhimento do IBS Estadual e Municipal</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Linha C: Discriminação do Serviço -->
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label">Discriminação Detalhada dos Serviços</label>
+          <textarea class="form-input" id="em-descricao" rows="2" placeholder="Descreva detalhadamente o serviço prestado..." oninput="App.recalculateEmissionPreview()">Prestação de serviços técnicos especializados em tecnologia da informação e desenvolvimento de software.</textarea>
+        </div>
+
+        <!-- Linha D: Valores Financeiros e Retenções -->
+        <div class="form-row-financeiro">
+          <div class="form-row-financeiro-inputs">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Valor do Serviço (R$)</label>
+              <input type="number" step="0.01" class="form-input" id="em-valor" value="1500.00" oninput="App.recalculateEmissionPreview()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Alíq. ISS (%)</label>
+              <input type="number" step="0.01" class="form-input" id="em-aliq-iss" value="2.00" oninput="App.recalculateEmissionPreview()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Série DPS</label>
+              <input type="text" class="form-input" id="em-serie" value="900">
+            </div>
+          </div>
+          <div class="form-row-financeiro-checks">
+            <label class="form-check-inline" style="min-height:unset; padding:0;">
+              <input type="checkbox" id="em-iss-retido" onchange="App.recalculateEmissionPreview()">
+              <span>ISS Retido na Fonte (Tomador)</span>
+            </label>
+            <label class="form-check-inline" style="min-height:unset; padding:0;">
+              <input type="checkbox" id="em-reter-federais" onchange="App.recalculateEmissionPreview()">
+              <span>Reter Tributos Federais (PIS / COFINS / CSLL / IRRF)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLUNA DIREITA: CARD DE CONFERÊNCIA PRÉVIA -->
+    <div class="card emission-preview-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="font-size:16px; font-weight:700; margin:0;">Conferência Prévia da Nota</h3>
+        <span id="em-xsd-badge" class="badge" style="background:rgba(34,197,94,0.15); color:var(--green); font-weight:600;">XSD v1.01 OK</span>
+      </div>
+
+      <div style="background:var(--bg3); border-radius:10px; padding:14px; margin-bottom:16px; font-size:12.5px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text3);">Valor Bruto dos Serviços:</span>
+          <strong id="prev-valor-bruto" style="font-family:var(--mono);">R$ 1.500,00</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text3);">ISSQN (<span id="prev-aliq-iss">2.0</span>%):</span>
+          <span id="prev-valor-iss" style="font-family:var(--mono);">R$ 30,00</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text3);">Retenções Federais:</span>
+          <span id="prev-ret-fed" style="font-family:var(--mono);">R$ 0,00</span>
+        </div>
+
+        <div style="border-top:1px dashed var(--border); margin:10px 0; padding-top:10px;">
+          <div style="font-weight:700; color:var(--accent); margin-bottom:6px; font-size:12px;">Reforma Tributária — IBS &amp; CBS (NT 1.101)</div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+            <span style="color:var(--text3);">Base de Cálculo IBS/CBS (vBC):</span>
+            <span id="prev-vbc-ibscbs" style="font-family:var(--mono);">R$ 1.470,00</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+            <span style="color:var(--text3);">IBS Estadual + Municipal:</span>
+            <span id="prev-valor-ibs" style="font-family:var(--mono);">R$ 1,47</span>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span style="color:var(--text3);">CBS Federal:</span>
+            <span id="prev-valor-cbs" style="font-family:var(--mono);">R$ 13,23</span>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--border); margin-top:10px; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:14px; font-weight:700;">Valor Líquido a Receber:</span>
+          <span id="prev-valor-liquido" style="font-size:18px; font-weight:700; color:var(--green); font-family:var(--mono);">R$ 1.500,00</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px; display:flex; flex-direction:column; gap:8px;">
+        <label class="form-check-inline" style="min-height:unset; padding:2px 0;">
+          <input type="checkbox" id="em-transmitir" checked>
+          <span>Transmitir imediatamente ao ADN / Sefin Nacional (mTLS)</span>
+        </label>
+        <label class="form-check-inline" style="min-height:unset; padding:2px 0;">
+          <input type="checkbox" id="em-enviar-email">
+          <span>Enviar XML e DANFSe (PDF) por e-mail ao tomador após autorizar</span>
+        </label>
+      </div>
+
+      <div class="emission-preview-actions">
+        <button class="btn btn-secondary" onclick="App.previewDpsXmlModal()">Ver XML DPS</button>
+        <button class="btn btn-primary" onclick="App.submitEmitirDps()">Emitir NFS-e Agora</button>
+      </div>
+
+      <pre id="em-xml-preview-box" style="display:none; margin-top:14px; max-height:240px; overflow:auto; background:var(--bg4); padding:12px; border-radius:6px; font-size:11px; font-family:var(--mono); white-space:pre-wrap; border:1px solid var(--border);"></pre>
+    </div>
+  </div>
+
+  <!-- TAB 2: FILA DE CONTINGÊNCIA -->
+  <div id="emission-tab-fila" style="display:none;">
+    <div class="card" style="padding:22px;">
+      <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h3 style="font-size:16px; font-weight:700; margin:0;">Fila de Contingência &amp; DPS Pendentes</h3>
+          <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Notas geradas offline ou durante instabilidade da Sefin prontas para retransmissão automática ou manual em lote.</div>
+        </div>
+        <button class="btn btn-primary" onclick="App.reenviarFilaContingencia()">Reenviar Todas as Pendentes</button>
+      </div>
+      <div class="tbl-container">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>ID / DPS</th>
+              <th>Tomador</th>
+              <th>Valor</th>
+              <th>Status</th>
+              <th>Tentativas / Diagnóstico</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="fila-table-body">
+            <!-- JS rendered -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: CADASTROS RECORRENTES (TOMADORES & SERVIÇOS) -->
+  <div id="emission-tab-cadastros" style="display:none;" class="cadastros-recorrentes-grid">
+    <div class="card" style="padding:20px;">
+      <h3 style="font-size:15px; font-weight:700; margin:0 0 14px 0;">Tomadores Recorrentes Cadastrados</h3>
+      <div class="tbl-container">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>CNPJ</th>
+              <th>Razão Social</th>
+              <th>Município IBGE</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="saved-customers-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="padding:20px;">
+      <h3 style="font-size:15px; font-weight:700; margin:0 0 14px 0;">Serviços Recorrentes Cadastrados</h3>
+      <div class="tbl-container">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Título</th>
+              <th>cTribNac / cClassTrib</th>
+              <th>Valor Base</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="saved-services-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
