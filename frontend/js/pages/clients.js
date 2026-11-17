@@ -1,6 +1,6 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { openModal, closeModal } from '../core/ui.js';
+import { openModal, closeModal, uiAlert, uiConfirm, completeTaskToast } from '../core/ui.js';
 
 export async function loadClients() {
     state.clients = await api('/clients');
@@ -60,10 +60,13 @@ export function renderClients() {
         } else if (c.status_certificado === 'valido') {
             certBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:var(--green); margin-left:8px;">✓ A1 (${c.dias_para_vencer}d)</span>`;
         }
+        const smtpBadge = c.smtp_configurado
+            ? `<span class="badge" style="background:rgba(59,130,246,0.15); color:var(--accent); margin-left:6px;">SMTP ✓</span>`
+            : '';
         return `
         <tr>
             <td style="font-family:var(--mono);">${c.cnpj}</td>
-            <td style="font-weight:500;">${c.razao_social}${certBadge}</td>
+            <td style="font-weight:500;">${c.razao_social}${certBadge}${smtpBadge}</td>
             <td style="color:var(--text3);">${c.description || '-'}</td>
             <td>
                 <div style="display:flex; gap:8px;">
@@ -93,6 +96,32 @@ export function editClient(id) {
     document.getElementById('c-pass').value = '';
     document.getElementById('c-save-path').value = c.save_path || '';
     document.getElementById('c-path-structure').value = c.path_structure || '';
+
+    // Campos de E-mail & SMTP do Prestador
+    document.getElementById('c-email').value = c.email || '';
+    document.getElementById('c-smtp-host').value = c.smtp_host || '';
+    document.getElementById('c-smtp-port').value = c.smtp_port ?? 587;
+    document.getElementById('c-smtp-user').value = c.smtp_user || '';
+    document.getElementById('c-smtp-from').value = c.smtp_from || '';
+    const smtpPassEl = document.getElementById('c-smtp-pass');
+    if (smtpPassEl) {
+        smtpPassEl.value = '';
+        delete smtpPassEl.dataset.usingDefault;
+        smtpPassEl.placeholder = c.smtp_configurado
+            ? 'Deixe em branco para manter a senha salva'
+            : 'Senha / App Password SMTP';
+    }
+    const tlsEl = document.getElementById('c-smtp-tls');
+    if (tlsEl) tlsEl.checked = c.smtp_tls !== 0;
+    const autoEl = document.getElementById('c-auto-email');
+    if (autoEl) autoEl.checked = Boolean(c.enviar_email_automatico);
+    const smtpBadge = document.getElementById('c-smtp-status-badge');
+    if (smtpBadge) {
+        smtpBadge.style.display = c.smtp_configurado ? 'inline-block' : 'none';
+        smtpBadge.style.background = 'rgba(16,185,129,0.15)';
+        smtpBadge.style.color = 'var(--green)';
+        smtpBadge.textContent = 'SMTP Configurado ✓';
+    }
     
     // Update modal title
     const title = modal.querySelector('.modal-header h3');
@@ -110,6 +139,31 @@ export async function saveClient() {
     const descricao = document.getElementById('c-desc').value;
     const save_path = document.getElementById('c-save-path').value;
     const path_structure = document.getElementById('c-path-structure').value;
+
+    const appendSmtpAndEmailFields = (formData, isEdit) => {
+        const email = document.getElementById('c-email')?.value || '';
+        const smtpHost = document.getElementById('c-smtp-host')?.value || '';
+        const smtpPort = document.getElementById('c-smtp-port')?.value || '587';
+        const smtpUser = document.getElementById('c-smtp-user')?.value || '';
+        const smtpPass = document.getElementById('c-smtp-pass')?.value || '';
+        const smtpFrom = document.getElementById('c-smtp-from')?.value || '';
+        const smtpTls = document.getElementById('c-smtp-tls')?.checked ?? true;
+        const autoEmail = document.getElementById('c-auto-email')?.checked ?? false;
+        const usingDefault = document.getElementById('c-smtp-pass')?.dataset?.usingDefault === '1';
+
+        formData.append('email', email);
+        formData.append('smtp_host', smtpHost);
+        formData.append('smtp_port', smtpPort || '587');
+        formData.append('smtp_user', smtpUser);
+        if (usingDefault && smtpPass === '') {
+            formData.append('usar_smtp_padrao', 'true');
+        } else if (!isEdit || smtpPass !== '') {
+            formData.append('smtp_password', smtpPass);
+        }
+        formData.append('smtp_from', smtpFrom);
+        formData.append('smtp_tls', smtpTls ? '1' : '0');
+        formData.append('enviar_email_automatico', autoEmail ? '1' : '0');
+    };
     
     try {
         if (editId) {
@@ -118,17 +172,20 @@ export async function saveClient() {
             data.append('description', descricao);
             data.append('save_path', save_path);
             data.append('path_structure', path_structure);
+            appendSmtpAndEmailFields(data, true);
             
             const authType = document.querySelector('input[name="auth_type"]:checked').value;
             if (authType === 'portal') {
                 data.append('username', document.getElementById('c-user').value);
-                data.append('password', document.getElementById('c-pass').value);
+                const portalPass = document.getElementById('c-pass').value;
+                if (portalPass) data.append('password', portalPass);
             } else {
                 const certFile = document.getElementById('c-cert-file').files[0];
                 if (certFile) {
                     data.append('cert_file', certFile);
                 }
-                data.append('cert_password', document.getElementById('c-cert-pass').value);
+                const certPass = document.getElementById('c-cert-pass').value;
+                if (certPass) data.append('cert_password', certPass);
             }
             
             await api(`/clients/${editId}`, 'PUT', data);
@@ -140,6 +197,7 @@ export async function saveClient() {
             data.append('description', descricao);
             data.append('save_path', save_path);
             data.append('path_structure', path_structure);
+            appendSmtpAndEmailFields(data, false);
             
             const authType = document.querySelector('input[name="auth_type"]:checked').value;
             if (authType === 'portal') {
@@ -161,12 +219,29 @@ export async function saveClient() {
             title.innerText = 'Adicionar Novo Cliente';
         }
         
-        ['c-cnpj','c-razao','c-desc','c-user','c-pass','c-cert-pass', 'c-save-path', 'c-path-structure'].forEach(id => {
+        [
+            'c-cnpj', 'c-razao', 'c-desc', 'c-user', 'c-pass', 'c-cert-pass',
+            'c-save-path', 'c-path-structure', 'c-email', 'c-smtp-host',
+            'c-smtp-user', 'c-smtp-pass', 'c-smtp-from'
+        ].forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 el.value = '';
             }
         });
+        const smtpPortEl = document.getElementById('c-smtp-port');
+        if (smtpPortEl) smtpPortEl.value = '587';
+        const smtpTlsEl = document.getElementById('c-smtp-tls');
+        if (smtpTlsEl) smtpTlsEl.checked = true;
+        const autoEmailEl = document.getElementById('c-auto-email');
+        if (autoEmailEl) autoEmailEl.checked = false;
+        const smtpBadge = document.getElementById('c-smtp-status-badge');
+        if (smtpBadge) smtpBadge.style.display = 'none';
+        const smtpPassReset = document.getElementById('c-smtp-pass');
+        if (smtpPassReset) {
+            delete smtpPassReset.dataset.usingDefault;
+            smtpPassReset.placeholder = 'Senha SMTP';
+        }
         const certFile = document.getElementById('c-cert-file');
         if (certFile) {
             certFile.value = '';
@@ -177,13 +252,22 @@ export async function saveClient() {
         }
         
         await loadClients();
+        completeTaskToast('Cliente Salvo', 'Cadastro da empresa atualizado com sucesso.', 3500);
     } catch (e) {
-        alert("Erro ao salvar cliente: " + e.message);
+        await uiAlert({ title: 'Erro ao salvar cliente', message: e.message, variant: 'error' });
     }
 }
 
 export async function deleteClient(id) {
-    if (confirm('Tem certeza que deseja excluir este cliente? Toda a configuração, notas e arquivos físicos (certificados e downloads) serão apagados permanentemente.')) {
+    const confirmed = await uiConfirm({
+        title: 'Excluir Cliente Permanentemente',
+        message: 'Tem certeza que deseja excluir este cliente? Toda a configuração, notas e arquivos físicos (certificados e downloads) serão apagados permanentemente.',
+        confirmText: 'Sim, Excluir Tudo',
+        cancelText: 'Cancelar',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (confirmed) {
         try {
             await api(`/clients/${id}`, 'DELETE');
             
@@ -195,6 +279,7 @@ export async function deleteClient(id) {
             
             // Recarrega lista de clientes na tabela e no dropdown
             await loadClients();
+            completeTaskToast('Cliente Excluído', 'Empresa e registros vinculados removidos.', 3500);
             
             // Atualiza estatísticas, gráficos, ranking e lista de notas em tempo real
             if (window.App) {
@@ -206,7 +291,7 @@ export async function deleteClient(id) {
                 }
             }
         } catch (e) {
-            alert("Erro ao excluir cliente: " + e.message);
+            await uiAlert({ title: 'Erro ao excluir cliente', message: e.message, variant: 'error' });
         }
     }
 }
@@ -295,5 +380,52 @@ export function selectCurrentFolder() {
         const input = document.getElementById('c-save-path');
         if (input) input.value = state.lastExploredPath;
         toggleExplorer();
+    }
+}
+
+export async function usarSmtpPadrao() {
+    try {
+        const res = await api('/clients/smtp/padrao');
+        if (!res.has_env_values && !res.has_password) {
+            await uiAlert({
+                title: 'SMTP padrão não definido',
+                message: 'Nenhuma configuração SMTP padrão foi definida no arquivo .env (DEFAULT_SMTP_HOST / DEFAULT_SMTP_USER / DEFAULT_SMTP_PASSWORD). Preencha manualmente ou configure o .env.',
+                variant: 'warning',
+            });
+            return;
+        }
+
+        if (res.smtp_host) document.getElementById('c-smtp-host').value = res.smtp_host;
+        document.getElementById('c-smtp-port').value = res.smtp_port || 587;
+        if (res.smtp_user) document.getElementById('c-smtp-user').value = res.smtp_user;
+        if (res.smtp_from) document.getElementById('c-smtp-from').value = res.smtp_from;
+        const emailEl = document.getElementById('c-email');
+        if (emailEl && !emailEl.value.trim()) {
+            emailEl.value = res.smtp_from || res.smtp_user || '';
+        }
+        const tlsEl = document.getElementById('c-smtp-tls');
+        if (tlsEl) tlsEl.checked = Boolean(res.smtp_tls);
+
+        const passEl = document.getElementById('c-smtp-pass');
+        if (passEl) {
+            passEl.value = '';
+            if (res.has_password) {
+                passEl.dataset.usingDefault = '1';
+                passEl.placeholder = 'Usando senha padrão do .env ✓ (ou digite outra)';
+            } else {
+                delete passEl.dataset.usingDefault;
+                passEl.placeholder = 'Informe a senha SMTP (DEFAULT_SMTP_PASSWORD vazio)';
+            }
+        }
+
+        const badge = document.getElementById('c-smtp-status-badge');
+        if (badge) {
+            badge.style.display = 'inline-block';
+            badge.style.background = res.configured ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)';
+            badge.style.color = res.configured ? 'var(--green)' : 'var(--amber)';
+            badge.textContent = res.configured ? 'Padrão .env carregado ✓' : 'Parcial (.env sem senha)';
+        }
+    } catch (e) {
+        await uiAlert({ title: 'Erro ao carregar SMTP padrão', message: e.message, variant: 'error' });
     }
 }

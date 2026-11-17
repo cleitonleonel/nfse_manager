@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict
 
-import httpx
+import httpx2 as httpx
 from fastapi import HTTPException
 
 _CNPJ_CACHE: Dict[str, Dict[str, Any]] = {}

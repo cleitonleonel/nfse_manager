@@ -21,6 +21,7 @@ from app.constants import (
 from app.database import get_db
 from app.models import Client, Invoice
 from app.schemas import ClientResponse
+from app.services.email_service import EmailService
 from pynfse.adn import DpsSigner
 
 logger = logging.getLogger(__name__)
@@ -260,6 +261,12 @@ def get_certificate_alerts(
     }
 
 
+@router.get("/smtp/padrao")
+def get_smtp_padrao_env():
+    """Retorna as configurações SMTP padrão carregadas das variáveis de ambiente (sem expor a senha)."""
+    return EmailService.obter_defaults_env()
+
+
 @router.post("", response_model=ClientResponse)
 def create_client(
     cnpj: str = Form(...),
@@ -294,12 +301,24 @@ def create_client(
     smtp_from: Optional[str] = Form(None),
     smtp_tls: Optional[int] = Form(1),
     enviar_email_automatico: Optional[int] = Form(0),
+    usar_smtp_padrao: bool = Form(False),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
     """Criar novo cliente com certificado e dados fiscais opcionais."""
     cert_path = salvar_arquivo_certificado(cert_file, cnpj)
     cert_valid_until, cert_subject = extrair_metadados_certificado_pfx(cert_path, cert_password)
+
+    if usar_smtp_padrao:
+        defaults = EmailService.obter_defaults_env()
+        smtp_host = smtp_host or defaults["smtp_host"] or None
+        smtp_port = smtp_port if smtp_port is not None else defaults["smtp_port"]
+        smtp_user = smtp_user or defaults["smtp_user"] or None
+        smtp_from = smtp_from or defaults["smtp_from"] or None
+        if not smtp_password:
+            smtp_password = EmailService.obter_env_smtp_password() or None
+        if not email and smtp_from:
+            email = smtp_from
 
     db_client = Client(
         cnpj=cnpj,
@@ -410,6 +429,7 @@ def update_client(
     smtp_from: Optional[str] = Form(None),
     smtp_tls: Optional[int] = Form(None),
     enviar_email_automatico: Optional[int] = Form(None),
+    usar_smtp_padrao: bool = Form(False),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
@@ -417,6 +437,17 @@ def update_client(
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Client not found")
+
+    if usar_smtp_padrao:
+        defaults = EmailService.obter_defaults_env()
+        smtp_host = smtp_host or defaults["smtp_host"] or None
+        smtp_port = smtp_port if smtp_port is not None else defaults["smtp_port"]
+        smtp_user = smtp_user or defaults["smtp_user"] or None
+        smtp_from = smtp_from or defaults["smtp_from"] or None
+        if not smtp_password:
+            smtp_password = EmailService.obter_env_smtp_password() or None
+        if not email and smtp_from:
+            email = smtp_from
 
     update_fields = {
         "razao_social": razao_social,
@@ -453,6 +484,8 @@ def update_client(
     }
     for field, value in update_fields.items():
         if value is not None:
+            if field in ("password", "cert_password", "smtp_password") and value == "":
+                continue
             setattr(db_client, field, value)
 
     saved_cert_path = salvar_arquivo_certificado(cert_file, db_client.cnpj)

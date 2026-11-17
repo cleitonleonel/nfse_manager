@@ -1,5 +1,8 @@
+name: nfse_manager
+
 services:
   database:
+    image: nfse_manager-database:latest
     build:
       context: .
       dockerfile: Dockerfile

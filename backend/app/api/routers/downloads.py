@@ -56,6 +56,12 @@ def _path_candidates(path: str) -> List[str]:
         p = Path(c)
         if not p.is_absolute():
             expanded_candidates.append(str(BACKEND_DIR / p))
+        else:
+            parts = p.parts
+            for anchor in ("downloads", "certificados"):
+                if anchor in parts:
+                    idx = parts.index(anchor)
+                    expanded_candidates.append(str(BACKEND_DIR.joinpath(*parts[idx:])))
 
     unique_candidates = []
     for candidate in expanded_candidates:
@@ -252,6 +258,70 @@ def _sincronizar_arquivos_nota_certificado(
             generated_pdf = _gerar_pdf_local(invoice)
             if generated_pdf:
                 invoice.pdf_path = generated_pdf
+
+
+def ensure_invoice_files(db, invoice: Invoice, client_db: Optional[Client] = None) -> None:
+    """Garante XML e PDF reais no disco (convertendo HTML ou baixando do portal sob demanda)."""
+    client_obj = client_db or (
+        db.query(Client).filter(Client.id == invoice.client_id).first() if invoice.client_id else None
+    )
+
+    resolved_xml = _resolve_existing_path(invoice.xml_path) if invoice.xml_path else None
+    if not resolved_xml and invoice.xml_dps_path:
+        resolved_xml = _resolve_existing_path(invoice.xml_dps_path)
+
+    resolved_pdf = (
+        _resolve_existing_path(invoice.pdf_path)
+        if invoice.pdf_path and invoice.pdf_path.lower().endswith(".pdf")
+        else None
+    )
+
+    if invoice.pdf_path and invoice.pdf_path.lower().endswith((".html", ".htm")) and not resolved_xml:
+        resolved_html = _resolve_existing_path(invoice.pdf_path)
+        if resolved_html:
+            xml_conv = _converter_html_para_xml_local(invoice, resolved_html)
+            if xml_conv:
+                resolved_xml = _resolve_existing_path(xml_conv) or xml_conv
+
+    if resolved_xml and not resolved_pdf:
+        invoice.xml_path = resolved_xml
+        generated_pdf = _gerar_pdf_local(invoice)
+        if generated_pdf:
+            invoice.pdf_path = generated_pdf
+            resolved_pdf = generated_pdf
+
+    if resolved_xml and resolved_pdf:
+        invoice.xml_path = invoice.xml_path or resolved_xml
+        invoice.pdf_path = resolved_pdf
+        db.add(invoice)
+        db.commit()
+        return
+
+    # Tenta baixar XML/PDF sob demanda do Portal quando a nota foi apenas sincronizada
+    if client_obj and (invoice.download_url_xml or invoice.download_url_pdf or invoice.chave):
+        old_pdf_path = invoice.pdf_path
+        try:
+            if not resolved_xml:
+                invoice.xml_path = None
+            if not resolved_pdf:
+                invoice.pdf_path = None
+            nfse = get_nfse_client(client_obj)
+            nfse.autenticar()
+            nfse.define_tipo_consulta(invoice.tipo or "emitidas")
+            if _usa_usuario_senha_sem_certificado(nfse, client_obj):
+                _obter_xml_e_pdf_via_html_impressao(nfse, invoice)
+            else:
+                _sincronizar_arquivos_nota_certificado(
+                    nfse,
+                    invoice,
+                    baixar_xml=not bool(resolved_xml),
+                    baixar_pdf=not bool(resolved_pdf),
+                    old_pdf_path=old_pdf_path,
+                )
+            db.add(invoice)
+            db.commit()
+        except Exception as exc:
+            logger.warning("Aviso ao recuperar arquivos sob demanda da nota %s: %s", invoice.id, exc)
 
 
 def _download_invoice_file(db, invoice: Invoice, requested_path: str) -> Optional[str]:

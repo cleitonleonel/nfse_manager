@@ -1,5 +1,5 @@
 import { api } from '../core/api.js';
-import { showTaskToast } from '../core/ui.js';
+import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, uiAlert } from '../core/ui.js';
 import { state } from '../core/state.js';
 
 let updatePollTimer = null;
@@ -58,12 +58,14 @@ async function pollUpdateTask() {
         const pct = res.progress || 0;
         setProgress(pct);
         setText('update-progress-text', res.message || 'Processando atualização...');
+        setTaskProgress(pct, res.message || 'Processando atualização...', 'Baixando Atualização');
 
         if (res.status === 'completed' && res.restart_required) {
             stopUpdatePoll();
             state.updateReady = true;
             setProgress(100);
             setText('update-progress-text', 'Atualização baixada e pronta para aplicação segura.');
+            completeTaskToast('Atualização Pronta', 'Download concluído! Clique em "Reiniciar e aplicar".', 5000);
             showApplyAction();
             setDisplay('btn-apply-update', 'block');
         } else if (res.status === 'failed') {
@@ -71,6 +73,7 @@ async function pollUpdateTask() {
             stopUpdatePoll();
             setProgress(0);
             setText('update-progress-text', `Falha na atualização: ${res.message || 'erro desconhecido'}`);
+            failTaskToast('Falha na Atualização', res.message || 'Erro desconhecido', 6000);
             resetUpdateUi();
             setDisplay('update-status-box', 'flex');
             setText('update-status-text', `Falha na atualização: ${res.message || 'erro desconhecido'}`);
@@ -91,7 +94,7 @@ export async function sendSupportMessage() {
     const message = document.getElementById('sup-msg').value;
     
     if (!email || !message) {
-        alert("Por favor, preencha pelo menos seu e-mail e a mensagem.");
+        await uiAlert({ title: 'Campos obrigatórios', message: 'Por favor, preencha pelo menos seu e-mail e a mensagem.', variant: 'warning' });
         return;
     }
     
@@ -101,10 +104,11 @@ export async function sendSupportMessage() {
     try {
         btn.disabled = true;
         btn.innerText = 'Enviando...';
+        showTaskToast('Enviando Mensagem', 'Encaminhando mensagem ao suporte...', { autoProgress: true });
         
         await api('/support/message', 'POST', { email, whatsapp, message });
         
-        showTaskToast('Sucesso', 'Sua mensagem foi enviada! Obrigado pelo feedback.');
+        completeTaskToast('Mensagem Enviada', 'Sua mensagem foi enviada! Obrigado pelo feedback.', 4500);
         
         // Clear fields
         document.getElementById('sup-email').value = '';
@@ -112,7 +116,8 @@ export async function sendSupportMessage() {
         document.getElementById('sup-msg').value = '';
         
     } catch (e) {
-        alert("Erro ao enviar: " + e.message);
+        failTaskToast('Falha ao Enviar', e.message);
+        await uiAlert({ title: 'Erro ao enviar mensagem', message: e.message, variant: 'error' });
     } finally {
         btn.disabled = false;
         btn.innerText = originalText;
@@ -163,7 +168,7 @@ export async function checkUpdates() {
         if (statusText) {
             statusText.innerText = 'Não foi possível consultar o GitHub agora. Tente novamente em instantes.';
         } else {
-            alert("Erro ao verificar atualizações: " + e.message);
+            await uiAlert({ title: 'Erro ao verificar atualizações', message: e.message, variant: 'error' });
         }
     } finally {
         btn.disabled = false;
@@ -198,9 +203,9 @@ export async function startUpdateDownload() {
             statusText.innerText = 'Baixando atualização em segundo plano...';
         }
         startUpdatePoll();
-        showTaskToast('Atualização Iniciada', 'O download da nova versão começou em segundo plano.');
+        showTaskToast('Atualização Iniciada', 'O download da nova versão começou em segundo plano.', { progress: 5, autoProgress: false });
     } catch (e) {
-        alert('Erro ao iniciar download: ' + e.message);
+        await uiAlert({ title: 'Erro ao iniciar download', message: e.message, variant: 'error' });
         setDisplay('update-status-box', 'flex');
         if (btn) {
             btn.disabled = false;
@@ -213,7 +218,7 @@ export async function applyDownloadedUpdate() {
     const btn = document.getElementById('btn-apply-update');
     try {
         if (!state.updateTask || !state.updateReady) {
-            alert('Nenhuma atualização preparada para aplicar.');
+            await uiAlert({ title: 'Nenhuma atualização pronta', message: 'Nenhuma atualização preparada para aplicar.', variant: 'warning' });
             return;
         }
 
@@ -227,7 +232,7 @@ export async function applyDownloadedUpdate() {
 
         await api('/system/update/apply', 'POST', { task_id: state.updateTask });
         setText('update-status-text', 'Atualização aplicada. O sistema será reiniciado automaticamente.');
-        showTaskToast('Atualização Aplicada', 'O sistema está reiniciando...');
+        completeTaskToast('Atualização Aplicada', 'O sistema está reiniciando...', 4000);
         state.updateReady = false;
 
         // Após o backend reiniciar, o frontend pode recarregar se ainda estiver ativo.
@@ -239,7 +244,7 @@ export async function applyDownloadedUpdate() {
             }
         }, 2500);
     } catch (e) {
-        alert('Falha ao aplicar atualização: ' + e.message);
+        await uiAlert({ title: 'Falha ao aplicar atualização', message: e.message, variant: 'error' });
         setText('update-progress-text', 'Falha ao aplicar a atualização. Nenhum arquivo foi substituído.');
         if (btn) {
             btn.disabled = false;

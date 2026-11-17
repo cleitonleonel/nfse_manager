@@ -12,7 +12,7 @@
 <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
-<link rel="stylesheet" href="css/style.css?v=14">
+<link rel="stylesheet" href="css/style.css?v=16">
 <script>
   if (localStorage.getItem('nfse_token')) {
     document.documentElement.classList.add('auth-checking');
@@ -182,6 +182,54 @@
       <div class="form-group">
         <label class="form-label">Descrição (Opcional)</label>
         <input type="text" class="form-input" id="c-desc">
+      </div>
+
+      <div class="form-group" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+          <label class="form-label" style="margin:0;">E-mail &amp; Servidor SMTP do Prestador (Opcional)</label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="c-smtp-status-badge" class="badge" style="display:none; font-size:11px;"></span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.usarSmtpPadrao()" title="Carrega as configurações definidas no .env (DEFAULT_SMTP_*)">Usar envio padrão</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">E-mail do Prestador (Reply-To)</label>
+            <input type="email" class="form-input" id="c-email" placeholder="fiscal@empresa.com.br">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">E-mail Remetente (SMTP From)</label>
+            <input type="email" class="form-input" id="c-smtp-from" placeholder="Opcional (padrão = usuário SMTP)">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:minmax(0, 2fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Servidor SMTP (Host)</label>
+            <input type="text" class="form-input" id="c-smtp-host" placeholder="Ex.: smtp.gmail.com ou smtp.office365.com">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Porta SMTP</label>
+            <input type="number" class="form-input" id="c-smtp-port" value="587" placeholder="587 ou 465">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Usuário SMTP</label>
+            <input type="text" class="form-input" id="c-smtp-user" placeholder="usuario@dominio.com.br">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Senha / App Password SMTP</label>
+            <input type="password" class="form-input" id="c-smtp-pass" placeholder="Senha SMTP" oninput="delete this.dataset.usingDefault">
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:16px; font-size:12.5px; color:var(--text2);">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="c-smtp-tls" checked> Usar TLS / STARTTLS
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="c-auto-email"> Enviar XML + DANFSe por e-mail automaticamente após emitir
+          </label>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -366,14 +414,20 @@
 </div>
 
 <!-- TASK TOAST -->
-<div class="task-toast" id="task-toast">
-  <div style="display:flex; justify-content:space-between; align-items:start;">
-    <div style="font-weight:600; font-size:13px;" id="task-title">Sincronizando Dados</div>
-    <button class="btn-ghost" style="padding:0; height:auto;" onclick="document.getElementById('task-toast').style.display='none'">&times;</button>
+<div class="task-toast is-loading" id="task-toast" role="status" aria-live="polite">
+  <div class="task-toast-head">
+    <div class="task-toast-title-wrap">
+      <div class="task-toast-icon" id="task-icon" aria-hidden="true"></div>
+      <div class="task-toast-title" id="task-title">Sincronizando Dados</div>
+    </div>
+    <div class="task-toast-meta">
+      <span class="task-toast-pct" id="task-pct">0%</span>
+      <button type="button" class="btn-ghost task-toast-close" aria-label="Fechar notificação" onclick="window.App?.hideTaskToast?.() || (document.getElementById('task-toast').style.display='none')">&times;</button>
+    </div>
   </div>
-  <div style="font-size:12px; color:var(--text2); margin-top:4px;" id="task-msg">Aguarde um momento...</div>
+  <div class="task-toast-msg" id="task-msg">Aguarde um momento...</div>
   <div class="progress-bar">
-    <div class="progress-inner" id="task-progress"></div>
+    <div class="progress-inner is-loading" id="task-progress"></div>
   </div>
 </div>
 

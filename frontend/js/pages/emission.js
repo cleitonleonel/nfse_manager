@@ -1,7 +1,8 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showTaskToast, hideTaskToast, maskCnpj, maskCep, formatCnpj, formatCep } from '../core/ui.js';
+import { showTaskToast, completeTaskToast, failTaskToast, uiAlert, uiConfirm, uiPrompt, maskCnpj, maskCep, formatCnpj, formatCep } from '../core/ui.js';
 import { enhanceSelects } from '../core/custom-select.js';
+import { loadBatchImports } from './batch.js';
 
 let savedCustomers = [];
 let savedServices = [];
@@ -11,7 +12,10 @@ let catalogIndOps = [];
 let catalogCClassTribs = [];
 let allAnexoViiiCorrelacoes = null;
 let currentCorrelacoes = [];
+let currentNbsCombinations = null;
 let showingAllNbs = false;
+let showingAllClassTrib = false;
+let showingAllIndOp = false;
 
 const LC116_GROUP_LABELS = {
     '01': '01 — Informática e Tecnologia da Informação',
@@ -82,7 +86,7 @@ export async function initEmissionPage() {
 }
 
 export function switchEmissionTab(tab) {
-    const tabs = ['emitir', 'fila', 'cadastros'];
+    const tabs = ['emitir', 'lote', 'fila', 'cadastros'];
     tabs.forEach(t => {
         const el = document.getElementById(`emission-tab-${t}`);
         const btn = document.getElementById(`tab-btn-${t}`);
@@ -93,6 +97,10 @@ export function switchEmissionTab(tab) {
             btn.className = t === tab ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
         }
     });
+    if (tab === 'lote') {
+        renderLoteTab();
+        loadBatchImports();
+    }
     if (tab === 'fila') loadFilaContingencia();
     if (tab === 'cadastros') renderSavedRegistriesTables();
 }
@@ -132,34 +140,13 @@ async function loadCatalogOptions() {
         // Preenche select cIndOp com todos os 28 indicadores oficiais
         const indopSel = document.getElementById('em-cindop');
         if (indopSel && catalogIndOps.length > 0) {
-            const currentVal = indopSel.value || '100301';
-            indopSel.innerHTML = catalogIndOps.map(i => {
-                const desc = i.local_incidencia || 'Local de incidência padrão';
-                return `<option value="${i.cIndOp}">${i.cIndOp} — ${escapeHtml(desc)}</option>`;
-            }).join('');
-            indopSel.value = catalogIndOps.some(i => i.cIndOp === currentVal) ? currentVal : '100301';
+            populateIndOpSelect(catalogIndOps, indopSel.value || '100301', false);
         }
 
         // Preenche select cClassTrib com todas as 66 classificações válidas na NFS-e
         const classSel = document.getElementById('em-cclasstrib');
         if (classSel && catalogCClassTribs.length > 0) {
-            const currentVal = classSel.value || '000001';
-            const formatOpt = (c) => {
-                const label = c.nome_reduzido || c.nome || `Classificação ${c.codigo}`;
-                const redText = c.perc_red_ibs > 0 ? ` (Red. ${c.perc_red_ibs}%)` : '';
-                return `<option value="${c.codigo}">${c.codigo} — ${escapeHtml(label)}${redText}</option>`;
-            };
-            const anexo = catalogCClassTribs.filter(c => c.ind_anexo_viii);
-            const outras = catalogCClassTribs.filter(c => !c.ind_anexo_viii);
-            let html = '';
-            if (anexo.length > 0) {
-                html += `<optgroup label="Anexo VIII — NFS-e (${anexo.length})">${anexo.map(formatOpt).join('')}</optgroup>`;
-            }
-            if (outras.length > 0) {
-                html += `<optgroup label="Demais Classificações Aplicáveis à NFS-e (${outras.length})">${outras.map(formatOpt).join('')}</optgroup>`;
-            }
-            classSel.innerHTML = html || catalogCClassTribs.map(formatOpt).join('');
-            classSel.value = catalogCClassTribs.some(c => c.codigo === currentVal) ? currentVal : '000001';
+            populateClassTribSelect(catalogCClassTribs, classSel.value || '000001', false);
         }
     } catch (e) {
         console.warn('Erro ao carregar opções de catálogos:', e);
@@ -223,6 +210,7 @@ export async function loadSavedCustomersAndServices() {
             srvSel.innerHTML = html;
         }
         renderSavedRegistriesTables();
+        renderLoteTab();
     } catch (e) {
         console.warn('Erro ao carregar cadastros recorrentes:', e);
     }
@@ -324,6 +312,87 @@ export function onSelectIndOp(val) {
     recalculateEmissionPreview();
 }
 
+function populateClassTribSelect(list, preferredVal = null, filteredByNbs = false) {
+    const classSel = document.getElementById('em-cclasstrib');
+    if (!classSel || !list || list.length === 0) return;
+
+    const currentVal = preferredVal || classSel.value || '000001';
+    const formatOpt = (c) => {
+        const label = c.nome_reduzido || c.nome || `Classificação ${c.codigo}`;
+        const redText = c.perc_red_ibs > 0 ? ` (Red. ${c.perc_red_ibs}%)` : '';
+        return `<option value="${c.codigo}">${c.codigo} — ${escapeHtml(label)}${redText}</option>`;
+    };
+
+    if (filteredByNbs) {
+        classSel.innerHTML = `<optgroup label="Compatíveis com a NBS selecionada (${list.length})">${list.map(formatOpt).join('')}</optgroup>`;
+    } else {
+        const anexo = list.filter(c => c.ind_anexo_viii);
+        const outras = list.filter(c => !c.ind_anexo_viii);
+        let html = '';
+        if (anexo.length > 0) {
+            html += `<optgroup label="Anexo VIII — NFS-e (${anexo.length})">${anexo.map(formatOpt).join('')}</optgroup>`;
+        }
+        if (outras.length > 0) {
+            html += `<optgroup label="Demais Classificações Aplicáveis à NFS-e (${outras.length})">${outras.map(formatOpt).join('')}</optgroup>`;
+        }
+        classSel.innerHTML = html || list.map(formatOpt).join('');
+    }
+    classSel.value = list.some(c => String(c.codigo) === String(currentVal)) ? String(currentVal) : String(list[0].codigo);
+}
+
+function populateIndOpSelect(list, preferredVal = null, filteredByNbs = false) {
+    const indopSel = document.getElementById('em-cindop');
+    if (!indopSel || !list || list.length === 0) return;
+
+    const currentVal = preferredVal || indopSel.value || '100301';
+    const optsHtml = list.map(i => {
+        const desc = i.local_incidencia || 'Local de incidência padrão';
+        return `<option value="${i.cIndOp}">${i.cIndOp} — ${escapeHtml(desc)}</option>`;
+    }).join('');
+    indopSel.innerHTML = filteredByNbs
+        ? `<optgroup label="Compatíveis com a NBS selecionada (${list.length})">${optsHtml}</optgroup>`
+        : optsHtml;
+    indopSel.value = list.some(i => String(i.cIndOp) === String(currentVal)) ? String(currentVal) : String(list[0].cIndOp);
+}
+
+export function toggleAllClassTribOptions(forceAll = null) {
+    const btn = document.getElementById('btn-show-all-cclasstrib');
+    const wantAll = forceAll !== null ? forceAll : !showingAllClassTrib;
+    const currentVal = document.getElementById('em-cclasstrib')?.value || '000001';
+
+    if (!wantAll && currentNbsCombinations?.cclasstrib_compativeis?.length > 0) {
+        showingAllClassTrib = false;
+        populateClassTribSelect(currentNbsCombinations.cclasstrib_compativeis, currentVal, true);
+        if (btn) btn.textContent = `Ver todas (${catalogCClassTribs.length || 66})`;
+    } else {
+        showingAllClassTrib = true;
+        if (catalogCClassTribs.length > 0) {
+            populateClassTribSelect(catalogCClassTribs, currentVal, false);
+        }
+        if (btn) btn.textContent = 'Filtrar pela NBS';
+    }
+    onSelectClassTrib(document.getElementById('em-cclasstrib')?.value);
+}
+
+export function toggleAllIndOpOptions(forceAll = null) {
+    const btn = document.getElementById('btn-show-all-cindop');
+    const wantAll = forceAll !== null ? forceAll : !showingAllIndOp;
+    const currentVal = document.getElementById('em-cindop')?.value || '100301';
+
+    if (!wantAll && currentNbsCombinations?.cindop_compativeis?.length > 0) {
+        showingAllIndOp = false;
+        populateIndOpSelect(currentNbsCombinations.cindop_compativeis, currentVal, true);
+        if (btn) btn.textContent = `Ver todos (${catalogIndOps.length || 28})`;
+    } else {
+        showingAllIndOp = true;
+        if (catalogIndOps.length > 0) {
+            populateIndOpSelect(catalogIndOps, currentVal, false);
+        }
+        if (btn) btn.textContent = 'Filtrar pela NBS';
+    }
+    onSelectIndOp(document.getElementById('em-cindop')?.value);
+}
+
 function ensureSelectHasOption(selectId, value, label = null) {
     const sel = document.getElementById(selectId);
     if (!sel || !value) return;
@@ -341,7 +410,7 @@ function ensureSelectHasOption(selectId, value, label = null) {
     }
 }
 
-function populateNbsSelectFromCorrelacoes(correlacoes, preferredNbs = null, groupLabel = null) {
+async function populateNbsSelectFromCorrelacoes(correlacoes, preferredNbs = null, groupLabel = null) {
     const nbsSelect = document.getElementById('em-cnbs-select');
     if (!nbsSelect || !correlacoes || correlacoes.length === 0) return false;
 
@@ -367,7 +436,7 @@ function populateNbsSelectFromCorrelacoes(correlacoes, preferredNbs = null, grou
         : Array.from(nbsMap.keys())[0];
 
     nbsSelect.value = chosenNbs;
-    onSelectNbsOption(chosenNbs);
+    await onSelectNbsOption(chosenNbs);
     return true;
 }
 
@@ -392,7 +461,7 @@ export async function loadAllNbsOptions(forceAll = null) {
         showingAllNbs = true;
         currentCorrelacoes = allAnexoViiiCorrelacoes || [];
         const currentNbs = (document.getElementById('em-cnbs-select')?.value || document.getElementById('em-cnbs')?.value || '').replace(/\D/g, '');
-        populateNbsSelectFromCorrelacoes(
+        await populateNbsSelectFromCorrelacoes(
             currentCorrelacoes,
             currentNbs || null,
             'Catálogo Completo NBS — Anexo VIII'
@@ -429,7 +498,7 @@ export async function onChangeCTribNac(cTribNac, preferredNbs = null) {
                 hintCtrib.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg><span>Subitem ${escapeHtml(item)} — ${escapeHtml(desc)}${escapeHtml(issRule)}</span>`;
             }
 
-            if (populateNbsSelectFromCorrelacoes(currentCorrelacoes, preferredNbs)) {
+            if (await populateNbsSelectFromCorrelacoes(currentCorrelacoes, preferredNbs)) {
                 if (hintNbs) {
                     const count = document.getElementById('em-cnbs-select')?.options.length || 0;
                     hintNbs.innerHTML = `<span>${count} nomenclatura(s) NBS oficial(is) vinculada(s) a este cTribNac</span>`;
@@ -450,35 +519,68 @@ export async function onChangeCTribNac(cTribNac, preferredNbs = null) {
     await recalculateEmissionPreview();
 }
 
-export function onSelectNbsOption(nbsCode) {
+export async function onSelectNbsOption(nbsCode) {
     if (!nbsCode) return;
     const cleanNbs = nbsCode.replace(/\D/g, '');
     const nbsHidden = document.getElementById('em-cnbs');
     if (nbsHidden) nbsHidden.value = cleanNbs;
 
-    // Encontra a correlação correspondente no Anexo VIII
+    const ctribVal = (document.getElementById('em-ctribnac')?.value || '').replace(/\D/g, '');
+    showingAllClassTrib = false;
+    showingAllIndOp = false;
+
+    try {
+        const qs = ctribVal ? `?c_trib_nac=${encodeURIComponent(ctribVal)}` : '';
+        currentNbsCombinations = await api(`/catalogs/nbs/${cleanNbs}/combinacoes${qs}`);
+    } catch (_) {
+        currentNbsCombinations = null;
+    }
+
     let corr = currentCorrelacoes.find(c => (c.cNBS || c.c_nbs || c.nbs || '').replace(/\D/g, '') === cleanNbs);
     if (!corr && currentCorrelacoes.length > 0) {
         corr = currentCorrelacoes[0];
     }
 
-    if (corr) {
-        const classVal = corr.cClassTrib || corr.c_class_trib || '000001';
-        const indopVal = corr.indop || corr.c_ind_op || '100301';
-        ensureSelectHasOption('em-cclasstrib', classVal, corr.nome_cClassTrib ? `${classVal} — ${corr.nome_cClassTrib}` : null);
-        ensureSelectHasOption('em-cindop', indopVal, corr.local_incidencia_ibs ? `${indopVal} — ${corr.local_incidencia_ibs}` : null);
+    const defaultClass = corr?.cClassTrib || corr?.c_class_trib || currentNbsCombinations?.cclasstrib_compativeis?.[0]?.codigo || '000001';
+    const defaultIndop = corr?.indop || corr?.c_ind_op || currentNbsCombinations?.cindop_compativeis?.[0]?.cIndOp || '100301';
 
-        // Atualiza textos auxiliares
-        const hintClass = document.getElementById('hint-cclasstrib');
-        if (hintClass && corr.nome_cClassTrib) {
-            hintClass.innerHTML = `<span>${corr.nome_cClassTrib}</span>`;
-        }
-        const hintIndop = document.getElementById('hint-cindop');
-        if (hintIndop && corr.local_incidencia_ibs) {
-            hintIndop.innerHTML = `<span>Incidência: ${corr.local_incidencia_ibs}</span>`;
-        }
+    const btnCt = document.getElementById('btn-show-all-cclasstrib');
+    const btnInd = document.getElementById('btn-show-all-cindop');
+
+    if (currentNbsCombinations?.cclasstrib_compativeis?.length > 0) {
+        populateClassTribSelect(currentNbsCombinations.cclasstrib_compativeis, defaultClass, true);
+        if (btnCt) btnCt.textContent = `Ver todas (${catalogCClassTribs.length || 66})`;
+    } else if (catalogCClassTribs.length > 0) {
+        populateClassTribSelect(catalogCClassTribs, defaultClass, false);
+        if (btnCt) btnCt.textContent = 'Filtrar pela NBS';
     }
-    recalculateEmissionPreview();
+
+    if (currentNbsCombinations?.cindop_compativeis?.length > 0) {
+        populateIndOpSelect(currentNbsCombinations.cindop_compativeis, defaultIndop, true);
+        if (btnInd) btnInd.textContent = `Ver todos (${catalogIndOps.length || 28})`;
+    } else if (catalogIndOps.length > 0) {
+        populateIndOpSelect(catalogIndOps, defaultIndop, false);
+        if (btnInd) btnInd.textContent = 'Filtrar pela NBS';
+    }
+
+    const hintClass = document.getElementById('hint-cclasstrib');
+    if (hintClass) {
+        const qtdCt = currentNbsCombinations?.cclasstrib_compativeis?.length || 0;
+        const nomeCt = corr?.nome_cClassTrib || 'Classificação padrão';
+        hintClass.innerHTML = qtdCt > 0
+            ? `<span>${qtdCt} opção(ões) compatível(is) com NBS ${cleanNbs} · ${escapeHtml(nomeCt)}</span>`
+            : `<span>${escapeHtml(nomeCt)}</span>`;
+    }
+    const hintIndop = document.getElementById('hint-cindop');
+    if (hintIndop) {
+        const qtdInd = currentNbsCombinations?.cindop_compativeis?.length || 0;
+        const localInd = corr?.local_incidencia_ibs || 'Incidência padrão';
+        hintIndop.innerHTML = qtdInd > 0
+            ? `<span>${qtdInd} indicador(es) compatível(is) com NBS ${cleanNbs} · ${escapeHtml(localInd)}</span>`
+            : `<span>Incidência: ${escapeHtml(localInd)}</span>`;
+    }
+
+    await recalculateEmissionPreview();
 }
 
 let lastSearchedCnpj = '';
@@ -522,9 +624,9 @@ export async function lookupEmissionCnpj() {
             if (comp) comp.value = data.complemento;
         }
         if (data.codigo_municipio) document.getElementById('em-tomador-ibge').value = data.codigo_municipio;
-        hideTaskToast();
+        completeTaskToast('CNPJ Consultado', 'Dados do tomador preenchidos.', 2500);
     } catch (e) {
-        hideTaskToast();
+        failTaskToast('Consulta CNPJ', 'Não foi possível consultar o CNPJ automaticamente.', 3000);
         console.warn('Não foi possível consultar o CNPJ:', e);
     }
 }
@@ -545,7 +647,10 @@ export async function lookupEmissionCep() {
 export async function saveCurrentCustomerFromEmission() {
     const documento = document.getElementById('em-tomador-doc')?.value || '';
     const razao_social = document.getElementById('em-tomador-nome')?.value || '';
-    if (!documento || !razao_social) return alert('Preencha CNPJ e Razão Social do tomador antes de salvar.');
+    if (!documento || !razao_social) {
+        await uiAlert({ title: 'Dados incompletos', message: 'Preencha CNPJ e Razão Social do tomador antes de salvar.', variant: 'warning' });
+        return;
+    }
     try {
         const clientId = state.getGlobalClientId();
         await api('/customers', 'POST', {
@@ -561,21 +666,34 @@ export async function saveCurrentCustomerFromEmission() {
             codigo_municipio: document.getElementById('em-tomador-ibge')?.value || '3201308',
         });
         await loadSavedCustomersAndServices();
-        alert('Tomador salvo com sucesso para emissões futuras!');
+        completeTaskToast('Tomador Salvo', 'Tomador salvo com sucesso para emissões futuras!', 3500);
     } catch (e) {
-        alert('Erro ao salvar tomador: ' + e.message);
+        await uiAlert({ title: 'Erro ao salvar tomador', message: e.message, variant: 'error' });
     }
 }
 
 export async function saveCurrentServiceFromEmission() {
     const descricao = document.getElementById('em-descricao')?.value || '';
-    if (!descricao) return alert('Preencha a descrição do serviço antes de salvar.');
-    const titulo = prompt('Informe um título curto para identificar este serviço recorrente:', descricao.slice(0, 45));
+    if (!descricao) {
+        await uiAlert({ title: 'Descrição obrigatória', message: 'Preencha a descrição do serviço antes de salvar.', variant: 'warning' });
+        return;
+    }
+    const titulo = await uiPrompt({
+        title: 'Salvar Serviço Recorrente',
+        subtitle: 'Informe um título curto para identificar facilmente este serviço em futuras emissões.',
+        label: 'Título do serviço recorrente',
+        placeholder: 'Ex: Consultoria mensal em TI',
+        defaultValue: descricao.slice(0, 45),
+        confirmText: 'Salvar Serviço',
+        variant: 'primary',
+        icon: 'bookmark',
+        emptyMessage: 'Informe um título para identificar o serviço.',
+    });
     if (!titulo) return;
     try {
         const clientId = state.getGlobalClientId();
         const nbsVal = document.getElementById('em-cnbs-select')?.value || document.getElementById('em-cnbs')?.value || '115021000';
-        await api('/service-items', 'POST', {
+        const created = await api('/service-items', 'POST', {
             client_id: clientId ? parseInt(clientId, 10) : null,
             titulo,
             descricao,
@@ -589,9 +707,15 @@ export async function saveCurrentServiceFromEmission() {
             reter_federais: document.getElementById('em-reter-federais')?.checked || false,
         });
         await loadSavedCustomersAndServices();
-        alert('Serviço recorrente salvo com sucesso!');
+        const avisos = (created.avisos_fiscais || []).map(a => `• [${a.codigo}] ${a.mensagem}`).join('\n');
+        await uiAlert({
+            title: 'Serviço Recorrente Salvo',
+            message: 'Serviço salvo com sucesso para emissões futuras!',
+            infoBadge: avisos ? `Avisos de compatibilidade NBS:\n${avisos}` : '',
+            variant: avisos ? 'warning' : 'success',
+        });
     } catch (e) {
-        alert('Erro ao salvar serviço: ' + e.message);
+        await uiAlert({ title: 'Erro ao salvar serviço', message: e.message, variant: 'error' });
     }
 }
 
@@ -608,17 +732,47 @@ export async function recalculateEmissionPreview() {
     const reterFed = document.getElementById('em-reter-federais')?.checked || false;
 
     try {
-        const calc = await api('/tax/calculate', 'POST', {
-            valor_servicos: valor,
-            regime_prestador: 'normal',
-            cClassTrib,
-            cIndOp,
-            cTribNac,
-            cNBS,
-            aliquota_iss: aliqIss,
-            iss_retido: issRetido,
-            reter_federais: reterFed,
-        });
+        const [calc, valid] = await Promise.all([
+            api('/tax/calculate', 'POST', {
+                valor_servicos: valor,
+                regime_prestador: 'normal',
+                cClassTrib,
+                cIndOp,
+                cTribNac,
+                cNBS,
+                aliquota_iss: aliqIss,
+                iss_retido: issRetido,
+                reter_federais: reterFed,
+            }),
+            api('/tax/validate-ibscbs', 'POST', {
+                cClassTrib,
+                cIndOp,
+                cTribNac,
+                cNBS,
+            }).catch(() => null),
+        ]);
+
+        const alertBox = document.getElementById('em-tax-compat-alert');
+        if (alertBox && valid) {
+            const errs = valid.erros || [];
+            const avisos = valid.avisos || [];
+            if (errs.length > 0) {
+                alertBox.style.display = 'block';
+                alertBox.style.background = 'var(--red-bg)';
+                alertBox.style.borderColor = 'var(--red)';
+                alertBox.style.color = 'var(--red)';
+                alertBox.innerHTML = errs.map(e => `<strong>[${escapeHtml(e.codigo)}]</strong> ${escapeHtml(e.mensagem)}`).join('<br>');
+            } else if (avisos.length > 0) {
+                alertBox.style.display = 'block';
+                alertBox.style.background = 'rgba(245, 158, 11, 0.12)';
+                alertBox.style.borderColor = 'var(--amber)';
+                alertBox.style.color = 'var(--amber)';
+                alertBox.innerHTML = avisos.map(a => `<strong>[${escapeHtml(a.codigo)}]</strong> ${escapeHtml(a.mensagem)}`).join('<br>');
+            } else {
+                alertBox.style.display = 'none';
+                alertBox.innerHTML = '';
+            }
+        }
 
         document.getElementById('prev-valor-bruto').innerText = fmtBRL(calc.valor_servicos);
         document.getElementById('prev-aliq-iss').innerText = calc.iss?.aliquota || aliqIss;
@@ -691,32 +845,51 @@ export async function previewDpsXmlModal() {
             box.textContent = res.xml_dps || '';
         }
     } catch (e) {
-        alert('Erro ao gerar preview do XML DPS: ' + e.message);
+        await uiAlert({ title: 'Erro ao gerar preview do XML DPS', message: e.message, variant: 'error' });
     }
 }
 
 export async function submitEmitirDps() {
     const clientId = state.getGlobalClientId();
     if (!clientId) {
-        return alert('Selecione a empresa Prestadora no seletor do topo da página antes de emitir.');
+        await uiAlert({ title: 'Empresa não selecionada', message: 'Selecione a empresa Prestadora no seletor do topo da página antes de emitir.', variant: 'warning' });
+        return;
     }
     const transmitir = document.getElementById('em-transmitir')?.checked ?? true;
     try {
-        showTaskToast('Emitindo NFS-e', 'Assinando DPS v1.01, validando XSD e transmitindo ao ADN...');
+        showTaskToast('Emitindo NFS-e', 'Assinando DPS v1.01, validando XSD e transmitindo ao ADN...', { autoProgress: true });
         const payload = buildEmissionRequestPayload(transmitir);
         const res = await api('/adn/dps/emitir', 'POST', payload);
-        hideTaskToast();
+        completeTaskToast('DPS Processada', 'Emissão processada com sucesso!', 4500);
         await loadFilaContingencia();
         if (res.status_nota === 'gerada') {
-            alert(`NFS-e autorizada com sucesso!\nChave: ${res.chave_acesso}`);
+            await uiAlert({
+                title: 'NFS-e Autorizada!',
+                message: 'Nota Fiscal de Serviço eletrônica autorizada com sucesso no ADN.',
+                infoBadge: `Chave: ${res.chave_acesso}`,
+                infoMono: true,
+                variant: 'success',
+            });
         } else if (res.status_nota === 'fila_contingencia') {
-            alert(`Nota validada e salva na Fila de Contingência para envio posterior.\nID DPS: ${res.id_dps}`);
+            await uiAlert({
+                title: 'Salva na Fila de Contingência',
+                message: 'Nota validada e salva na Fila de Contingência para envio posterior.',
+                infoBadge: `ID DPS: ${res.id_dps}`,
+                infoMono: true,
+                variant: 'warning',
+            });
         } else {
-            alert(`DPS gerada e validada contra o XSD v1.01 com sucesso!\nID DPS: ${res.id_dps}`);
+            await uiAlert({
+                title: 'DPS Validada Offline',
+                message: 'DPS gerada e validada contra o XSD v1.01 com sucesso.',
+                infoBadge: `ID DPS: ${res.id_dps}`,
+                infoMono: true,
+                variant: 'success',
+            });
         }
     } catch (e) {
-        hideTaskToast();
-        alert('Erro na emissão da DPS: ' + e.message);
+        failTaskToast('Erro na Emissão', e.message);
+        await uiAlert({ title: 'Erro na emissão da DPS', message: e.message, variant: 'error' });
     }
 }
 
@@ -744,7 +917,10 @@ export async function loadFilaContingencia() {
               <td><span class="status-badge status-${i.status}">${i.status}</span></td>
               <td style="font-size:11.5px; color:var(--text3);">${i.tentativas_envio || 0} tent. — ${i.ultimo_erro_envio || 'Pronta para envio'}</td>
               <td>
-                <button class="btn btn-primary btn-sm" onclick="App.reenviarFilaContingencia([${i.id}])" style="font-size:11px; padding:6px 12px;">Transmitir Agora</button>
+                <div class="table-actions-inline">
+                  <button class="btn btn-primary btn-sm" onclick="App.reenviarFilaContingencia([${i.id}])" style="font-size:11px; padding:6px 12px;">Transmitir Agora</button>
+                  <button class="btn btn-secondary btn-sm btn-action-danger" onclick="App.cancelarItemFila(${i.id})" style="font-size:11px; padding:6px 10px;" title="Cancelar e remover da fila">Cancelar</button>
+                </div>
               </td>
             </tr>
         `).join('');
@@ -756,58 +932,385 @@ export async function loadFilaContingencia() {
 export async function reenviarFilaContingencia(invoiceIds = null) {
     const clientId = state.getGlobalClientId();
     try {
-        showTaskToast('Reenviando Fila', 'Transmitindo DPS pendentes ao ADN Nacional...');
+        showTaskToast('Reenviando Fila', 'Transmitindo DPS pendentes ao ADN Nacional...', { autoProgress: true });
         const res = await api('/adn/fila/reenviar', 'POST', {
             client_id: clientId ? parseInt(clientId, 10) : null,
             invoice_ids: invoiceIds,
         });
-        hideTaskToast();
+        completeTaskToast('Fila Reenviada', `${res.autorizadas} autorizada(s), ${res.falhas} pendente(s).`, 4500);
         await loadFilaContingencia();
-        alert(`Processamento concluído: ${res.autorizadas} autorizada(s), ${res.falhas} pendente(s).`);
     } catch (e) {
-        hideTaskToast();
-        alert('Erro ao reenviar fila: ' + e.message);
+        failTaskToast('Erro ao Reenviar Fila', e.message);
+        await uiAlert({ title: 'Erro ao reenviar fila', message: e.message, variant: 'error' });
+    }
+}
+
+export async function cancelarItemFila(invoiceId) {
+    const confirmed = await uiConfirm({
+        title: 'Cancelar Item da Fila',
+        message: 'Cancelar esta DPS pendente e removê-la da fila de contingência?',
+        confirmText: 'Sim, Cancelar DPS',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+    try {
+        await api(`/adn/fila/${invoiceId}`, 'DELETE');
+        await loadFilaContingencia();
+        await loadBatchImports();
+        completeTaskToast('Item Removido', 'DPS pendente cancelada da fila.', 3000);
+    } catch (e) {
+        await uiAlert({ title: 'Erro ao cancelar item da fila', message: e.message, variant: 'error' });
     }
 }
 
 export function renderSavedRegistriesTables() {
+    const custMaster = document.getElementById('cust-check-all');
+    if (custMaster) custMaster.checked = false;
     const custTbody = document.getElementById('saved-customers-tbody');
     if (custTbody) {
         custTbody.innerHTML = savedCustomers.length === 0
-            ? `<tr><td colspan="4" style="text-align:center; color:var(--text3); padding:16px;">Nenhum tomador cadastrado.</td></tr>`
+            ? `<tr><td colspan="5" style="text-align:center; color:var(--text3); padding:16px;">Nenhum tomador cadastrado.</td></tr>`
             : savedCustomers.map(c => `
                 <tr>
+                  <td><input type="checkbox" class="saved-cust-check" value="${c.id}" onchange="App.updateSavedSelectionCounts()"></td>
                   <td style="font-family:var(--mono); font-size:12px;">${c.documento}</td>
                   <td style="font-weight:500;">${c.razao_social || '-'}</td>
                   <td>${c.codigo_municipio || '-'}</td>
-                  <td><button class="btn-action" onclick="App.deleteSavedCustomer(${c.id})" title="Remover">&times;</button></td>
+                  <td>
+                    <button type="button" class="btn btn-secondary btn-sm btn-action-danger" onclick="App.deleteSavedCustomer(${c.id})" title="Excluir tomador">Excluir</button>
+                  </td>
                 </tr>
             `).join('');
     }
 
+    const srvMaster = document.getElementById('srv-check-all');
+    if (srvMaster) srvMaster.checked = false;
     const srvTbody = document.getElementById('saved-services-tbody');
     if (srvTbody) {
         srvTbody.innerHTML = savedServices.length === 0
-            ? `<tr><td colspan="4" style="text-align:center; color:var(--text3); padding:16px;">Nenhum serviço recorrente cadastrado.</td></tr>`
+            ? `<tr><td colspan="5" style="text-align:center; color:var(--text3); padding:16px;">Nenhum serviço recorrente cadastrado.</td></tr>`
             : savedServices.map(s => `
                 <tr>
+                  <td><input type="checkbox" class="saved-srv-check" value="${s.id}" onchange="App.updateSavedSelectionCounts()"></td>
                   <td style="font-weight:500;">${s.titulo || s.descricao || '-'}</td>
                   <td style="font-family:var(--mono); font-size:12px;">${s.c_trib_nac} / ${s.c_class_trib}</td>
                   <td style="font-weight:600;">${fmtBRL(s.valor_unitario)}</td>
-                  <td><button class="btn-action" onclick="App.deleteSavedService(${s.id})" title="Remover">&times;</button></td>
+                  <td>
+                    <button type="button" class="btn btn-secondary btn-sm btn-action-danger" onclick="App.deleteSavedService(${s.id})" title="Excluir serviço">Excluir</button>
+                  </td>
                 </tr>
             `).join('');
     }
+    updateSavedSelectionCounts();
+}
+
+export function updateSavedSelectionCounts() {
+    const custCount = document.getElementById('cust-selected-count');
+    if (custCount) {
+        custCount.textContent = `${document.querySelectorAll('.saved-cust-check:checked').length} selecionado(s)`;
+    }
+    const srvCount = document.getElementById('srv-selected-count');
+    if (srvCount) {
+        srvCount.textContent = `${document.querySelectorAll('.saved-srv-check:checked').length} selecionado(s)`;
+    }
+}
+
+export function toggleAllSavedCustomers(master) {
+    const checked = Boolean(master?.checked);
+    document.querySelectorAll('.saved-cust-check').forEach(cb => { cb.checked = checked; });
+    updateSavedSelectionCounts();
+}
+
+export function toggleAllSavedServices(master) {
+    const checked = Boolean(master?.checked);
+    document.querySelectorAll('.saved-srv-check').forEach(cb => { cb.checked = checked; });
+    updateSavedSelectionCounts();
 }
 
 export async function deleteSavedCustomer(id) {
-    if (!confirm('Remover este tomador recorrente?')) return;
+    const confirmed = await uiConfirm({
+        title: 'Remover Tomador',
+        message: 'Remover este tomador recorrente do cadastro?',
+        confirmText: 'Remover',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
     await api(`/customers/${id}`, 'DELETE');
     await loadSavedCustomersAndServices();
 }
 
+export async function deleteSelectedSavedCustomers() {
+    const ids = Array.from(document.querySelectorAll('.saved-cust-check:checked')).map(cb => parseInt(cb.value, 10));
+    if (ids.length === 0) {
+        await uiAlert({ title: 'Nenhum tomador selecionado', message: 'Selecione pelo menos um tomador para excluir.', variant: 'warning' });
+        return;
+    }
+    const confirmed = await uiConfirm({
+        title: 'Excluir Tomadores Selecionados',
+        message: `Excluir os ${ids.length} tomador(es) selecionado(s)?`,
+        confirmText: `Excluir ${ids.length}`,
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+    await api('/customers/delete-batch', 'POST', { ids, delete_all: false });
+    await loadSavedCustomersAndServices();
+}
+
+export async function deleteAllSavedCustomers() {
+    if (savedCustomers.length === 0) {
+        await uiAlert({ title: 'Lista vazia', message: 'Não há tomadores cadastrados para excluir.', variant: 'info' });
+        return;
+    }
+    const confirmed = await uiConfirm({
+        title: 'Excluir Todos os Tomadores',
+        message: `Excluir TODOS os ${savedCustomers.length} tomador(es) listados?`,
+        confirmText: 'Excluir Todos',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+    const clientId = state.getGlobalClientId();
+    await api('/customers/delete-batch', 'POST', {
+        client_id: clientId ? parseInt(clientId, 10) : null,
+        delete_all: true,
+    });
+    await loadSavedCustomersAndServices();
+}
+
 export async function deleteSavedService(id) {
-    if (!confirm('Remover este serviço recorrente?')) return;
+    const confirmed = await uiConfirm({
+        title: 'Remover Serviço',
+        message: 'Remover este serviço recorrente do cadastro?',
+        confirmText: 'Remover',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
     await api(`/service-items/${id}`, 'DELETE');
     await loadSavedCustomersAndServices();
+}
+
+export async function deleteSelectedSavedServices() {
+    const ids = Array.from(document.querySelectorAll('.saved-srv-check:checked')).map(cb => parseInt(cb.value, 10));
+    if (ids.length === 0) {
+        await uiAlert({ title: 'Nenhum serviço selecionado', message: 'Selecione pelo menos um serviço para excluir.', variant: 'warning' });
+        return;
+    }
+    const confirmed = await uiConfirm({
+        title: 'Excluir Serviços Selecionados',
+        message: `Excluir os ${ids.length} serviço(s) selecionado(s)?`,
+        confirmText: `Excluir ${ids.length}`,
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+    await api('/service-items/delete-batch', 'POST', { ids, delete_all: false });
+    await loadSavedCustomersAndServices();
+}
+
+export async function deleteAllSavedServices() {
+    if (savedServices.length === 0) {
+        await uiAlert({ title: 'Lista vazia', message: 'Não há serviços cadastrados para excluir.', variant: 'info' });
+        return;
+    }
+    const confirmed = await uiConfirm({
+        title: 'Excluir Todos os Serviços',
+        message: `Excluir TODOS os ${savedServices.length} serviço(s) listado(s)?`,
+        confirmText: 'Excluir Todos',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+    const clientId = state.getGlobalClientId();
+    await api('/service-items/delete-batch', 'POST', {
+        client_id: clientId ? parseInt(clientId, 10) : null,
+        delete_all: true,
+    });
+    await loadSavedCustomersAndServices();
+}
+
+export function renderLoteTab() {
+    const srvSel = document.getElementById('lote-service-select');
+    if (srvSel) {
+        const prev = srvSel.value;
+        let html = `<option value="">-- Selecione um Serviço Cadastrado --</option>`;
+        if (savedServices.length > 0) {
+            html += savedServices.map(s => {
+                const tit = s.titulo || s.descricao || 'Serviço Recorrente';
+                const val = s.valor_unitario > 0 ? ` (${fmtBRL(s.valor_unitario)})` : '';
+                return `<option value="${s.id}">${tit}${val}</option>`;
+            }).join('');
+        }
+        srvSel.innerHTML = html;
+        if (prev && savedServices.some(s => String(s.id) === String(prev))) {
+            srvSel.value = prev;
+        }
+    }
+
+    const compInput = document.getElementById('lote-competencia');
+    if (compInput && !compInput.value) {
+        compInput.value = new Date().toISOString().slice(0, 10);
+    }
+
+    const tbody = document.getElementById('lote-customers-tbody');
+    if (!tbody) return;
+    if (savedCustomers.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text3); padding:16px;">Nenhum tomador cadastrado. Importe uma planilha na aba Cadastros Recorrentes.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = savedCustomers.map(c => `
+        <tr>
+          <td><input type="checkbox" class="lote-customer-check" value="${c.id}"></td>
+          <td style="font-family:var(--mono); font-size:12px;">${c.documento || '-'}</td>
+          <td style="font-weight:500;">${c.razao_social || '-'}</td>
+          <td>${c.email || '-'}</td>
+          <td>
+            <input type="number" step="0.01" min="0" class="form-input lote-valor-custom" data-customer-id="${c.id}" placeholder="Padrão do serviço" style="max-width:160px; padding:6px 10px;">
+          </td>
+        </tr>
+    `).join('');
+}
+
+export function toggleAllLoteCustomers(masterCheckbox) {
+    const checked = Boolean(masterCheckbox?.checked);
+    document.querySelectorAll('.lote-customer-check').forEach(cb => {
+        cb.checked = checked;
+    });
+}
+
+export async function submitEmitirLote() {
+    const clientId = state.getGlobalClientId();
+    if (!clientId) {
+        await uiAlert({ title: 'Empresa não selecionada', message: 'Selecione a empresa Prestadora no seletor do topo da página antes de emitir em lote.', variant: 'warning' });
+        return;
+    }
+    const serviceIdRaw = document.getElementById('lote-service-select')?.value;
+    if (!serviceIdRaw) {
+        await uiAlert({ title: 'Serviço não selecionado', message: 'Selecione um Serviço Recorrente padrão para o lote.', variant: 'warning' });
+        return;
+    }
+    const selectedChecks = Array.from(document.querySelectorAll('.lote-customer-check:checked'));
+    if (selectedChecks.length === 0) {
+        await uiAlert({ title: 'Tomadores não selecionados', message: 'Selecione pelo menos um tomador na lista para emitir em lote.', variant: 'warning' });
+        return;
+    }
+
+    const serviceId = parseInt(serviceIdRaw, 10);
+    const dataCompetencia = document.getElementById('lote-competencia')?.value || null;
+    const valorOverrideRaw = document.getElementById('lote-valor-override')?.value;
+    const transmitir = document.getElementById('lote-transmitir')?.checked ?? true;
+    const enviarEmail = document.getElementById('lote-enviar-email')?.checked ?? false;
+
+    const itens = selectedChecks.map(cb => {
+        const customerId = parseInt(cb.value, 10);
+        const customInput = document.querySelector(`.lote-valor-custom[data-customer-id="${customerId}"]`);
+        const rawValor = customInput?.value || valorOverrideRaw;
+        const item = {
+            customer_id: customerId,
+            service_item_id: serviceId,
+        };
+        if (rawValor && parseFloat(rawValor) > 0) {
+            item.servico = { valor: parseFloat(rawValor) };
+        }
+        return item;
+    });
+
+    try {
+        showTaskToast('Emissão em Lote', `Processando ${itens.length} DPS no padrão ADN v1.01...`, { autoProgress: true });
+        const res = await api('/adn/dps/emitir-lote', 'POST', {
+            client_id: parseInt(clientId, 10),
+            transmitir,
+            enviar_email: enviarEmail,
+            data_competencia: dataCompetencia,
+            itens,
+        });
+        completeTaskToast('Emissão em Lote Concluída', `Autorizadas: ${res.autorizadas} | Contingência: ${res.fila_contingencia} | Erros: ${res.erros}`, 5000);
+        await loadFilaContingencia();
+
+        const resultBox = document.getElementById('lote-result-box');
+        if (resultBox) {
+            const rowsHtml = (res.resultados || []).map(r => `
+                <div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px solid var(--border);">
+                  <span>#${r.indice} (${r.tomador_documento || `Tomador ${r.customer_id || '-'}`})</span>
+                  <span style="font-family:var(--mono); font-size:11.5px;">${r.status_nota} ${r.chave_acesso || r.id_dps || r.erro || ''}</span>
+                </div>
+            `).join('');
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = `
+                <div style="font-weight:700; margin-bottom:8px;">
+                  Lote finalizado — Total: ${res.total} | Autorizadas: ${res.autorizadas} | Fila Contingência: ${res.fila_contingencia} | Offline: ${res.geradas_offline} | Erros: ${res.erros}
+                </div>
+                ${rowsHtml}
+            `;
+        }
+    } catch (e) {
+        failTaskToast('Erro na Emissão em Lote', e.message);
+        await uiAlert({ title: 'Erro ao processar emissão em lote', message: e.message, variant: 'error' });
+    }
+}
+
+export async function downloadImportTemplate(kind, fmt = 'xlsx') {
+    const endpoint = kind === 'customers'
+        ? `/api/customers/import/template?format=${encodeURIComponent(fmt)}`
+        : `/api/service-items/import/template?format=${encodeURIComponent(fmt)}`;
+    const headers = {};
+    const token = localStorage.getItem('nfse_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+        const res = await fetch(endpoint, { headers });
+        if (!res.ok) {
+            throw new Error(await res.text());
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `modelo_${kind === 'customers' ? 'tomadores' : 'servicos'}.${fmt}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        await uiAlert({ title: 'Erro ao baixar modelo', message: e.message, variant: 'error' });
+    }
+}
+
+export async function handleImportSpreadsheet(kind, inputEl) {
+    const file = inputEl?.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('atualizar_existentes', 'true');
+    const clientId = state.getGlobalClientId();
+    if (clientId) {
+        formData.append('client_id', String(clientId));
+    }
+
+    const endpoint = kind === 'customers' ? '/customers/import' : '/service-items/import';
+    const label = kind === 'customers' ? 'Tomadores' : 'Serviços';
+
+    try {
+        showTaskToast(`Importando ${label}`, `Processando arquivo ${file.name}...`, { autoProgress: true });
+        const res = await api(endpoint, 'POST', formData);
+        completeTaskToast(`Importação de ${label} Concluída`, `Criados: ${res.criados} | Atualizados: ${res.atualizados}`, 4500);
+        await loadSavedCustomersAndServices();
+        const errs = (res.erros || []).slice(0, 5).join('\n');
+        await uiAlert({
+            title: `Importação de ${label} Concluída`,
+            message: `Linhas lidas: ${res.total_lidas}\nCriados: ${res.criados}\nAtualizados: ${res.atualizados}\nIgnorados: ${res.ignorados}`,
+            infoBadge: errs ? `Avisos:\n${errs}` : '',
+            variant: errs ? 'warning' : 'success',
+        });
+    } catch (e) {
+        failTaskToast(`Erro ao Importar ${label}`, e.message);
+        await uiAlert({ title: `Erro ao importar planilha de ${label}`, message: e.message, variant: 'error' });
+    } finally {
+        if (inputEl) inputEl.value = '';
+    }
 }

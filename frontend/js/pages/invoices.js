@@ -1,6 +1,6 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showTaskToast, hideTaskToast } from '../core/ui.js';
+import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceStatusBadge } from '../core/ui.js';
 
 let progressCloseTimer = null;
 
@@ -11,13 +11,13 @@ export function triggerDownload(path) {
 
 export async function convertHtmlToXmlAndPdf(invoiceId, htmlPath, status = 'NORMAL') {
     try {
-        showTaskToast('Convertendo HTML', 'Gerando XML a partir do HTML baixado...');
+        showTaskToast('Convertendo HTML', 'Gerando XML a partir do HTML baixado...', { progress: 30, autoProgress: false });
         const resXml = await api('/download/html-to-xml', 'POST', {
             invoice_id: invoiceId || null,
             html_path: htmlPath || null,
         });
 
-        showTaskToast('Gerando PDF (pynfse)', 'Enviando XML gerado para conversão em PDF...');
+        setTaskProgress(70, 'Enviando XML gerado para conversão em PDF...', 'Gerando PDF (pynfse)');
         const resPdf = await api('/download/xml-to-pdf', 'POST', {
             invoice_id: invoiceId || resXml.invoice_id || null,
             xml_content: resXml.xml_content,
@@ -26,13 +26,13 @@ export async function convertHtmlToXmlAndPdf(invoiceId, htmlPath, status = 'NORM
         });
 
         await loadInvoices();
-        closeProgressIndicatorsAfterDelay(3000);
+        completeTaskToast('Conversão Concluída', 'XML e PDF gerados com sucesso!', 3500);
         if (resPdf && resPdf.pdf_path) {
             triggerDownload(resPdf.pdf_path);
         }
     } catch (e) {
-        alert("Erro ao converter HTML em XML/PDF: " + e.message);
-        closeProgressIndicatorsAfterDelay(2000);
+        failTaskToast('Falha na Conversão', e.message);
+        await uiAlert({ title: 'Erro ao converter HTML em XML/PDF', message: e.message, variant: 'error' });
     }
 }
 
@@ -55,12 +55,13 @@ export async function loadInvoices() {
         const fmt = v => new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(v);
         
         if (invoices.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><div class="empty-state-title">Nenhuma nota encontrada</div></div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><div class="empty-state-title">Nenhuma nota encontrada</div></div></td></tr>`;
             return;
         }
         
         tbody.innerHTML = invoices.map(i => renderInvoiceRow(i, fmt)).join('');
         initDatePickers();
+        loadCompetenciaReport();
     } catch (e) {
         console.error("Erro ao carregar notas:", e);
     }
@@ -84,19 +85,21 @@ function initDatePickers() {
 }
 
 function renderInvoiceRow(i, fmt) {
-    let files = '';
-    if (i.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.xml_path}" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download XML">XML</a>`;
-    if (i.pdf_path) {
-        const isHtml = i.pdf_path.toLowerCase().endsWith('.html') || i.pdf_path.toLowerCase().endsWith('.htm');
-        if (isHtml) {
-            files += `<a href="#" onclick="window.App.convertHtmlToXmlAndPdf(${i.id}, this.dataset.path, '${i.status || 'NORMAL'}'); return false;" data-path="${i.pdf_path}" style="color:var(--amber); font-weight:700; font-size:11px; text-decoration:none;" title="Converter HTML em XML e PDF via pynfse">HTML → XML/PDF</a>`;
-        } else {
-            files += `<a href="#" onclick="window.App.triggerDownload(this.dataset.path); return false;" data-path="${i.pdf_path}" style="color:var(--accent); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Download PDF">PDF</a>`;
-        }
-    }
-    files += `<a href="#" onclick="window.App.sendInvoiceEmailPrompt(${i.id}, '${i.tomador_email || ''}'); return false;" style="color:var(--text2); font-weight:600; font-size:11px; margin-right:8px; text-decoration:none;" title="Enviar XML + PDF por E-mail">E-mail</a>`;
+    const files = renderInvoiceFileButtons(i, 'Pendente');
+
+    let actions = `
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.App.sendInvoiceEmailPrompt(${i.id}, this.dataset.email); return false;" data-email="${escapeAttr(i.tomador_email || '')}" title="Enviar XML + PDF por E-mail">
+            <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            E-mail
+        </button>
+    `;
     if (i.status !== 'cancelada' && i.chave && i.chave.length === 50) {
-        files += `<a href="#" onclick="window.App.cancelInvoicePrompt(${i.id}, '${i.chave}'); return false;" style="color:var(--red); font-weight:600; font-size:11px; text-decoration:none;" title="Cancelar NFS-e no ADN (e101101)">Cancelar</a>`;
+        actions += `
+            <button type="button" class="btn btn-secondary btn-sm btn-action-danger" onclick="window.App.cancelInvoicePrompt(${i.id}, this.dataset.chave); return false;" data-chave="${escapeAttr(i.chave)}" title="Cancelar NFS-e no ADN (e101101)">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Cancelar
+            </button>
+        `;
     }
     
     const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
@@ -104,15 +107,16 @@ function renderInvoiceRow(i, fmt) {
     
     return `
         <tr>
-            <td><input type="checkbox" class="row-check" value="${i.id}" data-xml="${i.xml_path}" data-pdf="${i.pdf_path}" data-client-id="${i.client_id}"></td>
+            <td><input type="checkbox" class="row-check" value="${i.id}" data-xml="${escapeAttr(i.xml_path)}" data-pdf="${escapeAttr(i.pdf_path)}" data-client-id="${i.client_id}"></td>
             <td>${dataFmt}</td>
             <td>
                 <div style="font-size:13px; font-weight:600; color:var(--text); font-family:var(--mono); word-break: break-all;">${chaveDisplay}</div>
                 <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${chaveDisplay}</div>
             </td>
             <td style="font-weight:600; color:var(--text);">${fmt(i.valor)}</td>
-            <td><span class="status-badge status-${i.status || 'unknown'}">${i.status || 'desconhecido'}</span></td>
+            <td>${renderInvoiceStatusBadge(i.status)}</td>
             <td>${files}</td>
+            <td><div class="table-actions-inline">${actions}</div></td>
         </tr>
     `;
 }
@@ -134,7 +138,7 @@ export function toggleSelectAll(cb) {
 export async function downloadBatch() {
     const selected = Array.from(document.querySelectorAll('.row-check:checked'));
     if (selected.length === 0) {
-        alert("Selecione pelo menos uma nota.");
+        await uiAlert({ title: 'Nenhuma nota selecionada', message: 'Selecione pelo menos uma nota na lista para baixar.', variant: 'warning' });
         return;
     }
     
@@ -164,7 +168,7 @@ export async function downloadBatch() {
         }
 
         if (!clientId) {
-            alert("Não foi possível identificar o cliente para o download.");
+            await uiAlert({ title: 'Empresa não identificada', message: 'Não foi possível identificar o cliente para o download.', variant: 'warning' });
             return;
         }
 
@@ -178,15 +182,15 @@ export async function downloadBatch() {
             });
             state.currentTask = res.task_id;
             document.getElementById('sync-indicator').style.display = 'flex';
-            showTaskToast('Download Iniciado', 'Buscando arquivos no portal da NFSe...');
+            showTaskToast('Download Iniciado', 'Buscando arquivos no portal da NFSe...', { progress: 5, autoProgress: false });
         } catch (e) {
-            alert("Erro ao iniciar download: " + e.message);
+            await uiAlert({ title: 'Erro ao iniciar download', message: e.message, variant: 'error' });
         }
         return;
     }
     
     if (paths.length === 0) {
-        alert("Nenhum arquivo disponível para as notas selecionadas no momento.");
+        await uiAlert({ title: 'Arquivos indisponíveis', message: 'Nenhum arquivo disponível para as notas selecionadas no momento.', variant: 'info' });
         return;
     }
 
@@ -199,10 +203,13 @@ export async function downloadBatch() {
     }
     
     try {
+        showTaskToast('Compactando Lote', 'Gerando arquivo ZIP com os documentos selecionados...', { autoProgress: true });
         const res = await api('/download/batch', 'POST', {arquivos: paths});
+        completeTaskToast('Lote Pronto', 'Download do arquivo ZIP iniciado.', 3500);
         triggerDownload(res.zip_path);
     } catch (e) {
-        alert("Erro ao gerar lote: " + e.message);
+        failTaskToast('Erro ao Gerar Lote', e.message);
+        await uiAlert({ title: 'Erro ao gerar lote', message: e.message, variant: 'error' });
     }
 }
 
@@ -212,7 +219,10 @@ export async function startSync() {
     const tipo = document.getElementById('filter-type').value;
     const client_id = state.getGlobalClientId();
     
-    if (!client_id) return alert("Selecione um cliente no topo.");
+    if (!client_id) {
+        await uiAlert({ title: 'Selecione uma empresa', message: 'Selecione um cliente no seletor do topo da página antes de sincronizar.', variant: 'warning' });
+        return;
+    }
     
     const payload = { data_inicio, data_fim, tipo, client_id };
     
@@ -220,9 +230,9 @@ export async function startSync() {
         const res = await api('/sync', 'POST', payload);
         state.currentTask = res.task_id;
         document.getElementById('sync-indicator').style.display = 'flex';
-        showTaskToast('Sincronização Iniciada', 'As notas estão sendo buscadas no portal...');
+        showTaskToast('Sincronização Iniciada', 'As notas estão sendo buscadas no portal...', { progress: 5, autoProgress: false });
     } catch (e) {
-        alert("Erro ao iniciar: " + e.message);
+        await uiAlert({ title: 'Erro ao iniciar sincronização', message: e.message, variant: 'error' });
     }
 }
 
@@ -247,24 +257,17 @@ export async function pollTask() {
         const res = await api(`/tasks/${state.currentTask}`);
         const pct = res.progress || 0;
         
-        const bar = document.getElementById('task-progress');
-        const msg = document.getElementById('task-msg');
-        
-        if (bar) bar.style.width = pct + '%';
-        if (msg) msg.innerText = res.message || 'Processando...';
+        setTaskProgress(pct, res.message || 'Processando...');
         
         if (res.status === 'completed') {
             state.currentTask = null;
-            if (msg) msg.innerText = 'Concluído com sucesso!';
+            completeTaskToast('Sincronização Concluída', res.message || 'Concluído com sucesso!', 5000);
             closeProgressIndicatorsAfterDelay(5000);
             setTimeout(() => loadInvoices(), 1000);
         } else if (res.status === 'failed') {
             state.currentTask = null;
-            if (msg) {
-                msg.style.color = 'var(--red)';
-                msg.innerText = 'Falha: ' + (res.message || 'Erro desconhecido');
-            }
-            closeProgressIndicatorsAfterDelay(5000);
+            failTaskToast('Falha na Tarefa', res.message || 'Erro desconhecido', 6000);
+            closeProgressIndicatorsAfterDelay(6000);
         }
     } catch (e) {
         console.warn("Poll erro:", e);
@@ -274,41 +277,78 @@ export async function pollTask() {
 
 export async function syncCofreAdn() {
     const client_id = state.getGlobalClientId();
-    if (!client_id) return alert("Selecione um cliente com Certificado A1 no topo para sincronizar o Cofre ADN.");
+    if (!client_id) {
+        await uiAlert({ title: 'Cliente não selecionado', message: 'Selecione um cliente com Certificado A1 no topo para sincronizar o Cofre ADN.', variant: 'warning' });
+        return;
+    }
     try {
-        showTaskToast('Cofre ADN (DistDFe/NSU)', 'Sincronizando notas emitidas e recebidas no Ambiente Nacional...');
+        showTaskToast('Cofre ADN (DistDFe/NSU)', 'Sincronizando notas emitidas e recebidas no Ambiente Nacional...', { autoProgress: true });
         const res = await api('/adn/cofre/sincronizar', 'POST', {
             client_id: parseInt(client_id, 10),
             max_paginas: 5,
         });
         await loadInvoices();
-        showTaskToast('Cofre ADN Sincronizado', `${res.novas_notas} nova(s) nota(s), NSU atual: ${res.ultimo_nsu}.`);
-        closeProgressIndicatorsAfterDelay(4000);
+        completeTaskToast('Cofre ADN Sincronizado', `${res.novas_notas} nova(s) nota(s), NSU atual: ${res.ultimo_nsu}.`, 4500);
     } catch (e) {
-        alert("Erro ao sincronizar Cofre ADN: " + e.message);
-        closeProgressIndicatorsAfterDelay(2000);
+        failTaskToast('Erro no Cofre ADN', e.message);
+        await uiAlert({ title: 'Erro ao sincronizar Cofre ADN', message: e.message, variant: 'error' });
     }
 }
 
 export async function sendInvoiceEmailPrompt(invoiceId, defaultEmail = '') {
-    const destinatario = prompt("Informe o e-mail do destinatário para envio do XML e DANFSe (PDF):", defaultEmail || "");
+    const destinatario = await uiPrompt({
+        title: 'Enviar NFS-e por E-mail',
+        subtitle: 'Informe o e-mail do destinatário para encaminhar os arquivos fiscais desta nota.',
+        label: 'E-mail do destinatário',
+        type: 'email',
+        placeholder: 'cliente@empresa.com.br',
+        defaultValue: defaultEmail || '',
+        infoBadge: 'Serão anexados automaticamente o XML oficial da NFS-e e o DANFSe em PDF.',
+        confirmText: 'Enviar E-mail',
+        cancelText: 'Cancelar',
+        variant: 'primary',
+        icon: 'mail',
+        emptyMessage: 'Informe o e-mail do destinatário.',
+        validate: (val) => {
+            const emails = val.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (emails.length === 0 || emails.some(em => !emailRegex.test(em))) {
+                return 'Informe um endereço de e-mail válido (ex: contato@empresa.com.br).';
+            }
+            return null;
+        },
+    });
     if (!destinatario) return;
     try {
-        showTaskToast('Enviando E-mail', `Enviando XML e DANFSe para ${destinatario}...`);
+        showTaskToast('Enviando E-mail', `Preparando XML + DANFSe e enviando para ${destinatario}...`, { autoProgress: true });
         const res = await api(`/adn/nfse/${invoiceId}/enviar-email`, 'POST', { destinatario });
-        showTaskToast('E-mail Enviado', `Enviado com sucesso para ${res.destinatario}!`);
-        closeProgressIndicatorsAfterDelay(3000);
+        const anexosStr = (res.anexos || []).map(a => a.toUpperCase()).join(' + ');
+        completeTaskToast('E-mail Enviado', `Enviado para ${res.destinatario}${anexosStr ? ` (${anexosStr})` : ''}!`, 5000);
     } catch (e) {
-        alert("Erro ao enviar e-mail: " + e.message);
-        closeProgressIndicatorsAfterDelay(2000);
+        failTaskToast('Falha ao Enviar E-mail', e.message);
+        await uiAlert({ title: 'Erro ao enviar e-mail', message: e.message, variant: 'error', icon: 'mail' });
     }
 }
 
 export async function cancelInvoicePrompt(invoiceId, chaveNfse) {
-    const motivo = prompt("Informe a justificativa do cancelamento (mínimo 15 caracteres):", "Cancelamento efetuado devido a erro no preenchimento da nota fiscal.");
+    const motivo = await uiPrompt({
+        title: 'Cancelar NFS-e no ADN',
+        subtitle: 'Esta operação gera e transmite o evento e101101 de cancelamento junto ao Ambiente Nacional.',
+        infoBadge: `Chave de acesso: ${chaveNfse}`,
+        infoMono: true,
+        label: 'Justificativa do cancelamento',
+        type: 'textarea',
+        placeholder: 'Descreva o motivo do cancelamento...',
+        defaultValue: 'Cancelamento efetuado devido a erro no preenchimento da nota fiscal.',
+        minLength: 15,
+        confirmText: 'Confirmar Cancelamento',
+        cancelText: 'Voltar',
+        variant: 'danger',
+        icon: 'warning',
+    });
     if (!motivo || motivo.trim().length < 15) return;
     try {
-        showTaskToast('Cancelando NFS-e', 'Gerando e assinando evento e101101...');
+        showTaskToast('Cancelando NFS-e', 'Gerando, assinando e transmitindo evento e101101...', { autoProgress: true });
         await api('/adn/nfse/cancelar', 'POST', {
             invoice_id: invoiceId,
             chave_nfse: chaveNfse,
@@ -317,11 +357,10 @@ export async function cancelInvoicePrompt(invoiceId, chaveNfse) {
             transmitir: true,
         });
         await loadInvoices();
-        showTaskToast('NFS-e Cancelada', 'Evento de cancelamento processado com sucesso.');
-        closeProgressIndicatorsAfterDelay(3000);
+        completeTaskToast('NFS-e Cancelada', 'Evento de cancelamento processado com sucesso.', 4500);
     } catch (e) {
-        alert("Erro ao cancelar NFS-e: " + e.message);
-        closeProgressIndicatorsAfterDelay(2000);
+        failTaskToast('Erro ao Cancelar NFS-e', e.message);
+        await uiAlert({ title: 'Erro ao cancelar NFS-e', message: e.message, variant: 'error' });
     }
 }
 
@@ -337,20 +376,92 @@ export async function enrichFromXml() {
     if (clientId) url += `?client_id=${clientId}`;
     
     try {
-        showTaskToast('Enriquecimento', 'Lendo arquivos XML para preencher valores faltantes...');
+        showTaskToast('Enriquecimento', 'Lendo arquivos XML para preencher valores faltantes...', { autoProgress: true });
         const res = await api(url, 'POST');
-        showTaskToast('Valores Atualizados', res.message || 'XMLs processados com sucesso.');
+        completeTaskToast('Valores Atualizados', res.message || 'XMLs processados com sucesso.', 4500);
         
         if (window.App && window.App.loadDashboardStats) {
             await window.App.loadDashboardStats();
             await window.App.loadDashboardChart(state.chartPeriod);
         }
     } catch (e) {
-        showTaskToast('Erro', 'Não foi possível enriquecer os dados via XML.');
+        failTaskToast('Erro no Enriquecimento', 'Não foi possível enriquecer os dados via XML.');
     } finally {
         if (btn) {
             btn.disabled = false;
             btn.style.opacity = '1';
         }
+    }
+}
+
+export async function loadCompetenciaReport() {
+    const grid = document.getElementById('comp-summary-grid');
+    if (!grid) return;
+
+    const monthInput = document.getElementById('comp-month');
+    if (monthInput && !monthInput.value) {
+        monthInput.value = new Date().toISOString().slice(0, 7);
+    }
+    const competencia = monthInput?.value || new Date().toISOString().slice(0, 7);
+    const clientId = state.getGlobalClientId();
+    const qs = new URLSearchParams({ competencia, format: 'json' });
+    if (clientId) qs.set('client_id', String(clientId));
+
+    try {
+        const res = await api(`/reports/competencia?${qs.toString()}`);
+        const r = res.resumo || {};
+        const fmt = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
+        grid.innerHTML = `
+            <div style="padding:10px 12px; border-radius:8px; background:var(--bg3); border:1px solid var(--border);">
+              <div style="color:var(--text3); font-size:11px;">Emitidas Ativas (${r.qtd_emitidas_ativas || 0})</div>
+              <div style="font-weight:700; color:var(--green); font-size:14px;">${fmt(r.total_emitidas_bruto)}</div>
+              <div style="color:var(--text3); font-size:11px;">Líquido: ${fmt(r.total_emitidas_liquido)}</div>
+            </div>
+            <div style="padding:10px 12px; border-radius:8px; background:var(--bg3); border:1px solid var(--border);">
+              <div style="color:var(--text3); font-size:11px;">Recebidas Ativas (${r.qtd_recebidas_ativas || 0})</div>
+              <div style="font-weight:700; color:var(--accent); font-size:14px;">${fmt(r.total_recebidas)}</div>
+              <div style="color:var(--text3); font-size:11px;">Saldo: ${fmt(r.saldo_operacional)}</div>
+            </div>
+            <div style="padding:10px 12px; border-radius:8px; background:var(--bg3); border:1px solid var(--border);">
+              <div style="color:var(--text3); font-size:11px;">Tributos (Emitidas Ativas)</div>
+              <div style="font-weight:700; font-size:13px;">ISS: ${fmt(r.total_iss)}</div>
+              <div style="color:var(--text3); font-size:11px;">IBS: ${fmt(r.total_ibs)} | CBS: ${fmt(r.total_cbs)}</div>
+            </div>
+            <div style="padding:10px 12px; border-radius:8px; background:var(--bg3); border:1px solid var(--border);">
+              <div style="color:var(--text3); font-size:11px;">Exceções na Competência</div>
+              <div style="font-weight:700; font-size:13px;">Canceladas/Subst.: ${r.qtd_canceladas_substituidas || 0}</div>
+              <div style="color:var(--text3); font-size:11px;">Fila Contingência: ${r.qtd_pendentes_fila || 0}</div>
+            </div>
+        `;
+    } catch (e) {
+        grid.innerHTML = `<div style="color:var(--red); font-size:12px;">Erro ao carregar competência: ${e.message}</div>`;
+    }
+}
+
+export async function downloadCompetenciaReport(fmt = 'xlsx') {
+    const monthInput = document.getElementById('comp-month');
+    const competencia = monthInput?.value || new Date().toISOString().slice(0, 7);
+    const clientId = state.getGlobalClientId();
+    const qs = new URLSearchParams({ competencia, format: fmt });
+    if (clientId) qs.set('client_id', String(clientId));
+
+    const headers = {};
+    const token = localStorage.getItem('nfse_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+        const res = await fetch(`/api/reports/competencia?${qs.toString()}`, { headers });
+        if (!res.ok) throw new Error(await res.text());
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio_competencia_${competencia}.${fmt}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        await uiAlert({ title: 'Erro ao exportar relatório', message: e.message, variant: 'error' });
     }
 }

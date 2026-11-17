@@ -8,6 +8,10 @@
 .btn:active { transform: scale(0.97); }
 .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(59,130,246,0.25); }
 .btn-primary:hover { background: var(--accent-h); transform: translateY(-1px); }
+.btn-danger { background: var(--red); color: #fff; box-shadow: 0 4px 12px rgba(239,68,68,0.25); }
+.btn-danger:hover { background: #dc2626; transform: translateY(-1px); }
+.btn-warning { background: var(--amber); color: #0f172a; font-weight: 600; box-shadow: 0 4px 12px rgba(245,158,11,0.25); }
+.btn-warning:hover { background: #d97706; color: #fff; transform: translateY(-1px); }
 .btn-secondary { background: var(--bg4); color: var(--text2); border-color: var(--border2); }
 .btn-secondary:hover { background: var(--bg5); color: var(--text); }
 .btn-ghost { background: transparent; color: var(--text3); border: none; }
@@ -27,3 +31,37 @@
 .btn-group .btn.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(59,130,246,0.35); }
 .btn-sm { padding: 7px 12px; font-size: 12px; gap: 6px; }
 .btn-sm svg { width: 14px; height: 14px; }
+
+.btn-file-xml {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(16, 185, 129, 0.28);
+  text-decoration: none;
+}
+.btn-file-xml:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: var(--green);
+  transform: translateY(-1px);
+}
+.btn-file-pdf {
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--accent);
+  border-color: rgba(59, 130, 246, 0.28);
+  text-decoration: none;
+}
+.btn-file-pdf:hover {
+  background: rgba(59, 130, 246, 0.24);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.btn-file-html {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-color: rgba(245, 158, 11, 0.28);
+  text-decoration: none;
+}
+.btn-file-html:hover {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: var(--amber);
+  transform: translateY(-1px);
+}

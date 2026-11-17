@@ -15,7 +15,7 @@ flowchart LR
 
     subgraph AppLayer["Backend FastAPI (backend/app/)"]
         Main["app.main:app (:8000)"]
-        Routers["api/routers/*<br/>(11 domínios REST)"]
+        Routers["api/routers/*<br/>(12 domínios REST)"]
         AdnService["services/adn_service.py"]
         Deps["api/deps.py"]
     end
@@ -70,7 +70,7 @@ nfse_manager/
 │       └── api/
 │           ├── deps.py        # Instanciação de ClienteNfseNacional
 │           ├── state.py       # Estado de tarefas em background (tasks_status)
-│           └── routers/       # 9 routers modulares
+│       │   └── routers/       # 12 routers modulares
 ├── frontend/                  # SPA Vanilla ES6 + Nginx
 │   ├── Dockerfile
 │   ├── docker-compose.yml
@@ -104,4 +104,5 @@ nfse_manager/
 | `catalogs.py` | `/api/catalogs` | Consulta aos catálogos oficiais (`CST`, `cClassTrib`, `cTribNac`, `LC 116`, `Anexo VIII`, `cIndOp`, `favoritos`). |
 | `tax.py` | `/api/tax` | Cálculo tributário completo (`ISSQN` + Federais + `IBS/CBS`) e validação de regras da `NT 1.101`. |
 | `emission.py` | `/api/adn` | Preview/emissão de DPS, Fila de Contingência Offline, Worker em Background (`/worker/*`), envio de XML/PDF por e-mail, Cofre ADN por NSU, cancelamento (`e101101`) e substituição (`e105102`). |
+| `batch.py` | `/api/batch-emission` | Importação CSV/XLSX de lotes de notas, validação em 3 níveis, correção inline (`PATCH`), processamento resiliente com estado `UNKNOWN`, exclusão sincronizada com a fila e exportação. |
 | `system.py` | `/api/system`, `/api/support` | Versão atual, verificação/download/aplicação de updates via GitHub Releases, suporte e navegação de pastas. |

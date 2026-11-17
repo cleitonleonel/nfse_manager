@@ -1,5 +1,6 @@
 import datetime
 import logging
+import uuid
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
@@ -128,6 +129,10 @@ class Client(Base):
             return "expirando"
         return "valido"
 
+    @property
+    def smtp_configurado(self) -> bool:
+        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+
 
 class Customer(Base):
     """Cadastro recorrente de Tomadores de Serviço (clientes para quem se emite NFS-e)."""
@@ -219,6 +224,57 @@ class Invoice(Base):
     client = relationship("Client", back_populates="invoices")
 
 
+class BatchImport(Base):
+    """Lote persistente de importação de notas NFS-e via CSV/XLSX."""
+
+    __tablename__ = "batch_imports"
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    file_hash = Column(String, nullable=False, index=True)
+    ambiente = Column(String, nullable=False, default="homologacao")
+    status = Column(String, nullable=False, default="IMPORTED", index=True)
+    total_items = Column(Integer, nullable=False, default=0)
+    valid_items = Column(Integer, nullable=False, default=0)
+    invalid_items = Column(Integer, nullable=False, default=0)
+    processed_items = Column(Integer, nullable=False, default=0)
+    authorized_items = Column(Integer, nullable=False, default=0)
+    rejected_items = Column(Integer, nullable=False, default=0)
+    unknown_items = Column(Integer, nullable=False, default=0)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+    completed_at = Column(DateTime, nullable=True)
+
+    client = relationship("Client")
+    items = relationship("BatchImportItem", back_populates="batch", cascade="all, delete-orphan")
+
+
+class BatchImportItem(Base):
+    """Item individual de um lote de emissão NFS-e importado via planilha."""
+
+    __tablename__ = "batch_import_items"
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    batch_id = Column(String, ForeignKey("batch_imports.id"), nullable=False, index=True)
+    row_number = Column(Integer, nullable=False)
+    raw_data_json = Column(String, nullable=True)
+    payload_json = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="PENDING", index=True)
+    validation_errors_json = Column(String, nullable=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    id_dps = Column(String, nullable=True, index=True)
+    serie_dps = Column(String, nullable=True)
+    numero_dps = Column(Integer, nullable=True)
+    chave_acesso = Column(String, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(String, nullable=True)
+    processed_at = Column(DateTime, nullable=True)
+
+    batch = relationship("BatchImport", back_populates="items")
+    invoice = relationship("Invoice")
+
+
 def init_db():
     import time
     from sqlalchemy import inspect
@@ -282,14 +338,15 @@ def init_db():
         ("payload_dps_json", "VARCHAR"),
     ]
 
-    for attempt in range(1, 11):
+    for attempt in range(1, 31):
         try:
             Base.metadata.create_all(bind=engine)
             break
-        except OperationalError:
-            if attempt == 10:
+        except OperationalError as exc:
+            if attempt == 30:
                 raise
-            time.sleep(1.5)
+            logger.info("Aguardando banco de dados ficar disponível (%d/30): %s", attempt, exc)
+            time.sleep(2.0)
 
     inspector = inspect(engine)
     with engine.connect() as conn:

@@ -1,5 +1,6 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { renderInvoiceFileButtons, renderInvoiceStatusBadge } from '../core/ui.js';
 
 let chartInstance = null;
 
@@ -73,10 +74,7 @@ export async function loadRecentInvoices() {
         }
         
         tbody.innerHTML = invoices.slice(0, 5).map(n => {
-            let files = '';
-            if (n.xml_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.xml_path)}); return false;" style="color:var(--green); font-weight:700; font-size:11px; margin-right:8px; text-decoration:none;" title="Baixar XML">XML</a>`;
-            if (n.pdf_path) files += `<a href="#" onclick="window.App.triggerDownload(${JSON.stringify(n.pdf_path)}); return false;" style="color:var(--accent); font-weight:700; font-size:11px; text-decoration:none;" title="Baixar PDF">PDF</a>`;
-            
+            const filesHtml = renderInvoiceFileButtons(n, '-');
             const dataFmt = n.data_emissao ? new Date(n.data_emissao).toLocaleDateString('pt-BR') : '-';
             const chaveDisplay = (n.chave && n.chave !== 'null') ? n.chave : (n.numero || 'Chave não sincronizada');
             return `
@@ -87,8 +85,8 @@ export async function loadRecentInvoices() {
                         <div style="font-size:11px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break:break-all;">${chaveDisplay}</div>
                     </td>
                     <td style="font-weight:600; color:var(--text);">${fmt(n.valor)}</td>
-                    <td><span class="badge" style="background:var(--green-bg); color:var(--green);"><div class="badge-dot"></div> ${n.status}</span></td>
-                    <td>${files || '-'}</td>
+                    <td>${renderInvoiceStatusBadge(n.status)}</td>
+                    <td>${filesHtml}</td>
                 </tr>
             `;
         }).join('');

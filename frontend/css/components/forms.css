@@ -4,13 +4,33 @@
 .form-input {
   width: 100%; background: var(--bg3); border: 1px solid var(--border2);
   border-radius: var(--r); padding: 10px 14px; color: var(--text); font-family: var(--sans); font-size: 14px;
-  box-sizing: border-box; height: 40px; transition: border-color 0.2s, background 0.2s;
+  box-sizing: border-box; height: 42px; transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
+.form-input::placeholder { color: var(--text3); opacity: 0.9; }
 textarea.form-input {
   height: auto;
   min-height: 68px;
 }
-.form-input:not(select):focus { border-color: var(--accent); outline: none; background: var(--bg4); }
+.form-input:not(select):focus {
+  border-color: var(--accent);
+  outline: none;
+  background: var(--bg4);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+.form-input:-webkit-autofill,
+.form-input:-webkit-autofill:hover,
+.form-input:-webkit-autofill:focus,
+.form-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg3) inset !important;
+  box-shadow: 0 0 0 1000px var(--bg3) inset !important;
+  transition: background-color 99999s ease-out 0s;
+}
+.form-input:not(select):-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg4) inset !important;
+  box-shadow: 0 0 0 1000px var(--bg4) inset !important;
+}
 
 /* SELECTS: transição DEVE ser 'none' para evitar fechamento imediato do popup nativo no Chromium/Linux */
 select.form-input,

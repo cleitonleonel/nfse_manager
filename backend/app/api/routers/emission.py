@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import (
     CancelarNfseRequest,
+    EmitirDpsLoteRequest,
     EmitirDpsRequest,
     EnviarEmailNfseRequest,
     InvoiceResponse,
@@ -37,6 +38,12 @@ def preview_dps_xml(req: EmitirDpsRequest, db: Session = Depends(get_db)):
 async def emitir_dps_adn(req: EmitirDpsRequest, db: Session = Depends(get_db)):
     """Gera, valida XSD, assina com Certificado A1 e transmite a DPS v1.01 ao ADN / Sefin Nacional."""
     return await AdnService.emitir_dps(db=db, req=req)
+
+
+@router.post("/dps/emitir-lote")
+async def emitir_dps_lote_adn(req: EmitirDpsLoteRequest, db: Session = Depends(get_db)):
+    """Emite múltiplas DPS v1.01 em lote para o mesmo prestador, consolidando o status de cada item."""
+    return await AdnService.emitir_dps_lote(db=db, req=req)
 
 
 @router.post("/nfse/cancelar")
@@ -70,6 +77,12 @@ def listar_fila_contingencia(
 async def reenviar_fila_contingencia(req: ReenviarFilaRequest, db: Session = Depends(get_db)):
     """Retransmite para o ADN/Sefin Nacional as DPS pendentes na fila de contingência."""
     return await AdnService.reenviar_fila_contingencia(db=db, req=req)
+
+
+@router.delete("/fila/{invoice_id}")
+def cancelar_item_fila_contingencia(invoice_id: int, db: Session = Depends(get_db)):
+    """Cancela e remove um item pendente da fila de contingência."""
+    return AdnService.cancelar_item_fila_contingencia(db=db, invoice_id=invoice_id)
 
 
 @router.post("/nfse/{invoice_id}/enviar-email")

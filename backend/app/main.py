@@ -31,6 +31,7 @@ from app.api.routers import (  # noqa: E402
     tax,
     emission,
     registry,
+    batch,
 )
 from app.services.scheduler_service import SchedulerService  # noqa: E402
 from app.version import VERSION as __PROJECT_VERSION  # noqa: E402
@@ -79,6 +80,7 @@ app.include_router(catalogs.router)
 app.include_router(tax.router)
 app.include_router(emission.router)
 app.include_router(registry.router)
+app.include_router(batch.router)
 
 
 @app.get("/api/health", tags=["system"])

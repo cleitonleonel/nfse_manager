@@ -83,6 +83,7 @@ class ClientResponse(ClientBase):
     cert_subject: Optional[str] = None
     dias_para_vencer: Optional[int] = None
     status_certificado: Optional[str] = None
+    smtp_configurado: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -208,6 +209,7 @@ class ServiceItemUpdate(BaseModel):
 
 class ServiceItemResponse(ServiceItemBase):
     id: int
+    avisos_fiscais: List[Dict[str, str]] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -442,6 +444,31 @@ class EmitirDpsRequest(BaseModel):
     email_destinatario: Optional[str] = None
 
 
+class EmitirDpsLoteItemRequest(BaseModel):
+    customer_id: Optional[int] = None
+    service_item_id: Optional[int] = None
+    tomador: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    servico: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    tributacao: Optional[Dict[str, Any]] = None
+    serie_dps: Optional[str] = None
+    numero_dps: Optional[int] = None
+    data_competencia: Optional[str] = None
+    incluir_ibscbs: bool = True
+    enviar_email: Optional[bool] = None
+    email_destinatario: Optional[str] = None
+
+
+class EmitirDpsLoteRequest(BaseModel):
+    client_id: int = Field(..., description="ID do cliente prestador cadastrado no banco")
+    ambiente: str = Field("homologacao", description="homologacao | producao")
+    serie_dps: Optional[str] = None
+    data_competencia: Optional[str] = None
+    incluir_ibscbs: bool = True
+    transmitir: bool = True
+    enviar_email: bool = False
+    itens: List[EmitirDpsLoteItemRequest] = Field(..., min_length=1, max_length=200)
+
+
 class ReenviarFilaRequest(BaseModel):
     client_id: Optional[int] = Field(None, description="Filtrar reenvio apenas para as notas deste cliente")
     invoice_ids: Optional[List[int]] = Field(None, description="Lista específica de IDs de notas na fila para reenviar")
@@ -506,3 +533,101 @@ class SubstituirNfseRequest(BaseModel):
     certificado_pfx_b64: Optional[str] = None
     senha_certificado: Optional[str] = None
     transmitir: bool = True
+
+
+# ==============================================================================
+# Schemas do Módulo Persistente de Importação e Emissão em Lote (Planilhas)
+# ==============================================================================
+
+
+class BatchItemValidationError(BaseModel):
+    field: str
+    level: str = "estrutural"  # estrutural | cadastral | fiscal
+    message: str
+
+
+class BatchImportItemUpdateRequest(BaseModel):
+    documento_tomador: Optional[str] = None
+    nome_tomador: Optional[str] = None
+    email_tomador: Optional[str] = None
+    cep_tomador: Optional[str] = None
+    logradouro_tomador: Optional[str] = None
+    numero_tomador: Optional[str] = None
+    bairro_tomador: Optional[str] = None
+    municipio_tomador: Optional[str] = None
+    codigo_servico: Optional[str] = None
+    c_trib_nac: Optional[str] = None
+    c_nbs: Optional[str] = None
+    descricao_servico: Optional[str] = None
+    discriminacao: Optional[str] = None
+    valor_servico: Optional[float] = None
+    valor_deducao: Optional[float] = None
+    valor_desconto: Optional[float] = None
+    aliquota_iss: Optional[float] = None
+    iss_retido: Optional[bool] = None
+    reter_federais: Optional[bool] = None
+    municipio_prestacao: Optional[str] = None
+    competencia: Optional[str] = None
+    cst_ibs_cbs: Optional[str] = None
+    cclasstrib: Optional[str] = None
+    indop: Optional[str] = None
+
+
+class BatchImportItemResponse(BaseModel):
+    id: str
+    batch_id: str
+    row_number: int
+    status: str
+    payload: Dict[str, Any]
+    validation_errors: List[BatchItemValidationError] = Field(default_factory=list)
+    invoice_id: Optional[int] = None
+    id_dps: Optional[str] = None
+    serie_dps: Optional[str] = None
+    numero_dps: Optional[int] = None
+    chave_acesso: Optional[str] = None
+    attempts: int = 0
+    last_error: Optional[str] = None
+    processed_at: Optional[datetime] = None
+
+
+class BatchImportResponse(BaseModel):
+    id: str
+    client_id: int
+    prestador_nome: Optional[str] = None
+    filename: str
+    file_hash: str
+    ambiente: str
+    status: str
+    total_items: int
+    valid_items: int
+    invalid_items: int
+    processed_items: int
+    authorized_items: int
+    rejected_items: int
+    unknown_items: int
+    created_by: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class BatchProcessRequest(BaseModel):
+    item_ids: Optional[List[str]] = Field(None, description="Se omitido, processa todos os itens válidos elegíveis")
+    transmitir: bool = Field(True, description="Transmitir via mTLS ao ADN (False permite validação/assinatura local)")
+    enviar_email: bool = False
+
+
+class BatchRetryRequest(BaseModel):
+    item_ids: Optional[List[str]] = Field(None, description="Itens específicos para reprocessar/consultar")
+    transmitir: bool = True
+    enviar_email: bool = False
+
+
+class BatchItemsDeleteRequest(BaseModel):
+    item_ids: Optional[List[str]] = Field(None, description="IDs específicos de itens para excluir")
+    delete_all: bool = Field(False, description="Se true, exclui todos os itens removíveis do lote")
+
+
+class RegistryBatchDeleteRequest(BaseModel):
+    ids: Optional[List[int]] = Field(None, description="IDs específicos para excluir")
+    client_id: Optional[int] = Field(None, description="Filtrar exclusão em massa pelo cliente quando delete_all=true")
+    delete_all: bool = Field(False, description="Se true, exclui todos os registros filtrados")

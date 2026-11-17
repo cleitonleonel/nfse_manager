@@ -1,22 +1,36 @@
 import { api } from './core/api.js';
 import { state } from './core/state.js';
-import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme } from './core/ui.js';
+import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, hideTaskToast, uiConfirm } from './core/ui.js';
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
-import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder } from './pages/clients.js';
-import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt } from './pages/invoices.js';
+import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
+import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport } from './pages/invoices.js';
 import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate } from './pages/about.js';
 import {
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,
     onSelectSavedCustomer, onSelectSavedService, onChangeCTribNac,
     onSelectNbsOption, loadAllNbsOptions,
+    toggleAllClassTribOptions, toggleAllIndOpOptions,
     handleEmissionCnpjInput, handleEmissionCepInput,
     onSelectClassTrib, onSelectIndOp,
     lookupEmissionCnpj, lookupEmissionCep, saveCurrentCustomerFromEmission,
     saveCurrentServiceFromEmission, recalculateEmissionPreview,
     previewDpsXmlModal, submitEmitirDps, loadFilaContingencia,
-    reenviarFilaContingencia, deleteSavedCustomer, deleteSavedService
+    reenviarFilaContingencia, cancelarItemFila, deleteSavedCustomer, deleteSavedService,
+    toggleAllLoteCustomers, submitEmitirLote, downloadImportTemplate, handleImportSpreadsheet,
+    toggleAllSavedCustomers, toggleAllSavedServices, updateSavedSelectionCounts,
+    deleteSelectedSavedCustomers, deleteAllSavedCustomers,
+    deleteSelectedSavedServices, deleteAllSavedServices
 } from './pages/emission.js';
+import {
+    switchLoteMode, updateBatchSelectionCount,
+    downloadBatchTemplate, uploadBatchSpreadsheet, loadBatchImports,
+    openBatchDetail, loadBatchItems, toggleAllBatchItems,
+    openBatchItemEditor, closeBatchItemEditor, saveBatchItemCorrection,
+    revalidateActiveBatch, processActiveBatch, retryActiveBatch,
+    cancelActiveBatch, exportActiveBatch,
+    deleteBatch, deleteBatchItem, deleteSelectedBatchItems, deleteAllBatchItems
+} from './pages/batch.js';
 
 // Construct the global App object for HTML onclick handlers
 window.App = {
@@ -33,29 +47,41 @@ window.App = {
     showPage,
     
     // UI
-    maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme,
+    maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, hideTaskToast,
     
     // Dashboard
     loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport,
     
     // Clients
     loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey,
-    toggleExplorer, browseFolders, selectCurrentFolder,
+    toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao,
     
     // Invoices
-    loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf,
+    loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, loadCompetenciaReport, downloadCompetenciaReport,
     syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt,
 
     // Emission & ADN
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,
     onSelectSavedCustomer, onSelectSavedService, onChangeCTribNac,
     onSelectNbsOption, loadAllNbsOptions,
+    toggleAllClassTribOptions, toggleAllIndOpOptions,
     handleEmissionCnpjInput, handleEmissionCepInput,
     onSelectClassTrib, onSelectIndOp,
     lookupEmissionCnpj, lookupEmissionCep, saveCurrentCustomerFromEmission,
     saveCurrentServiceFromEmission, recalculateEmissionPreview,
     previewDpsXmlModal, submitEmitirDps, loadFilaContingencia,
-    reenviarFilaContingencia, deleteSavedCustomer, deleteSavedService,
+    reenviarFilaContingencia, cancelarItemFila, deleteSavedCustomer, deleteSavedService,
+    toggleAllLoteCustomers, submitEmitirLote, downloadImportTemplate, handleImportSpreadsheet,
+    toggleAllSavedCustomers, toggleAllSavedServices, updateSavedSelectionCounts,
+    deleteSelectedSavedCustomers, deleteAllSavedCustomers,
+    deleteSelectedSavedServices, deleteAllSavedServices,
+    switchLoteMode, updateBatchSelectionCount,
+    downloadBatchTemplate, uploadBatchSpreadsheet, loadBatchImports,
+    openBatchDetail, loadBatchItems, toggleAllBatchItems,
+    openBatchItemEditor, closeBatchItemEditor, saveBatchItemCorrection,
+    revalidateActiveBatch, processActiveBatch, retryActiveBatch,
+    cancelActiveBatch, exportActiveBatch,
+    deleteBatch, deleteBatchItem, deleteSelectedBatchItems, deleteAllBatchItems,
     
     // System/About
     sendSupportMessage, checkUpdates, startUpdateDownload, applyDownloadedUpdate,
@@ -216,8 +242,18 @@ window.App = {
         }
     },
 
-    logout(silent = false) {
-        if (!silent && !confirm('Deseja encerrar a sessão atual?')) return;
+    async logout(silent = false) {
+        if (!silent) {
+            const confirmed = await uiConfirm({
+                title: 'Encerrar Sessão',
+                message: 'Deseja realmente sair da sua conta atual?',
+                confirmText: 'Sair',
+                cancelText: 'Permanecer',
+                variant: 'warning',
+                icon: 'logout',
+            });
+            if (!confirmed) return;
+        }
         localStorage.removeItem('nfse_token');
         localStorage.removeItem('nfse_user');
         this.showAuthScreen('login');

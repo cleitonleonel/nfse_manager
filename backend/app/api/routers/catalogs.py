@@ -100,6 +100,15 @@ def get_indop_table():
     return AdnService.listar_indop()
 
 
+@router.get("/nbs/{c_nbs}/combinacoes")
+def get_nbs_combinacoes(
+    c_nbs: str,
+    c_trib_nac: Optional[str] = Query(None, description="Filtrar adicionalmente pelo cTribNac (6 dígitos)"),
+):
+    """Retorna as opções compatíveis de cClassTrib e cIndOp para a NBS informada."""
+    return AdnService.listar_combinacoes_por_nbs(c_nbs=c_nbs, c_trib_nac=c_trib_nac)
+
+
 @router.get("/favoritos")
 def get_favoritos():
     """Retorna os presets favoritos de serviços para preenchimento rápido de DPS."""

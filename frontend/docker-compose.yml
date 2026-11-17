@@ -1,5 +1,8 @@
+name: nfse_manager
+
 services:
   frontend:
+    image: nfse_manager-frontend:latest
     build:
       context: .
       dockerfile: Dockerfile

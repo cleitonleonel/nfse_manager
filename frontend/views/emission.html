@@ -7,6 +7,7 @@
     </div>
     <div class="emission-tabs-group">
       <button class="btn btn-primary btn-sm" id="tab-btn-emitir" onclick="App.switchEmissionTab('emitir')">Nova Emissão (DPS)</button>
+      <button class="btn btn-secondary btn-sm" id="tab-btn-lote" onclick="App.switchEmissionTab('lote')">Emissão em Lote</button>
       <button class="btn btn-secondary btn-sm" id="tab-btn-fila" onclick="App.switchEmissionTab('fila')">Fila de Contingência <span id="fila-badge" class="badge" style="margin-left:4px;">0</span></button>
       <button class="btn btn-secondary btn-sm" id="tab-btn-cadastros" onclick="App.switchEmissionTab('cadastros')">Tomadores &amp; Serviços</button>
     </div>
@@ -126,7 +127,10 @@
         <!-- Linha B: Reforma Tributária IBS & CBS (NT 1.101) - 2 colunas amplas -->
         <div class="form-row-service-reforma">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" style="color:var(--accent);">cClassTrib (IBS / CBS - 6 dígitos)</label>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <label class="form-label" style="color:var(--accent); margin-bottom:0;">cClassTrib (IBS / CBS - 6 dígitos)</label>
+              <button type="button" id="btn-show-all-cclasstrib" onclick="App.toggleAllClassTribOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Alternar entre opções filtradas pela NBS e todas as classificações">Ver todas</button>
+            </div>
             <select class="form-input" id="em-cclasstrib" onchange="App.onSelectClassTrib(this.value)">
               <option value="000001" selected>000001 — Situações tributadas integralmente pelo IBS e CBS</option>
               <option value="000002">000002 — Exploração de via (LC 214/2025, art. 11)</option>
@@ -162,7 +166,10 @@
           </div>
 
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" style="color:var(--accent);">cIndOp (Indicador de Operação / Incidência)</label>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <label class="form-label" style="color:var(--accent); margin-bottom:0;">cIndOp (Indicador de Operação / Incidência)</label>
+              <button type="button" id="btn-show-all-cindop" onclick="App.toggleAllIndOpOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Alternar entre indicadores compatíveis com a NBS e todos os indicadores">Ver todos</button>
+            </div>
             <select class="form-input" id="em-cindop" onchange="App.onSelectIndOp(this.value)">
               <option value="100301" selected>100301 — Domicílio principal do adquirente (Regra Geral Serviços)</option>
               <option value="030101">030101 — Local da prestação do serviço</option>
@@ -180,6 +187,7 @@
             </div>
           </div>
         </div>
+        <div id="em-tax-compat-alert" style="display:none; margin-top:10px; margin-bottom:10px; padding:10px 12px; border-radius:8px; font-size:12px; border:1px solid var(--border);"></div>
 
         <!-- Linha C: Discriminação do Serviço -->
         <div class="form-group" style="margin-bottom:12px;">
@@ -280,7 +288,224 @@
     </div>
   </div>
 
-  <!-- TAB 2: FILA DE CONTINGÊNCIA -->
+  <!-- TAB 2: EMISSÃO EM LOTE -->
+  <div id="emission-tab-lote" style="display:none;">
+    <div class="emission-subtabs" role="tablist">
+      <button type="button" class="btn btn-primary btn-sm" id="lote-mode-btn-planilha" onclick="App.switchLoteMode('planilha')">Planilha de Notas (CSV / XLSX)</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="lote-mode-btn-rapido" onclick="App.switchLoteMode('rapido')">Lote Rápido por Cadastros</button>
+    </div>
+
+    <!-- SUB-MODO 1: IMPORTAÇÃO E EMISSÃO POR PLANILHA (PERSISTENTE) -->
+    <div id="lote-mode-planilha">
+      <div class="card batch-section-card">
+        <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h3 style="font-size:16px; font-weight:700; margin:0;">Importar Planilha de Notas (CSV / XLSX)</h3>
+            <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Importe as notas para revisão e validação em 3 níveis (Estrutural, Cadastral e Fiscal/XSD) antes de transmitir ao ADN.</div>
+          </div>
+          <div class="batch-toolbar-group">
+            <select class="form-input" id="batch-csv-delimiter" style="width:auto; min-width:140px; padding:6px 10px;">
+              <option value="">CSV: Auto (; ou ,)</option>
+              <option value=";">CSV: Ponto e vírgula (;)</option>
+              <option value=",">CSV: Vírgula (,)</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadBatchTemplate('xlsx')">Modelo XLSX</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadBatchTemplate('csv')">Modelo CSV</button>
+            <input type="file" id="batch-spreadsheet-file" accept=".csv,.xlsx,.xlsm" style="display:none;" onchange="App.uploadBatchSpreadsheet(this)">
+            <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('batch-spreadsheet-file').click()">Importar Planilha</button>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:13px; font-weight:600; color:var(--text2);">Lotes Importados</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.loadBatchImports()">Atualizar Lista</button>
+        </div>
+        <div class="tbl-container" style="max-height:220px; overflow:auto;">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Arquivo</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>Válidas / Inválidas</th>
+                <th>Autoriz. / Rej. / Unk.</th>
+                <th>Criado em</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="batch-history-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card batch-section-card" id="batch-detail-box" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+          <div>
+            <h3 id="batch-detail-title" style="font-size:15px; font-weight:700; margin:0;">Lote Selecionado</h3>
+            <div id="batch-detail-meta" style="font-size:12px; color:var(--text3); margin-top:3px;"></div>
+          </div>
+          <div class="batch-toolbar-group">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.exportActiveBatch('csv')">Exportar CSV</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.exportActiveBatch('xlsx')">Exportar XLSX</button>
+          </div>
+        </div>
+
+        <div class="batch-toolbar">
+          <div class="batch-toolbar-group">
+            <span class="batch-selection-info" id="batch-selected-count">0 selecionado(s)</span>
+            <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteSelectedBatchItems()">Excluir Selecionados</button>
+            <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteAllBatchItems()">Excluir Todos</button>
+          </div>
+          <div class="batch-toolbar-group">
+            <select class="form-input" id="batch-item-status-filter" style="width:auto; padding:6px 10px;" onchange="App.loadBatchItems()">
+              <option value="">Todas as situações</option>
+              <option value="VALID">VALID (Prontas)</option>
+              <option value="INVALID">INVALID (Com erro)</option>
+              <option value="AUTHORIZED">AUTHORIZED</option>
+              <option value="REJECTED">REJECTED</option>
+              <option value="RETRY">RETRY</option>
+              <option value="UNKNOWN">UNKNOWN</option>
+              <option value="CANCELLED">CANCELLED</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.revalidateActiveBatch()">Revalidar</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="App.processActiveBatch()">Confirmar e Emitir</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.retryActiveBatch()">Consultar Unknown / Reenviar</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.cancelActiveBatch()">Cancelar Pendentes</button>
+          </div>
+        </div>
+
+        <div class="form-row-financeiro-checks" style="margin-bottom:12px;">
+          <label class="form-check-inline" style="min-height:unset; padding:0;">
+            <input type="checkbox" id="batch-transmitir" checked>
+            <span>Transmitir realmente ao ADN / Sefin (desmarque para apenas gerar/assinar offline)</span>
+          </label>
+          <label class="form-check-inline" style="min-height:unset; padding:0;">
+            <input type="checkbox" id="batch-enviar-email">
+            <span>Enviar e-mail automático ao tomador quando autorizar</span>
+          </label>
+        </div>
+
+        <div id="batch-item-editor" style="display:none; margin-bottom:14px; padding:14px; border-radius:10px; background:var(--bg3); border:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <strong id="batch-edit-title" style="font-size:13px;">Corrigir Item do Lote</strong>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="App.closeBatchItemEditor()">Fechar</button>
+          </div>
+          <input type="hidden" id="batch-edit-item-id">
+          <div class="form-row-3col" style="margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">CPF/CNPJ Tomador</label>
+              <input type="text" class="form-input" id="batch-edit-doc">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Nome / Razão Social</label>
+              <input type="text" class="form-input" id="batch-edit-nome">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Valor Serviço (R$)</label>
+              <input type="number" step="0.01" class="form-input" id="batch-edit-valor">
+            </div>
+          </div>
+          <div class="form-row-3col" style="margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Código Serviço / cTribNac</label>
+              <input type="text" class="form-input" id="batch-edit-ctribnac" placeholder="Ex.: 010101">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Competência</label>
+              <input type="date" class="form-input" id="batch-edit-competencia">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Município Prestação (IBGE)</label>
+              <input type="text" class="form-input" id="batch-edit-municipio">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label class="form-label">Discriminação do Serviço</label>
+            <input type="text" class="form-input" id="batch-edit-discriminacao">
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="App.saveBatchItemCorrection()">Salvar Correção e Revalidar</button>
+        </div>
+
+        <div class="tbl-container" style="max-height:380px; overflow:auto;">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:36px;"><input type="checkbox" id="batch-items-check-all" onchange="App.toggleAllBatchItems(this)" title="Selecionar todos"></th>
+                <th>Linha</th>
+                <th>Tomador</th>
+                <th>Competência</th>
+                <th>Valor</th>
+                <th>Situação &amp; Diagnóstico</th>
+                <th>ID DPS / Chave</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="batch-items-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUB-MODO 2: LOTE RÁPIDO POR CADASTROS RECORRENTES -->
+    <div id="lote-mode-rapido" style="display:none;">
+      <div class="card batch-section-card">
+        <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h3 style="font-size:16px; font-weight:700; margin:0;">Emissão Rápida em Lote por Cadastros Recorrentes</h3>
+            <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Selecione os tomadores cadastrados e um serviço padrão para gerar, assinar e transmitir múltiplas notas rapidamente.</div>
+          </div>
+          <button class="btn btn-primary" id="btn-emitir-lote" onclick="App.submitEmitirLote()">Emitir Lote Selecionado</button>
+        </div>
+
+        <div class="form-row-3col" style="margin-bottom:14px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Serviço Recorrente do Lote</label>
+            <select class="form-input" id="lote-service-select">
+              <option value="">-- Selecione um Serviço Cadastrado --</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Data de Competência</label>
+            <input type="date" class="form-input" id="lote-competencia">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Valor Padrão Opcional (R$)</label>
+            <input type="number" step="0.01" class="form-input" id="lote-valor-override" placeholder="Usa valor do serviço se vazio">
+          </div>
+        </div>
+
+        <div class="form-row-financeiro-checks" style="margin-bottom:16px;">
+          <label class="form-check-inline" style="min-height:unset; padding:0;">
+            <input type="checkbox" id="lote-transmitir" checked>
+            <span>Transmitir imediatamente ao ADN / Sefin Nacional</span>
+          </label>
+          <label class="form-check-inline" style="min-height:unset; padding:0;">
+            <input type="checkbox" id="lote-enviar-email">
+            <span>Enviar XML + DANFSe por e-mail aos tomadores</span>
+          </label>
+        </div>
+
+        <div class="tbl-container">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:40px;"><input type="checkbox" id="lote-check-all" onchange="App.toggleAllLoteCustomers(this)" title="Selecionar todos"></th>
+                <th>CNPJ</th>
+                <th>Razão Social</th>
+                <th>E-mail</th>
+                <th>Valor Customizado (R$)</th>
+              </tr>
+            </thead>
+            <tbody id="lote-customers-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="lote-result-box" style="display:none; margin-top:16px; padding:14px; border-radius:10px; background:var(--bg3); border:1px solid var(--border); font-size:12.5px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: FILA DE CONTINGÊNCIA -->
   <div id="emission-tab-fila" style="display:none;">
     <div class="card" style="padding:22px;">
       <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
@@ -310,15 +535,31 @@
     </div>
   </div>
 
-  <!-- TAB 3: CADASTROS RECORRENTES (TOMADORES & SERVIÇOS) -->
+  <!-- TAB 4: CADASTROS RECORRENTES (TOMADORES & SERVIÇOS) -->
   <div id="emission-tab-cadastros" style="display:none;" class="cadastros-recorrentes-grid">
     <div class="card" style="padding:20px;">
-      <h3 style="font-size:15px; font-weight:700; margin:0 0 14px 0;">Tomadores Recorrentes Cadastrados</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <h3 style="font-size:15px; font-weight:700; margin:0;">Tomadores Recorrentes Cadastrados</h3>
+        <div class="batch-toolbar-group">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadImportTemplate('customers', 'xlsx')" title="Baixar modelo Excel">Modelo XLSX</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadImportTemplate('customers', 'csv')" title="Baixar modelo CSV">Modelo CSV</button>
+          <input type="file" id="import-customers-file" accept=".csv,.xlsx,.xlsm" style="display:none;" onchange="App.handleImportSpreadsheet('customers', this)">
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('import-customers-file').click()">Importar Planilha</button>
+        </div>
+      </div>
+      <div class="cadastros-toolbar">
+        <span class="batch-selection-info" id="cust-selected-count">0 selecionado(s)</span>
+        <div class="batch-toolbar-group">
+          <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteSelectedSavedCustomers()">Excluir Selecionados</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteAllSavedCustomers()">Excluir Todos</button>
+        </div>
+      </div>
       <div class="tbl-container">
         <table class="tbl">
           <thead>
             <tr>
-              <th>CNPJ</th>
+              <th style="width:36px;"><input type="checkbox" id="cust-check-all" onchange="App.toggleAllSavedCustomers(this)" title="Selecionar todos"></th>
+              <th>CNPJ / CPF</th>
               <th>Razão Social</th>
               <th>Município IBGE</th>
               <th>Ações</th>
@@ -330,11 +571,27 @@
     </div>
 
     <div class="card" style="padding:20px;">
-      <h3 style="font-size:15px; font-weight:700; margin:0 0 14px 0;">Serviços Recorrentes Cadastrados</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <h3 style="font-size:15px; font-weight:700; margin:0;">Serviços Recorrentes Cadastrados</h3>
+        <div class="batch-toolbar-group">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadImportTemplate('services', 'xlsx')" title="Baixar modelo Excel">Modelo XLSX</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.downloadImportTemplate('services', 'csv')" title="Baixar modelo CSV">Modelo CSV</button>
+          <input type="file" id="import-services-file" accept=".csv,.xlsx,.xlsm" style="display:none;" onchange="App.handleImportSpreadsheet('services', this)">
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('import-services-file').click()">Importar Planilha</button>
+        </div>
+      </div>
+      <div class="cadastros-toolbar">
+        <span class="batch-selection-info" id="srv-selected-count">0 selecionado(s)</span>
+        <div class="batch-toolbar-group">
+          <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteSelectedSavedServices()">Excluir Selecionados</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-danger-outline" onclick="App.deleteAllSavedServices()">Excluir Todos</button>
+        </div>
+      </div>
       <div class="tbl-container">
         <table class="tbl">
           <thead>
             <tr>
+              <th style="width:36px;"><input type="checkbox" id="srv-check-all" onchange="App.toggleAllSavedServices(this)" title="Selecionar todos"></th>
               <th>Título</th>
               <th>cTribNac / cClassTrib</th>
               <th>Valor Base</th>

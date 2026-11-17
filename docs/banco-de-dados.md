@@ -21,6 +21,14 @@ Na inicialização da aplicação (`init_db()` em `backend/app/models.py`) ou vi
 2. Executa as migrações versionadas de `backend/migrations/versions/` (registradas na tabela `schema_migrations`) e sincroniza o schema atual.
 3. Criptografa automaticamente em repouso (`EncryptedString` AES/Fernet) eventuais senhas legadas em texto puro.
 
+Para executar o `manage.py` diretamente dentro do container Docker (`nfse_backend`):
+
+```bash
+docker compose exec backend python manage.py showmigrations
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py create_admin
+```
+
 ---
 
 ## 2. Diagrama Entidade-Relacionamento (ERD)

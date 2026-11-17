@@ -68,6 +68,11 @@ Antes de gerar ou transmitir uma DPS, o validador verifica as regras da Nota Té
 5. **Fila de Contingência Offline (`/api/adn/fila` e `/api/adn/fila/reenviar`)**:
    - Se ocorrer falha de rede, timeout ou erro 5xx na Sefin durante a emissão, a nota é salva com `status="fila_contingencia"` para retransmissão posterior em lote sem perda de dados.
 6. **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{invoice_id}/enviar-email`)**:
+   - Garante a existência local do XML e do PDF (`ensure_invoice_files`, convertendo `.html` ou baixando do portal sob demanda caso a nota tenha sido apenas sincronizada) e bloqueia com HTTP `422` se nenhum anexo válido estiver disponível.
    - Utiliza prioritariamente o SMTP configurado no cadastro do Prestador (`origem_smtp="cliente"`) ou o fallback global do servidor (`DEFAULT_SMTP_HOST`, `DEFAULT_SMTP_USER`, `DEFAULT_SMTP_PASSWORD` — `origem_smtp="sistema"`), adicionando automaticamente o cabeçalho `Reply-To` apontando para o e-mail do prestador.
 7. **Cofre de Notas ADN por NSU (`/api/adn/cofre/sincronizar`)**:
    - Sincroniza incrementalmente todas as notas emitidas e recebidas em que o CNPJ do cliente figura diretamente da distribuição DFe do Ambiente Nacional (`ultimo_nsu_adn`).
+8. **Emissão em Lote (`/api/adn/dps/emitir-lote`) & Importação por Planilha**:
+   - Permite selecionar múltiplos tomadores recorrentes na mesma competência para gerar, validar XSD, assinar e transmitir em sequência, além de importar tomadores e serviços via CSV/XLSX (`/api/customers/import`, `/api/service-items/import`) com enriquecimento automático do Anexo VIII.
+9. **Conferência Mensal por Competência (`/api/reports/competencia`)**:
+   - Consolida emitidas ativas, recebidas ativas, tributos (`ISS`, `IBS`, `CBS`), fila de contingência e exceções (`cancelada`/`substituida`) em JSON, CSV e XLSX sem somar notas canceladas no faturamento.

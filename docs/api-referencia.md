@@ -96,6 +96,7 @@ curl -X POST "http://localhost:8000/api/clients" \
 | `GET` | `/api/catalogs/servicos/{c_trib_nac}` | — |
 | `GET` | `/api/catalogs/lc116` | — |
 | `GET` | `/api/catalogs/correlacoes` | `q`, `item_lc116`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `indop`, `limite` |
+| `GET` | `/api/catalogs/nbs/{c_nbs}/combinacoes` | `c_trib_nac` (retorna `cClassTrib` e `cIndOp` compatíveis com a NBS) |
 | `GET` | `/api/catalogs/indop` | — |
 | `GET` | `/api/catalogs/favoritos` | — |
 
@@ -116,11 +117,12 @@ curl -X POST "http://localhost:8000/api/clients" \
 | :--- | :--- | :--- |
 | `POST` | `/api/adn/dps/preview` | Gera XML da DPS v1.01, calcula tributos e valida XSD sem transmitir |
 | `POST` | `/api/adn/dps/emitir` | Gera, valida XSD, assina com Certificado A1, gera PDF DANFSE e transmite ao ADN (aceita `customer_id` e `service_item_id` ou vai para `fila_contingencia` se sem rede) |
+| `POST` | `/api/adn/dps/emitir-lote` | Emite múltiplas DPS sequencialmente para o mesmo prestador (`itens[]` + `data_competencia`), retornando contagem de autorizadas, contingência e erros por item |
 | `GET` | `/api/adn/fila` | Lista notas pendentes na fila de contingência (`dps_gerada` ou `fila_contingencia`) |
 | `POST` | `/api/adn/fila/reenviar` | Retransmite individualmente ou em lote as DPS pendentes na fila |
 | `GET` | `/api/adn/worker/status` | Retorna o estado atual, intervalo e resultado da última execução do worker automático de contingência (`SchedulerService`) |
 | `POST` | `/api/adn/worker/trigger` | Dispara imediatamente um ciclo do worker de retransmissão da fila de contingência |
-| `POST` | `/api/adn/nfse/{invoice_id}/enviar-email` | Envia o XML e o DANFSe (PDF) por e-mail via SMTP do Prestador ou fallback global do sistema (`DEFAULT_SMTP_*`) com `Reply-To` |
+| `POST` | `/api/adn/nfse/{invoice_id}/enviar-email` | Recupera/gera XML e PDF sob demanda (`ensure_invoice_files`) e envia por e-mail via SMTP do Prestador ou fallback global (`DEFAULT_SMTP_*`) com `Reply-To` (retorna HTTP `422` se nenhum anexo estiver disponível) |
 | `POST` | `/api/adn/cofre/sincronizar` | Sincroniza o Cofre de Notas (emitidas e recebidas) diretamente do Ambiente Nacional via Certificado A1 (`DistDFe` por NSU) |
 | `POST` | `/api/adn/nfse/cancelar` | Gera e transmite o evento `e101101` de cancelamento de NFS-e |
 | `POST` | `/api/adn/nfse/substituir` | Emite DPS substituta (`<subst>`) e gera evento `e105102` |
@@ -138,10 +140,32 @@ curl -X POST "http://localhost:8000/api/clients" \
 | `POST` | `/api/customers` | Cria um tomador recorrente |
 | `PUT` | `/api/customers/{customer_id}` | Atualiza dados de um tomador recorrente |
 | `DELETE` | `/api/customers/{customer_id}` | Remove um tomador recorrente |
+| `GET` | `/api/customers/import/template` | Baixa planilha modelo (`format=csv\|xlsx`) para importação em lote de tomadores |
+| `POST` | `/api/customers/import` | Importa tomadores via `multipart/form-data` (`.csv`/`.xlsx`), preservando CNPJs alfanuméricos e atualizando registros existentes opcionalmente |
 | `GET` | `/api/service-items` | Lista serviços recorrentes (filtra por `client_id` + globais e busca por `q`) |
 | `POST` | `/api/service-items` | Cria um serviço recorrente preenchendo automaticamente `c_nbs`, `c_class_trib`, `cst_ibscbs` e `c_ind_op` pelo Anexo VIII |
 | `PUT` | `/api/service-items/{item_id}` | Atualiza dados de um serviço recorrente |
 | `DELETE` | `/api/service-items/{item_id}` | Remove um serviço recorrente |
+| `GET` | `/api/service-items/import/template` | Baixa planilha modelo (`format=csv\|xlsx`) para importação em lote de serviços |
+| `POST` | `/api/service-items/import` | Importa serviços via `multipart/form-data` (`.csv`/`.xlsx`) com enriquecimento automático pela matriz do Anexo VIII |
+
+---
+
+## 7.2. Módulo Persistente de Importação e Emissão em Lote (`/api/batch-emission`)
+
+| Método | Rota | Descrição |
+| :--- | :--- | :--- |
+| `GET` | `/api/batch-emission/template` | Baixa o modelo padrão CSV (`;`) ou XLSX (abas `Notas Lote` e `Instrucoes`) para importação de notas |
+| `POST` | `/api/batch-emission/import` | Importa planilha CSV (`;` ou `,`) ou XLSX sem transmitir notas, gerando `BatchImport` e `BatchImportItem` e aplicando validação em 3 níveis |
+| `GET` | `/api/batch-emission` | Lista o histórico de lotes importados (`client_id` opcional) |
+| `GET` | `/api/batch-emission/{batch_id}` | Consulta resumo e contadores do lote |
+| `POST` | `/api/batch-emission/{batch_id}/validate` | Reexecuta a validação estrutural (CPF/CNPJ alfanumérico), cadastral e fiscal/XSD v1.01 |
+| `GET` | `/api/batch-emission/{batch_id}/items` | Lista linhas do lote com filtro opcional por `status` (`VALID`, `INVALID`, `AUTHORIZED`, `REJECTED`, `UNKNOWN`, `RETRY`, `CANCELLED`) |
+| `PATCH` | `/api/batch-emission/{batch_id}/items/{item_id}` | Corrige campos de uma linha específica e revalida imediatamente |
+| `POST` | `/api/batch-emission/{batch_id}/process` | Processa sequencialmente os itens válidos confirmados sem manter transação de banco durante chamadas HTTP |
+| `POST` | `/api/batch-emission/{batch_id}/retry` | Consulta itens `UNKNOWN` no ADN (`consultar_dps`) antes de reenviar e reprocessa itens `RETRY` |
+| `POST` | `/api/batch-emission/{batch_id}/cancel` | Cancela itens ainda pendentes do lote |
+| `GET` | `/api/batch-emission/{batch_id}/export` | Exporta resumo e itens detalhados em `format=csv\|xlsx` |
 
 ```json title="POST /api/adn/dps/emitir — Exemplo de Payload"
 {
@@ -181,3 +205,4 @@ curl -X POST "http://localhost:8000/api/clients" \
 | `GET` | `/api/analytics/ranking` | Top 5 clientes emitentes e tomadores |
 | `POST` | `/api/analytics/enrich-xml` | Extrai valores e números de XMLs já baixados |
 | `GET` | `/api/reports/export` | Exporta relatório em `format=json|csv|xlsx` |
+| `GET` | `/api/reports/competencia` | Conferência mensal por `competencia=YYYY-MM` em `format=json|csv|xlsx` (separa notas ativas, canceladas/substituídas e pendentes na fila) |

@@ -42,7 +42,7 @@ O diretório `backend/` é a raiz de execução Python (`PYTHONPATH=backend` / `
 
 | Caminho | Responsabilidade |
 | :--- | :--- |
-| `backend/app/main.py` | Inicializa o FastAPI, configura CORS, chama `init_db()`, gerencia o ciclo de vida (`lifespan`) do `SchedulerService`, expõe `/api/health`, registra os 11 routers e monta o `frontend/` estático quando presente. |
+| `backend/app/main.py` | Inicializa o FastAPI, configura CORS, chama `init_db()`, gerencia o ciclo de vida (`lifespan`) do `SchedulerService`, expõe `/api/health`, registra os 12 routers (incluindo `batch.py`) e monta o `frontend/` estático quando presente. |
 | `backend/app/database.py` | Resolve a conexão de banco de dados de forma híbrida via `resolve_database_url()` (PostgreSQL no Docker `@database`, PostgreSQL em `@localhost` ou fallback automático para SQLite local `backend/nfse.db`) e fornece `get_db()`. |
 | `backend/app/models.py` | Declara os modelos ORM (`User`, `SchemaMigration`, `Client`, `Customer`, `ServiceItem`, `Invoice`) e a função `init_db()`. |
 | `backend/app/core/config.py` | Carrega variáveis de ambiente do arquivo `.env` (`load_dotenv_if_present()`). |
@@ -52,7 +52,8 @@ O diretório `backend/` é a raiz de execução Python (`PYTHONPATH=backend` / `
 | `backend/app/version.py` | Lê a versão oficial diretamente do `pyproject.toml` na raiz do repositório (`VERSION`). |
 | `backend/app/services/adn_service.py` | Fachada unificada que integra o banco de dados e o armazenamento em `backend/downloads/adn/` ao pacote `pynfse.adn`. |
 | `backend/app/services/scheduler_service.py` | Worker assíncrono em background para retransmissão periódica da fila de contingência e envio automático de e-mail pós-autorização. |
-| `backend/app/services/email_service.py` | Disparo de XML + DANFSe por e-mail via SMTP próprio do cliente ou fallback global (`DEFAULT_SMTP_*`) com `Reply-To`. |
+| `backend/app/services/email_service.py` | Disparo de XML + DANFSe por e-mail via SMTP próprio do cliente ou fallback global (`DEFAULT_SMTP_*`) com `Reply-To`, garantindo presença real de anexos (HTTP `422` se ausentes). |
+| `backend/app/services/batch_emission/` | Módulo persistente de emissão em lote via planilha CSV/XLSX (`importer`, `validator`, `processor`, `exporters`, `service`). |
 | `backend/app/services/lookup_service.py` | Consulta automática de CNPJ e CEP com resolução de código IBGE de 7 dígitos e cache em memória. |
 | `backend/app/api/deps.py` | Constrói instâncias do `ClienteNfseNacional` configurando `save_path` padrão em `backend/downloads/` e resolvendo certificados em `backend/certificados/`. |
 | `backend/app/api/state.py` | Mantém o dicionário em memória `tasks_status` para acompanhamento assíncrono de tarefas em background. |

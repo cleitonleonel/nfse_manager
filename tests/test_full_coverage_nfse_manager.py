@@ -529,6 +529,12 @@ def test_email_service_ssl_465_and_error_branches(tmp_path: Path):
             EmailService.enviar_nfse_por_email(cli_empty, inv)
         assert exc_cfg.value.status_code == 400
 
+    # Nota sem nenhum XML ou PDF existente -> 422 (não envia e-mail sem anexos)
+    inv_sem_anexos = Invoice(id=12, numero="12", chave="3" * 50, tomador_email="cliente@destino.com")
+    with pytest.raises(HTTPException) as exc_att:
+        EmailService.enviar_nfse_por_email(cli, inv_sem_anexos)
+    assert exc_att.value.status_code == 422
+
 
 def test_deps_and_version_edge_cases(tmp_path: Path):
     assert has_valid_certificate(None) is False

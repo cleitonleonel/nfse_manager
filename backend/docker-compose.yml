@@ -1,5 +1,8 @@
+name: nfse_manager
+
 services:
   backend:
+    image: nfse_manager-backend:latest
     build:
       context: ..
       dockerfile: backend/Dockerfile
@@ -30,6 +33,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - nfse_network
 

@@ -10,11 +10,45 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+from app.core.config import load_dotenv_if_present
 from app.models import Client, Invoice
 
 
 class EmailService:
     """Envia o XML e o DANFSe (PDF) da NFS-e para o tomador utilizando o SMTP do Prestador ou o fallback global."""
+
+    @staticmethod
+    def obter_defaults_env() -> Dict[str, Any]:
+        """Lê as variáveis DEFAULT_SMTP_* / SMTP_* do ambiente sem expor a senha em texto claro."""
+        load_dotenv_if_present()
+        env_host = (os.getenv("DEFAULT_SMTP_HOST") or os.getenv("SMTP_HOST") or "").strip()
+        env_user = (os.getenv("DEFAULT_SMTP_USER") or os.getenv("SMTP_USER") or "").strip()
+        env_pass = os.getenv("DEFAULT_SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD") or ""
+        port_raw = (os.getenv("DEFAULT_SMTP_PORT") or os.getenv("SMTP_PORT") or "587").strip()
+        try:
+            env_port = int(port_raw) if port_raw else 587
+        except ValueError:
+            env_port = 587
+        env_from = (os.getenv("DEFAULT_SMTP_FROM") or os.getenv("SMTP_FROM") or env_user).strip()
+        env_tls_raw = (os.getenv("DEFAULT_SMTP_TLS") or os.getenv("SMTP_TLS") or "1").strip().lower()
+        env_tls = env_tls_raw not in ("0", "false", "no")
+        has_any = bool(env_host or env_user or env_from)
+        return {
+            "configured": bool(env_host and env_user and env_pass),
+            "has_env_values": has_any,
+            "smtp_host": env_host,
+            "smtp_port": env_port,
+            "smtp_user": env_user,
+            "smtp_from": env_from,
+            "smtp_tls": 1 if env_tls else 0,
+            "has_password": bool(env_pass),
+        }
+
+    @staticmethod
+    def obter_env_smtp_password() -> str:
+        """Retorna a senha SMTP padrão configurada no ambiente (uso exclusivo interno no backend)."""
+        load_dotenv_if_present()
+        return os.getenv("DEFAULT_SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD") or ""
 
     @staticmethod
     def obter_config_smtp(client_db: Optional[Client]) -> Optional[Dict[str, Any]]:
@@ -30,22 +64,17 @@ class EmailService:
                 "tls": bool(client_db.smtp_tls if client_db.smtp_tls is not None else 1),
             }
 
-        env_host = (os.getenv("DEFAULT_SMTP_HOST") or os.getenv("SMTP_HOST") or "").strip()
-        env_user = (os.getenv("DEFAULT_SMTP_USER") or os.getenv("SMTP_USER") or "").strip()
-        env_pass = os.getenv("DEFAULT_SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD") or ""
-        if env_host and env_user and env_pass:
-            env_port = int(os.getenv("DEFAULT_SMTP_PORT") or os.getenv("SMTP_PORT") or "587")
-            env_from = (os.getenv("DEFAULT_SMTP_FROM") or os.getenv("SMTP_FROM") or env_user).strip()
-            env_tls_raw = (os.getenv("DEFAULT_SMTP_TLS") or os.getenv("SMTP_TLS") or "1").strip().lower()
-            env_tls = env_tls_raw not in ("0", "false", "no")
+        defaults = EmailService.obter_defaults_env()
+        env_pass = EmailService.obter_env_smtp_password()
+        if defaults["smtp_host"] and defaults["smtp_user"] and env_pass:
             return {
                 "origem": "sistema",
-                "host": env_host,
-                "port": env_port,
-                "user": env_user,
+                "host": defaults["smtp_host"],
+                "port": defaults["smtp_port"],
+                "user": defaults["smtp_user"],
                 "password": env_pass,
-                "from_addr": env_from,
-                "tls": env_tls,
+                "from_addr": defaults["smtp_from"] or defaults["smtp_user"],
+                "tls": bool(defaults["smtp_tls"]),
             }
 
         return None
@@ -140,10 +169,15 @@ class EmailService:
         )
         msg.add_alternative(corpo_html, subtype="html")
 
+        from app.api.routers.downloads import _resolve_existing_path
+
         anexos_incluidos = []
         xml_candidate = invoice.xml_path or invoice.xml_dps_path
-        if xml_candidate and Path(xml_candidate).exists():
-            xml_bytes = Path(xml_candidate).read_bytes()
+        xml_resolved = _resolve_existing_path(xml_candidate) if xml_candidate else None
+        if not xml_resolved and xml_candidate and Path(xml_candidate).exists():
+            xml_resolved = xml_candidate
+        if xml_resolved and Path(xml_resolved).exists():
+            xml_bytes = Path(xml_resolved).read_bytes()
             msg.add_attachment(
                 xml_bytes,
                 maintype="application",
@@ -152,8 +186,11 @@ class EmailService:
             )
             anexos_incluidos.append("xml")
 
-        if invoice.pdf_path and Path(invoice.pdf_path).exists():
-            pdf_bytes = Path(invoice.pdf_path).read_bytes()
+        pdf_resolved = _resolve_existing_path(invoice.pdf_path) if invoice.pdf_path else None
+        if not pdf_resolved and invoice.pdf_path and Path(invoice.pdf_path).exists():
+            pdf_resolved = invoice.pdf_path
+        if pdf_resolved and pdf_resolved.lower().endswith(".pdf") and Path(pdf_resolved).exists():
+            pdf_bytes = Path(pdf_resolved).read_bytes()
             msg.add_attachment(
                 pdf_bytes,
                 maintype="application",
@@ -161,6 +198,15 @@ class EmailService:
                 filename=f"DANFSe_{invoice.numero or invoice.chave}.pdf",
             )
             anexos_incluidos.append("pdf")
+
+        if not anexos_incluidos:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Não foi possível localizar ou baixar o XML e o DANFSe (PDF) desta nota fiscal para anexar ao e-mail. "
+                    "Tente baixar os arquivos na tela de Notas Fiscais antes de reenviar."
+                ),
+            )
 
         port = int(smtp_cfg["port"])
         use_tls = bool(smtp_cfg["tls"])

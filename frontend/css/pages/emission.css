@@ -294,3 +294,95 @@
   .emission-quick-toolbar select.form-input,
   .emission-quick-toolbar .btn { width: 100%; flex: 1 1 100%; }
 }
+
+/* ---------- Menus & toolbars organizados da emissão em lote e cadastros ---------- */
+.emission-tabs-group {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+}
+
+.emission-subtabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.batch-section-card {
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+
+.batch-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.batch-toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.batch-selection-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 0 4px;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.btn-danger-outline:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+}
+
+.table-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.btn-action-danger {
+  color: var(--red);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.btn-action-danger:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.cadastros-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}

@@ -53,13 +53,16 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
   - Sincronização assíncrona em background de notas `emitidas` e `recebidas` com barra de progresso em tempo real.
   - **Cofre de Notas ADN (DistDFe / NSU via mTLS)**: sincronização incremental direta com o Ambiente Nacional da NFS-e usando o Certificado A1 (`/api/adn/cofre/sincronizar`).
   - Download individual ou em lote (`.zip`), recuperação automática de arquivos ausentes, **conversão automática de HTML de impressão em XML SPED** e **geração local de PDF (DANFSE)** a partir do XML.
-- **Emissão de NFS-e, Fila de Contingência, Worker Agendado e Eventos no ADN (Sefin Nacional v1.01)**:
-  - **Cadastros Recorrentes de Tomadores (`/api/customers`) e Serviços (`/api/service-items`)**: emissão rápida em 1 clique com preenchimento automático de `cNBS`, `cClassTrib`, `CST` e `cIndOp` pela matriz do Anexo VIII.
+- **Emissão de NFS-e (Individual e em Lote), Fila de Contingência, Worker Agendado e Eventos no ADN (Sefin Nacional v1.01)**:
+  - **Cadastros Recorrentes e Importação em Lote via Planilha (`/api/customers`, `/api/service-items`)**: emissão rápida em 1 clique, **download de modelos CSV/XLSX** (`/import/template`) e **importação em massa** de tomadores (incluindo CNPJ alfanumérico) e serviços com enriquecimento automático de `cNBS`, `cClassTrib`, `CST` e `cIndOp` pela matriz do Anexo VIII.
+  - **Emissão em Lote (`POST /api/adn/dps/emitir-lote` e módulo persistente `/api/batch-emission`)**:
+    - **Importação por Planilha de Notas (CSV `;`/`,` e XLSX)**: upload de notas heterogêneas em staging (`BatchImport` / `BatchImportItem`), sem transmissão automática, com **validação em 3 níveis** (Estrutural com CPF/CNPJ alfanumérico, Cadastral e Fiscal/XSD v1.01), edição/correção inline por linha (`PATCH`), processamento sequencial com estado `UNKNOWN` e consulta prévia via `consultar_dps` antes de qualquer reenvio, cancelamento e exportação CSV/XLSX.
+    - **Emissão Rápida em Lote**: seleção múltipla de tomadores cadastrados e serviço padrão na tela de emissão.
   - **CNPJ Alfanumérico e Consulta Automática de CNPJ/CEP (`/api/lookup/*`)**: campo exclusivo para CNPJ (numérico ou alfanumérico, com máscara `XX.XXX.XXX/XXXX-XX`) e disparo automático ao completar os 14 caracteres do CNPJ ou 8 dígitos do CEP, preenchendo razão social, endereço e código IBGE de 7 dígitos.
   - **Seletores Pesquisáveis com Catálogo Oficial Completo**: dropdown customizado (`CustomSelect`, imune ao bug de popup GTK/Linux) com busca sem acentos integrando todos os **338 serviços `cTribNac`** (41 grupos da LC 116), **676 códigos NBS** (com vínculo automático ou listagem completa), **66 `cClassTrib`** aplicáveis à NFS-e e **28 `cIndOp`**.
   - **Card de Conferência Prévia e Validação XSD**: prévia de impostos e validação `DPS_v1.01.xsd` antes do envio.
   - **Fila de Contingência Offline (`/api/adn/fila`) e Worker em Background (`/api/adn/worker/*`)**: armazenamento seguro de DPS assinadas quando há queda de conexão/instabilidade na Sefin, com retransmissão manual em lote (`/api/adn/fila/reenviar`) ou automática periódica pelo `SchedulerService`.
-  - **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{id}/enviar-email`)**: disparo via SMTP próprio do Prestador ou fallback global do sistema (`DEFAULT_SMTP_*` no `.env`) com cabeçalho `Reply-To` apontando para o e-mail do cliente.
+  - **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{id}/enviar-email`)**: disparo via SMTP próprio do Prestador (com botão **"Usar envio padrão"** carregando `DEFAULT_SMTP_*` do `.env`) ou fallback global do sistema, cabeçalho `Reply-To` para o e-mail do cliente, recuperação/download sob demanda de XML e PDF ausentes (`ensure_invoice_files`) e bloqueio HTTP `422` caso nenhum anexo esteja disponível.
   - Cancelamento de NFS-e (`e101101`) e Substituição de NFS-e (`<subst>` + evento `e105102`).
   - Consulta de parâmetros municipais (convênio e alíquotas por código IBGE).
 - **Motor Tributário da Reforma Tributária (NT 1.101 / LC 214/2025)**:
@@ -67,7 +70,7 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
   - Cálculo integrado de `ISSQN`, retenções federais (`PIS`, `COFINS`, `IRRF`, `CSLL`, `INSS`) e `IBS/CBS` (com suporte a reduções de alíquota, diferimento, crédito presumido, tributação regular e compras governamentais).
 - **Analytics e Relatórios**:
   - Dashboard com KPIs financeiros, gráfico temporal (`7d`, `30d`, `90d`, `12m`), ranking de clientes e enriquecimento de notas via XML.
-  - Exportação de relatórios financeiros em **JSON**, **CSV** e **XLSX (Excel)**.
+  - Exportação de relatórios financeiros em **JSON**, **CSV** e **XLSX (Excel)** e **Conferência Mensal por Competência (`/api/reports/competencia`)** separando notas ativas, pendentes em fila e canceladas/substituídas sem somar valores cancelados no faturamento.
 - **Auto-Update Transacional**:
   - Consulta de novas versões no GitHub Releases, download em background para `release/staging/`, backup automático com rollback em caso de falha e reinicialização assistida.
 
@@ -84,7 +87,7 @@ flowchart LR
 
     subgraph Backend["Camada de Aplicação (backend/app)"]
         API["FastAPI (:8000)<br/>app.main:app"]
-        Routers["11 Routers REST<br/>(/api/*)"]
+        Routers["12 Routers REST<br/>(/api/*)"]
         AdnSvc["AdnService<br/>(pynfse.adn)"]
         PortalBot["ClienteNfseNacional<br/>(pynfse)"]
     end
@@ -139,34 +142,39 @@ nfse_manager/
 │       ├── schemas.py                   # Schemas Pydantic de entrada e saída
 │       ├── version.py                   # Leitura dinâmica da versão a partir do pyproject.toml
 │       ├── core/
-│       │   └── security.py              # Criptografia simétrica autenticada em repouso (AES/Fernet)
+│       │   ├── config.py                # Carregamento de variáveis .env
+│       │   ├── migrations.py            # Motor de migrações versionadas do banco
+│       │   ├── security.py              # Criptografia simétrica em repouso (AES/Fernet) e JWT
+│       │   └── spreadsheets.py          # Leitura/escrita unificada de CSV (;/,) e XLSX
 │       ├── services/
 │       │   ├── adn_service.py           # Orquestração fiscal ADN / Sefin Nacional v1.01, Fila e Cofre NSU
+│       │   ├── batch_emission/          # Emissão em lote persistente (importer, validator, processor, exporters)
 │       │   ├── email_service.py         # Envio de XML + DANFSe por e-mail (SMTP por cliente + fallback global)
 │       │   ├── html_xml_service.py      # Conversão de HTML de impressão em XML SPED e PDF DANFSe
 │       │   └── lookup_service.py        # Consulta automática de CNPJ e CEP (BrasilAPI / ViaCEP / ReceitaWS)
 │       └── api/
 │           ├── deps.py                  # Factory de ClienteNfseNacional com paths do backend
 │           ├── state.py                 # Estado em memória (tasks_status) das tarefas em background
-│           └── routers/                 # 11 routers modulares por domínio
+│           └── routers/                 # 12 routers modulares por domínio
 │               ├── auth.py              # Login/Cadastro JWT, /me, troca de senha e gestão de operadores
-│               ├── clients.py           # CRUD de clientes, SMTP e upload de certificado .pfx
+│               ├── clients.py           # CRUD de clientes, SMTP (/smtp/padrao) e upload de certificado .pfx
 │               ├── registry.py          # CRUD de Tomadores e Serviços Recorrentes + Lookup CNPJ/CEP
 │               ├── invoices.py          # Sincronização (/api/sync), tasks e listagem de notas
-│               ├── downloads.py         # Download individual, lote ZIP e geração de DANFSE local
+│               ├── downloads.py         # Download individual, lote ZIP, geração de DANFSE e ensure_invoice_files
 │               ├── analytics.py         # KPIs, série temporal, ranking e enriquecimento XML
-│               ├── reports.py           # Exportação de relatórios (JSON, CSV, XLSX)
+│               ├── reports.py           # Exportação de relatórios (JSON, CSV, XLSX) e conferência por competência
 │               ├── system.py            # Versão, auto-update, suporte e navegador de pastas
-│               ├── catalogs.py          # Catálogos CST, cClassTrib, cTribNac, LC 116, Anexo VIII, cIndOp
+│               ├── catalogs.py          # Catálogos CST, cClassTrib, cTribNac, LC 116, Anexo VIII, cIndOp e combos NBS
 │               ├── tax.py               # Cálculo e validação de regras IBS/CBS + ISSQN + Federais
-│               └── emission.py          # Emissão DPS, Fila de Contingência, E-mail, Cofre ADN, Cancelamento e Substituição
+│               ├── emission.py          # Emissão DPS, Fila de Contingência, E-mail, Cofre ADN, Cancelamento e Substituição
+│               └── batch.py             # Módulo persistente de emissão em lote (/api/batch-emission)
 ├── 🎨 frontend/                         # Aplicação Web SPA (responsiva com container queries)
 │   ├── Dockerfile                       # Imagem Nginx Alpine do frontend
 │   ├── docker-compose.yml               # Compose dedicado do Frontend
 │   ├── nginx.conf                       # Configuração Nginx (SPA + proxy reverso para /api)
-│   ├── index.html                       # Layout base (tela inicial de login/cadastro, sidebar, topbar, modais)
+│   ├── index.html                       # Layout base (login/cadastro, sidebar, topbar, modais e #task-toast)
 │   ├── css/                             # Estilos modulares (variables, base, layout, components/*, pages/{dashboard,emission,auth})
-│   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/*)
+│   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/{dashboard,clients,invoices,emission,batch,about})
 │   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, emission, about)
 ├── 🖥️ ui/                               # Shell Desktop Nativo (Tauri / Rust)
 │   ├── dev.sh                           # Inicia servidor Python + janela Tauri em modo dev
@@ -179,16 +187,19 @@ nfse_manager/
 │   ├── reforma-tributaria-adn.md / api-referencia.md
 │   ├── arquitetura-e-uso.md             # Manual de arquitetura, banco, fluxos e contratos da API
 │   └── assets/                          # Imagens e logotipos da documentação
-├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 45 testes)
+├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 62 testes)
 │   ├── conftest.py
-│   ├── test_adn_emission_and_tax.py     # CRUD fiscal, catálogos, calculadora IBS/CBS, ADN, Fila, E-mail e Cofre NSU
+│   ├── test_adn_emission_and_tax.py     # CRUD fiscal, catálogos, NBS combos, calculadora IBS/CBS, ADN, Fila e E-mail
 │   ├── test_analytics_and_canceled_invoices.py
+│   ├── test_batch_emission_v2.py        # Staging CSV/XLSX, validação em 3 níveis, UNKNOWN recovery e exclusão sincronizada
+│   ├── test_batch_import_and_competencia.py
 │   ├── test_client_deletion_and_certs.py
 │   ├── test_full_coverage_nfse_manager.py
 │   ├── test_html_to_xml_and_pdf.py
 │   ├── test_manage_auth_worker_and_certs.py # CLI manage.py, JWT Auth/Cadastro, alertas A1, worker e CNPJ alfanumérico
 │   ├── test_security_and_credentials_encryption.py
-│   └── test_versioning_and_updates.py   # Versão, healthcheck, update transacional e CI
+│   ├── test_versioning_and_updates.py   # Versão, healthcheck, update transacional e CI
+│   └── test_xml_canonicalization_nt.py  # Canonicalização C14N, XML-DSig e ordenação XSD NT 2026/2027
 ├── 🛠️ scripts/                          # Scripts de automação e manutenção
 │   ├── sync_version.py                  # Sincroniza a versão do pyproject.toml com arquivos estáticos
 │   └── release.sh                       # Criação automatizada de tags Git e GitHub Releases
@@ -248,6 +259,16 @@ poetry run python manage.py migrate
 poetry run python manage.py create_admin
 # ou de forma não-interativa:
 poetry run python manage.py create_admin --username admin --email admin@empresa.com.br --password MinhaSenhaForte
+```
+
+Quando estiver executando a aplicação via Docker Compose (`nfse_backend` ativo), os mesmos comandos podem ser rodados diretamente dentro do container:
+
+```bash
+docker compose exec backend python manage.py showmigrations
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py create_admin
+# ou não-interativo:
+docker compose exec backend python manage.py create_admin --username admin --email admin@empresa.com.br --password MinhaSenhaForte
 ```
 
 ---
@@ -425,9 +446,10 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 
 - `POST /api/adn/dps/preview` — Gera o XML da DPS v1.01 com cálculo tributário integrado e valida contra `DPS_v1.01.xsd`.
 - `POST /api/adn/dps/emitir` — Gera, valida XSD, assina com Certificado A1 (`infDPS`), gera o PDF DANFSE local e transmite via mTLS ao ADN (aceita `customer_id` e `service_item_id` para emissão em 1 clique e salva automaticamente na fila de contingência em caso de falha de rede).
+- `POST /api/adn/dps/emitir-lote` — Gera, assina e transmite múltiplas DPS sequencialmente para uma lista de tomadores/serviços na mesma competência, consolidando autorizadas, fila de contingência e erros por item.
 - `GET /api/adn/fila` — Lista notas pendentes na fila de contingência (`dps_gerada` ou `fila_contingencia`).
 - `POST /api/adn/fila/reenviar` — Retransmite em lote (ou individualmente) as DPS pendentes na fila de contingência.
-- `POST /api/adn/nfse/{invoice_id}/enviar-email` — Envia o XML e o DANFSe (PDF) por e-mail usando o SMTP do Prestador ou o fallback global do sistema (`DEFAULT_SMTP_*`) com `Reply-To` para o cliente.
+- `POST /api/adn/nfse/{invoice_id}/enviar-email` — Recupera/gera XML e PDF sob demanda (`ensure_invoice_files`) e envia por e-mail usando o SMTP do Prestador ou o fallback global do sistema (`DEFAULT_SMTP_*`) com `Reply-To` para o cliente (retorna HTTP `422` se nenhum anexo estiver disponível).
 - `POST /api/adn/cofre/sincronizar` — Sincroniza notas emitidas e recebidas diretamente do Ambiente Nacional via Certificado A1 por NSU (`DistDFe`).
 - `POST /api/adn/nfse/cancelar` — Gera evento `e101101` (`pedRegEvento`), valida XSD, assina (`infPedReg`) e transmite o cancelamento.
 - `POST /api/adn/nfse/substituir` — Emite DPS substituta (`<subst>`) e gera o evento `e105102`, atualizando o status da nota original para `substituida`.
@@ -438,7 +460,11 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 - `GET /api/lookup/cnpj/{cnpj}` — Consulta razão social, regime tributário (`simples | mei | normal`), endereço e código IBGE de 7 dígitos.
 - `GET /api/lookup/cep/{cep}` — Consulta logradouro, bairro, UF e código IBGE de 7 dígitos pelo CEP.
 - `GET / POST / PUT / DELETE /api/customers` — CRUD de Tomadores Recorrentes (por cliente ou globais).
+- `GET /api/customers/import/template?format=csv|xlsx` & `POST /api/customers/import` — Download de modelo e importação em lote de tomadores via CSV/Excel (preservando CNPJs alfanuméricos).
 - `GET / POST / PUT / DELETE /api/service-items` — CRUD de Serviços Recorrentes (com preenchimento automático de `c_nbs`, `c_class_trib`, `cst_ibscbs` e `c_ind_op` pela matriz do Anexo VIII).
+- `GET /api/service-items/import/template?format=csv|xlsx` & `POST /api/service-items/import` — Download de modelo e importação em lote de serviços via CSV/Excel com enriquecimento automático pelo Anexo VIII.
+- `GET /api/batch-emission/template` & `POST /api/batch-emission/import` — Download de modelo (`csv`/`xlsx` com aba de instruções) e importação de planilha de notas em lote em staging persistente (`BatchImport` / `BatchImportItem`).
+- `GET /api/batch-emission/{id}`, `POST .../validate`, `PATCH .../items/{item_id}`, `POST .../process`, `POST .../retry`, `POST .../cancel`, `GET .../export` — Ciclo completo de validação em 3 níveis, correção por linha, transmissão sequencial idempotente (com recuperação `UNKNOWN` via `consultar_dps`) e exportação CSV/XLSX.
 
 ### 7. Analytics, Relatórios e Sistema (`/api/analytics`, `/api/reports`, `/api/system`)
 
@@ -447,6 +473,7 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 - `GET /api/analytics/ranking?period=30d` — Top 5 clientes por volume emitido e recebido.
 - `POST /api/analytics/enrich-xml` — Reprocessa XMLs locais para preencher valores e números faltantes.
 - `GET /api/reports/export?format=json|csv|xlsx&period=30d` — Exporta relatório financeiro consolidado.
+- `GET /api/reports/competencia?competencia=YYYY-MM&format=json|csv|xlsx` — Gera relatório mensal por competência separando ativas, canceladas/substituídas e fila de contingência.
 - `GET /api/health` — Healthcheck da aplicação.
 - `GET /api/system/version` — Retorna a versão atual definida no `pyproject.toml`.
 - `GET /api/system/check-update` — Verifica se há nova release publicada no GitHub.

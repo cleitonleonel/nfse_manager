@@ -929,3 +929,220 @@ def test_recurring_customers_and_service_items_and_one_click_emission(
     # Cleanup dos cadastros recorrentes criados no teste
     api_client.delete(f"/api/customers/{customer_id}")
     api_client.delete(f"/api/service-items/{service_item_id}")
+
+
+def test_nbs_combinations_filter_and_service_validation(api_client: TestClient):
+    # 1. Consulta combinações compatíveis de cClassTrib e cIndOp para NBS com múltiplas classificações (115029000)
+    r_comb = api_client.get("/api/catalogs/nbs/115029000/combinacoes")
+    assert r_comb.status_code == 200, r_comb.text
+    comb = r_comb.json()
+    assert comb["c_nbs"] == "115029000"
+    assert comb["possui_correlacoes"] is True
+    codigos_ct = {c["codigo"] for c in comb["cclasstrib_compativeis"]}
+    codigos_indop = {i["cIndOp"] for i in comb["cindop_compativeis"]}
+    assert "000001" in codigos_ct
+    assert "100301" in codigos_indop
+
+    # 2. Validação cruzada em /api/tax/validate-ibscbs emite aviso quando cClassTrib/cIndOp diverge da NBS
+    r_warn = api_client.post(
+        "/api/tax/validate-ibscbs",
+        json={
+            "cTribNac": "010101",
+            "cNBS": "115029000",
+            "cClassTrib": "200029",
+            "cst": "200",
+            "cIndOp": "020101",
+        },
+    )
+    assert r_warn.status_code == 200, r_warn.text
+    warn_codes = {a["codigo"] for a in r_warn.json()["avisos"]}
+    assert "ANEXO_VIII_CCLASSTRIB" in warn_codes
+    assert "ANEXO_VIII_INDOP" in warn_codes
+
+    # 3. Cadastro de serviço rejeita combinação estruturalmente inválida (422) e alerta divergência de NBS
+    r_bad_srv = api_client.post(
+        "/api/service-items",
+        json={
+            "titulo": "Servico CST Incompativel",
+            "descricao": "Teste regra E0959 no cadastro",
+            "valor_unitario": 100.0,
+            "c_trib_nac": "010101",
+            "c_nbs": "115029000",
+            "c_class_trib": "200029",
+            "cst_ibscbs": "000",
+            "c_ind_op": "100301",
+        },
+    )
+    assert r_bad_srv.status_code == 422
+
+    r_warn_srv = api_client.post(
+        "/api/service-items",
+        json={
+            "titulo": "Servico Com Aviso NBS",
+            "descricao": "Teste aviso de combinacao NBS",
+            "valor_unitario": 100.0,
+            "c_trib_nac": "010101",
+            "c_nbs": "115029000",
+            "c_class_trib": "200029",
+            "cst_ibscbs": "200",
+            "c_ind_op": "100301",
+        },
+    )
+    assert r_warn_srv.status_code == 200, r_warn_srv.text
+    srv_data = r_warn_srv.json()
+    assert any(a["codigo"] == "ANEXO_VIII_CCLASSTRIB" for a in srv_data["avisos_fiscais"])
+    api_client.delete(f"/api/service-items/{srv_data['id']}")
+
+
+def test_client_smtp_configuration_and_password_preservation(api_client: TestClient, monkeypatch):
+    r_create = api_client.post(
+        "/api/clients",
+        data={
+            "cnpj": "77888999000155",
+            "razao_social": "PRESTADOR SMTP TESTE LTDA",
+            "username": "77888999000155",
+            "password": "portal-password",
+            "email": "fiscal@prestador.example",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_user": "no-reply@prestador.example",
+            "smtp_password": "smtp-secret-app-password",
+            "smtp_from": "nfse@prestador.example",
+            "smtp_tls": "1",
+            "enviar_email_automatico": "1",
+        },
+    )
+    assert r_create.status_code == 200, r_create.text
+    created = r_create.json()
+    cid = created["id"]
+    assert created["smtp_host"] == "smtp.example.com"
+    assert created["smtp_port"] == 587
+    assert created["smtp_configurado"] is True
+
+    # Editar enviando smtp_password vazio não apaga a senha já configurada
+    r_upd = api_client.put(
+        f"/api/clients/{cid}",
+        data={
+            "razao_social": "PRESTADOR SMTP ATUALIZADO LTDA",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "465",
+            "smtp_user": "no-reply@prestador.example",
+            "smtp_password": "",
+            "smtp_tls": "1",
+        },
+    )
+    assert r_upd.status_code == 200, r_upd.text
+    updated = r_upd.json()
+    assert updated["smtp_port"] == 465
+    assert updated["smtp_configurado"] is True
+
+    api_client.delete(f"/api/clients/{cid}")
+
+    # Testar endpoint de defaults do .env + usar_smtp_padrao=true sem vazar senha no GET
+    monkeypatch.setenv("DEFAULT_SMTP_HOST", "smtp.sistema.example")
+    monkeypatch.setenv("DEFAULT_SMTP_PORT", "587")
+    monkeypatch.setenv("DEFAULT_SMTP_USER", "env-user@sistema.example")
+    monkeypatch.setenv("DEFAULT_SMTP_PASSWORD", "env-secret-pass")
+    monkeypatch.setenv("DEFAULT_SMTP_FROM", "env-from@sistema.example")
+    monkeypatch.setenv("DEFAULT_SMTP_TLS", "1")
+
+    r_def = api_client.get("/api/clients/smtp/padrao")
+    assert r_def.status_code == 200
+    d = r_def.json()
+    assert d["configured"] is True
+    assert d["smtp_host"] == "smtp.sistema.example"
+    assert d["smtp_user"] == "env-user@sistema.example"
+    assert d["smtp_from"] == "env-from@sistema.example"
+    assert d["has_password"] is True
+    assert "env-secret-pass" not in r_def.text
+
+    r_env_cli = api_client.post(
+        "/api/clients",
+        data={
+            "cnpj": "77888999000166",
+            "razao_social": "PRESTADOR ENV PADRAO LTDA",
+            "username": "77888999000166",
+            "password": "portal-password",
+            "usar_smtp_padrao": "true",
+        },
+    )
+    assert r_env_cli.status_code == 200, r_env_cli.text
+    env_cli = r_env_cli.json()
+    assert env_cli["smtp_host"] == "smtp.sistema.example"
+    assert env_cli["smtp_from"] == "env-from@sistema.example"
+    assert env_cli["smtp_configurado"] is True
+    api_client.delete(f"/api/clients/{env_cli['id']}")
+
+
+def test_enviar_email_baixa_xml_e_pdf_sob_demanda_quando_ausentes(api_client: TestClient, tmp_path: Path):
+    db = SessionLocal()
+    try:
+        cli = Client(
+            cnpj="88999000000177",
+            razao_social="PRESTADOR EMAIL SOB DEMANDA LTDA",
+            username="88999000000177",
+            password="123",
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_user="sender@example.com",
+            smtp_password="secret",
+        )
+        db.add(cli)
+        db.flush()
+
+        inv = Invoice(
+            client_id=cli.id,
+            numero="900",
+            chave="32013082288999000000177000000000000126060000009001",
+            status="gerada",
+            tipo="emitidas",
+            valor=500.0,
+            valor_liquido=500.0,
+            tomador_email="tomador@example.com",
+            download_url_xml="https://www.nfse.gov.br/EmissorNacional/Notas/Download/NFSe/3201308",
+            download_url_pdf="https://www.nfse.gov.br/EmissorNacional/Notas/Download/DANFSe/3201308",
+            xml_path=None,
+            pdf_path=None,
+        )
+        db.add(inv)
+        db.commit()
+        db.refresh(cli)
+        db.refresh(inv)
+        cid, inv_id = cli.id, inv.id
+    finally:
+        db.close()
+
+    xml_path = tmp_path / "nota_recuperada.xml"
+    pdf_path = tmp_path / "nota_recuperada.pdf"
+    xml_path.write_text("<NFSe/>", encoding="utf-8")
+    pdf_path.write_bytes(b"%PDF-1.4 recovered")
+
+    class _FakeNfsePortal:
+        def autenticar(self):
+            return True
+
+        def define_tipo_consulta(self, _tipo):
+            return None
+
+        def usa_apenas_credenciais(self):
+            return True
+
+        def baixar_via_impressao_html(self, *args, **kwargs):
+            return {"xml_path": str(xml_path), "pdf_path": str(pdf_path)}
+
+    def _fake_obter_html(nfse, url_ou_chave, status="gerada", data_emissao=None):
+        return {"xml_path": str(xml_path), "pdf_path": str(pdf_path), "dados": {}}
+
+    with (
+        patch("app.api.routers.downloads.get_nfse_client", return_value=_FakeNfsePortal()),
+        patch("app.api.routers.downloads.obter_html_e_gerar_xml_pdf", side_effect=_fake_obter_html),
+        patch("app.services.email_service.smtplib.SMTP") as mock_smtp,
+    ):
+        r = api_client.post(f"/api/adn/nfse/{inv_id}/enviar-email", json={})
+
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["anexos"] == ["xml", "pdf"]
+    assert mock_smtp.called
+
+    api_client.delete(f"/api/clients/{cid}")

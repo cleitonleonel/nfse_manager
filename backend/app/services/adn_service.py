@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models import Client, Customer, Invoice, ServiceItem
 from app.schemas import (
     CancelarNfseRequest,
+    EmitirDpsLoteRequest,
     EmitirDpsRequest,
     EnviarEmailNfseRequest,
     ReenviarFilaRequest,
@@ -128,6 +129,71 @@ class AdnService:
         return listar_indop()
 
     @staticmethod
+    def listar_combinacoes_por_nbs(c_nbs: str, c_trib_nac: Optional[str] = None) -> Dict[str, Any]:
+        """Retorna as opções compatíveis de cClassTrib e cIndOp para um código NBS (9 dígitos)."""
+        nbs_clean = clean_digits(c_nbs or "").zfill(9) if clean_digits(c_nbs or "") else ""
+        ctrib_clean = clean_digits(c_trib_nac or "").zfill(6) if clean_digits(c_trib_nac or "") else None
+
+        correlacoes = (
+            buscar_correlacoes_anexo_viii(c_nbs=nbs_clean, c_trib_nac=ctrib_clean, limite=500)
+            if nbs_clean
+            else []
+        )
+        if not correlacoes and nbs_clean and ctrib_clean:
+            correlacoes = buscar_correlacoes_anexo_viii(c_nbs=nbs_clean, limite=500)
+
+        indop_lookup = {
+            str(i.get("cIndOp") or "").zfill(6): i.get("local_incidencia") or ""
+            for i in listar_indop()
+        }
+
+        cclasstrib_map: Dict[str, Dict[str, Any]] = {}
+        cindop_map: Dict[str, Dict[str, Any]] = {}
+        combinacoes: List[Dict[str, Any]] = []
+
+        for corr in correlacoes:
+            ct = str(corr.get("cClassTrib") or "").strip().zfill(6)
+            indop = str(corr.get("indop") or corr.get("cIndOp") or "").strip().zfill(6)
+            cst = str(corr.get("cst") or "").strip().zfill(3) if corr.get("cst") else ""
+            if ct and ct not in cclasstrib_map:
+                meta = obter_cclasstrib(ct) or {}
+                cclasstrib_map[ct] = {
+                    "codigo": ct,
+                    "cst": cst or str(meta.get("cst") or ct[:3]).zfill(3),
+                    "nome": corr.get("nome_cClassTrib") or meta.get("nome") or f"Classificação {ct}",
+                    "nome_reduzido": meta.get("nome_reduzido") or corr.get("nome_cClassTrib") or "",
+                    "perc_red_ibs": corr.get("perc_red_ibs", meta.get("perc_red_ibs", 0.0)),
+                    "perc_red_cbs": corr.get("perc_red_cbs", meta.get("perc_red_cbs", 0.0)),
+                }
+            if indop and indop not in cindop_map:
+                cindop_map[indop] = {
+                    "cIndOp": indop,
+                    "local_incidencia": corr.get("local_incidencia_ibs")
+                    or indop_lookup.get(indop)
+                    or "Local de incidência padrão",
+                }
+            combinacoes.append(
+                {
+                    "cTribNac": corr.get("cTribNac"),
+                    "cNBS": corr.get("cNBS") or nbs_clean,
+                    "cClassTrib": ct,
+                    "cst": cst,
+                    "indop": indop,
+                    "nome_cClassTrib": corr.get("nome_cClassTrib") or "",
+                    "local_incidencia_ibs": corr.get("local_incidencia_ibs") or indop_lookup.get(indop) or "",
+                }
+            )
+
+        return {
+            "c_nbs": nbs_clean,
+            "c_trib_nac": ctrib_clean,
+            "possui_correlacoes": len(combinacoes) > 0,
+            "cclasstrib_compativeis": list(cclasstrib_map.values()),
+            "cindop_compativeis": list(cindop_map.values()),
+            "combinacoes": combinacoes,
+        }
+
+    @staticmethod
     def listar_favoritos():
         return listar_favoritos()
 
@@ -193,7 +259,7 @@ class AdnService:
 
     @staticmethod
     def validar_ibscbs(req: TaxValidationRequest) -> Dict[str, Any]:
-        return validar_regras_ibscbs(
+        res = validar_regras_ibscbs(
             c_class_trib=req.cClassTrib,
             cst=req.cst,
             c_ind_op=req.cIndOp,
@@ -215,6 +281,51 @@ class AdnService:
             v_ibs_est_cred=req.vIBSEstCred,
             v_cbs_est_cred=req.vCBSEstCred,
         )
+
+        # Cruzamento próprio NBS × cClassTrib × cIndOp via Anexo VIII (aviso preventivo não bloqueante)
+        if req.cNBS:
+            comb = AdnService.listar_combinacoes_por_nbs(req.cNBS, req.cTribNac)
+            if comb["possui_correlacoes"]:
+                ct_limpo = clean_digits(req.cClassTrib or "").zfill(6)
+                indop_limpo = clean_digits(req.cIndOp or "").zfill(6)
+                cts_validos = [c["codigo"] for c in comb["cclasstrib_compativeis"]]
+                indops_validos = [i["cIndOp"] for i in comb["cindop_compativeis"]]
+                pares_validos = {(c["cClassTrib"], c["indop"]) for c in comb["combinacoes"]}
+
+                avisos = list(res.get("avisos") or [])
+                if cts_validos and ct_limpo not in cts_validos:
+                    avisos.append(
+                        {
+                            "codigo": "ANEXO_VIII_CCLASSTRIB",
+                            "mensagem": (
+                                f"cClassTrib '{ct_limpo}' não consta no Anexo VIII para a NBS '{comb['c_nbs']}'. "
+                                f"Compatíveis previstos: {', '.join(cts_validos)}."
+                            ),
+                        }
+                    )
+                if indops_validos and indop_limpo not in indops_validos:
+                    avisos.append(
+                        {
+                            "codigo": "ANEXO_VIII_INDOP",
+                            "mensagem": (
+                                f"cIndOp '{indop_limpo}' não consta no Anexo VIII para a NBS '{comb['c_nbs']}'. "
+                                f"Compatíveis previstos: {', '.join(indops_validos)}."
+                            ),
+                        }
+                    )
+                if ct_limpo in cts_validos and indop_limpo in indops_validos and (ct_limpo, indop_limpo) not in pares_validos:
+                    avisos.append(
+                        {
+                            "codigo": "ANEXO_VIII_PAR",
+                            "mensagem": (
+                                f"A combinação NBS '{comb['c_nbs']}' × cClassTrib '{ct_limpo}' × cIndOp '{indop_limpo}' "
+                                "não aparece junta na mesma linha do Anexo VIII (verifique se houve alteração por NT)."
+                            ),
+                        }
+                    )
+                res["avisos"] = avisos
+
+        return res
 
     # ==========================================================================
     # 3. Helpers Internos de Banco / Certificado / Disco (nfse_manager)
@@ -609,7 +720,13 @@ class AdnService:
         tomador_email = req.email_destinatario or tomador.get("email") or ""
 
         payload_resumo = json.dumps(
-            {"prestador": prestador, "tomador": tomador, "servico": servico, "ambiente": ambiente},
+            {
+                "prestador": prestador,
+                "tomador": tomador,
+                "servico": servico,
+                "ambiente": ambiente,
+                "data_competencia": req.data_competencia,
+            },
             ensure_ascii=False,
         )
 
@@ -686,6 +803,91 @@ class AdnService:
             "xml_assinado": xml_assinado,
             "envio_adn": resultado_adn,
             "email_enviado": email_resultado,
+        }
+
+    @classmethod
+    async def emitir_dps_lote(cls, db: Session, req: EmitirDpsLoteRequest) -> Dict[str, Any]:
+        """Emite múltiplas DPS sequencialmente para o mesmo prestador, consolidando o resultado."""
+        resultados: List[Dict[str, Any]] = []
+        autorizadas = 0
+        fila_contingencia = 0
+        geradas_offline = 0
+        erros = 0
+
+        for idx, item in enumerate(req.itens, start=1):
+            item_req = EmitirDpsRequest(
+                client_id=req.client_id,
+                customer_id=item.customer_id,
+                service_item_id=item.service_item_id,
+                ambiente=req.ambiente,
+                tomador=dict(item.tomador or {}),
+                servico=dict(item.servico or {}),
+                tributacao=item.tributacao,
+                serie_dps=item.serie_dps or req.serie_dps or "900",
+                numero_dps=item.numero_dps,
+                data_competencia=item.data_competencia or req.data_competencia,
+                incluir_ibscbs=item.incluir_ibscbs if item.incluir_ibscbs is not None else req.incluir_ibscbs,
+                transmitir=req.transmitir,
+                enviar_email=item.enviar_email if item.enviar_email is not None else req.enviar_email,
+                email_destinatario=item.email_destinatario,
+            )
+            try:
+                res = await cls.emitir_dps(db=db, req=item_req)
+                status_nota = res.get("status_nota", "dps_gerada")
+                if status_nota == "gerada":
+                    autorizadas += 1
+                elif status_nota == "fila_contingencia":
+                    fila_contingencia += 1
+                else:
+                    geradas_offline += 1
+                resultados.append(
+                    {
+                        "indice": idx,
+                        "sucesso": True,
+                        "customer_id": item.customer_id,
+                        "service_item_id": item.service_item_id,
+                        "invoice_id": res.get("invoice_id"),
+                        "id_dps": res.get("id_dps"),
+                        "chave_acesso": res.get("chave_acesso"),
+                        "status_nota": status_nota,
+                        "valor_servicos": (res.get("tributacao") or {}).get("valor_servicos"),
+                        "valor_liquido": (res.get("tributacao") or {}).get("valor_liquido"),
+                    }
+                )
+            except HTTPException as exc:
+                db.rollback()
+                erros += 1
+                resultados.append(
+                    {
+                        "indice": idx,
+                        "sucesso": False,
+                        "status_nota": "erro",
+                        "customer_id": item.customer_id,
+                        "service_item_id": item.service_item_id,
+                        "erro": exc.detail if isinstance(exc.detail, str) else json.dumps(exc.detail, ensure_ascii=False),
+                    }
+                )
+            except Exception as exc:
+                db.rollback()
+                erros += 1
+                resultados.append(
+                    {
+                        "indice": idx,
+                        "sucesso": False,
+                        "status_nota": "erro",
+                        "customer_id": item.customer_id,
+                        "service_item_id": item.service_item_id,
+                        "erro": str(exc),
+                    }
+                )
+
+        return {
+            "total": len(req.itens),
+            "autorizadas": autorizadas,
+            "fila_contingencia": fila_contingencia,
+            "geradas_offline": geradas_offline,
+            "erros": erros,
+            "resultados": resultados,
         }
 
     @classmethod
@@ -979,6 +1181,43 @@ class AdnService:
             query = query.filter(Invoice.client_id == client_id)
         return query.order_by(Invoice.data_emissao.desc()).all()
 
+    @staticmethod
+    def cancelar_item_fila_contingencia(db: Session, invoice_id: int) -> Dict[str, Any]:
+        """Cancela e remove uma DPS ainda pendente da fila de contingência, sincronizando itens de lote."""
+        from app.models import BatchImport, BatchImportItem
+        from app.services.batch_emission.validator import recompute_batch_counters
+
+        inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Nota pendente não encontrada na fila.")
+        if (inv.status or "") not in {"dps_gerada", "fila_contingencia", "rejeitada"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Esta nota já foi autorizada/processada; utilize o cancelamento fiscal (e101101).",
+            )
+
+        linked_items = db.query(BatchImportItem).filter(BatchImportItem.invoice_id == invoice_id).all()
+        affected_batch_ids = set()
+        for item in linked_items:
+            affected_batch_ids.add(item.batch_id)
+            item.invoice_id = None
+            item.status = "CANCELLED"
+            item.last_error = "Cancelada e removida da fila de contingência."
+            db.add(item)
+
+        db.flush()
+        for b_id in affected_batch_ids:
+            b_obj = db.query(BatchImport).filter(BatchImport.id == b_id).first()
+            if b_obj:
+                recompute_batch_counters(db, b_obj)
+
+        db.delete(inv)
+        db.commit()
+        return {
+            "deleted_invoice_id": invoice_id,
+            "updated_batches": sorted(affected_batch_ids),
+        }
+
     @classmethod
     async def reenviar_fila_contingencia(cls, db: Session, req: ReenviarFilaRequest) -> Dict[str, Any]:
         query = db.query(Invoice).filter(Invoice.status.in_(["dps_gerada", "fila_contingencia"]))
@@ -1070,6 +1309,10 @@ class AdnService:
         client_db = db.query(Client).filter(Client.id == invoice.client_id).first()
         if not client_db:
             raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+
+        from app.api.routers.downloads import ensure_invoice_files
+
+        ensure_invoice_files(db, invoice, client_db)
 
         if not invoice.pdf_path or not Path(invoice.pdf_path).exists():
             xml_cand = invoice.xml_path or invoice.xml_dps_path

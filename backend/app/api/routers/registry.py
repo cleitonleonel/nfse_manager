@@ -2,22 +2,32 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.spreadsheets import (
+    build_template_response as _build_template_response,
+    clean_doc as _clean_doc,
+    parse_bool as _parse_bool,
+    parse_float as _parse_float,
+    parse_spreadsheet_rows as _parse_spreadsheet_rows,
+)
 from app.database import get_db
 from app.models import Customer, ServiceItem
 from app.schemas import (
     CustomerCreate,
     CustomerResponse,
     CustomerUpdate,
+    RegistryBatchDeleteRequest,
     ServiceItemCreate,
     ServiceItemResponse,
     ServiceItemUpdate,
+    TaxValidationRequest,
 )
+from app.services.adn_service import AdnService
 from app.services.lookup_service import LookupService
 from pynfse.adn import buscar_correlacoes_anexo_viii, clean_digits, obter_cclasstrib
 
@@ -65,9 +75,9 @@ def list_customers(
 @router.post("/customers", response_model=CustomerResponse)
 def create_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
     """Cadastra um novo tomador recorrente."""
-    doc_limpo = clean_digits(payload.documento)
+    doc_limpo = _clean_doc(payload.documento)
     if len(doc_limpo) not in (11, 14):
-        raise HTTPException(status_code=400, detail="Documento do tomador deve ser CPF (11) ou CNPJ (14).")
+        raise HTTPException(status_code=400, detail="Documento do tomador deve ser CNPJ (14) ou CPF (11).")
 
     customer = Customer(
         client_id=payload.client_id,
@@ -99,7 +109,7 @@ def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Dep
 
     data = payload.model_dump(exclude_unset=True)
     if "documento" in data and data["documento"]:
-        data["documento"] = clean_digits(data["documento"])
+        data["documento"] = _clean_doc(data["documento"])
     if "cep" in data and data["cep"]:
         data["cep"] = clean_digits(data["cep"])
     if "codigo_municipio" in data and data["codigo_municipio"]:
@@ -113,6 +123,22 @@ def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Dep
     return customer
 
 
+def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session) -> dict:
+    """Helper compartilhado para exclusão em lote de tomadores ou serviços."""
+    q = db.query(model)
+    if req.delete_all:
+        if req.client_id is not None:
+            q = q.filter(or_(model.client_id == req.client_id, model.client_id.is_(None)))
+    elif req.ids:
+        q = q.filter(model.id.in_(req.ids))
+    else:
+        raise HTTPException(status_code=400, detail="Informe ids ou delete_all=true.")
+
+    deleted = q.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": deleted}
+
+
 @router.delete("/customers/{customer_id}")
 def delete_customer(customer_id: int, db: Session = Depends(get_db)):
     """Remove um tomador recorrente."""
@@ -122,6 +148,12 @@ def delete_customer(customer_id: int, db: Session = Depends(get_db)):
     db.delete(customer)
     db.commit()
     return {"message": "Tomador removido com sucesso."}
+
+
+@router.post("/customers/delete-batch")
+def delete_customers_batch(req: RegistryBatchDeleteRequest, db: Session = Depends(get_db)):
+    """Remove múltiplos tomadores recorrentes selecionados ou todos."""
+    return _delete_registry_batch(Customer, req, db)
 
 
 # ==============================================================================
@@ -190,14 +222,33 @@ def list_service_items(
 
 @router.post("/service-items", response_model=ServiceItemResponse)
 def create_service_item(payload: ServiceItemCreate, db: Session = Depends(get_db)):
-    """Cadastra um novo serviço recorrente com preenchimento automático da matriz Anexo VIII."""
+    """Cadastra um novo serviço recorrente com preenchimento automático e validação NBS × cClassTrib × cIndOp."""
+    cst_input = payload.cst_ibscbs if "cst_ibscbs" in payload.model_fields_set else None
     ctrib, nbs, cclass, cst, indop = _enriquecer_servico_pelo_anexo_viii(
         payload.c_trib_nac,
         payload.c_nbs,
         payload.c_class_trib,
-        payload.cst_ibscbs,
+        cst_input,
         payload.c_ind_op,
     )
+
+    val_res = AdnService.validar_ibscbs(
+        TaxValidationRequest(
+            cClassTrib=cclass,
+            cst=cst,
+            cIndOp=indop,
+            cTribNac=ctrib,
+            cNBS=nbs or None,
+        )
+    )
+    if not val_res.get("valido"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "mensagem": "Combinação tributária IBS/CBS inválida para cadastro do serviço.",
+                "erros": val_res.get("erros") or [],
+            },
+        )
 
     item = ServiceItem(
         client_id=payload.client_id,
@@ -217,12 +268,14 @@ def create_service_item(payload: ServiceItemCreate, db: Session = Depends(get_db
     db.add(item)
     db.commit()
     db.refresh(item)
-    return item
+    resp = ServiceItemResponse.model_validate(item)
+    resp.avisos_fiscais = val_res.get("avisos") or []
+    return resp
 
 
 @router.put("/service-items/{item_id}", response_model=ServiceItemResponse)
 def update_service_item(item_id: int, payload: ServiceItemUpdate, db: Session = Depends(get_db)):
-    """Atualiza um serviço recorrente."""
+    """Atualiza um serviço recorrente validando regras IBS/CBS e compatibilidade com a NBS."""
     item = db.query(ServiceItem).filter(ServiceItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Serviço não encontrado.")
@@ -236,9 +289,30 @@ def update_service_item(item_id: int, payload: ServiceItemUpdate, db: Session = 
     for k, v in data.items():
         setattr(item, k, v)
 
+    val_res = AdnService.validar_ibscbs(
+        TaxValidationRequest(
+            cClassTrib=item.c_class_trib or "000001",
+            cst=item.cst_ibscbs or "000",
+            cIndOp=item.c_ind_op or "100301",
+            cTribNac=item.c_trib_nac or "010101",
+            cNBS=item.c_nbs or None,
+        )
+    )
+    if not val_res.get("valido"):
+        db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "mensagem": "Combinação tributária IBS/CBS inválida para atualização do serviço.",
+                "erros": val_res.get("erros") or [],
+            },
+        )
+
     db.commit()
     db.refresh(item)
-    return item
+    resp = ServiceItemResponse.model_validate(item)
+    resp.avisos_fiscais = val_res.get("avisos") or []
+    return resp
 
 
 @router.delete("/service-items/{item_id}")
@@ -250,3 +324,241 @@ def delete_service_item(item_id: int, db: Session = Depends(get_db)):
     db.delete(item)
     db.commit()
     return {"message": "Serviço removido com sucesso."}
+
+
+@router.post("/service-items/delete-batch")
+def delete_service_items_batch(req: RegistryBatchDeleteRequest, db: Session = Depends(get_db)):
+    """Remove múltiplos serviços recorrentes selecionados ou todos."""
+    return _delete_registry_batch(ServiceItem, req, db)
+
+
+# ==============================================================================
+# 4. Importação em Lote via CSV / XLSX + Templates
+# ==============================================================================
+
+
+@router.get("/customers/import/template")
+def download_customers_template(format: str = Query("xlsx", description="csv ou xlsx")):
+    """Baixa planilha modelo pronta para importação de tomadores recorrentes."""
+    headers = [
+        "documento",
+        "razao_social",
+        "email",
+        "telefone",
+        "cep",
+        "logradouro",
+        "numero",
+        "complemento",
+        "bairro",
+        "codigo_municipio",
+        "uf",
+        "inscricao_municipal",
+    ]
+    sample = [
+        "12.345.678/0001-95",
+        "EMPRESA EXEMPLO LTDA",
+        "financeiro@exemplo.com.br",
+        "27999990000",
+        "29140000",
+        "AV CENTRAL",
+        "100",
+        "SALA 01",
+        "CENTRO",
+        "3201308",
+        "ES",
+        "123456",
+    ]
+    return _build_template_response(headers, sample, "modelo_importacao_tomadores", format)
+
+
+@router.post("/customers/import")
+async def import_customers_batch(
+    file: UploadFile = File(...),
+    client_id: Optional[int] = Form(None),
+    atualizar_existentes: bool = Form(True),
+    db: Session = Depends(get_db),
+):
+    """Importa tomadores recorrentes em lote a partir de planilha CSV ou XLSX."""
+    content = await file.read()
+    try:
+        rows = _parse_spreadsheet_rows(content, file.filename or "import.csv")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Não foi possível ler a planilha: {exc}") from exc
+
+    criados = 0
+    atualizados = 0
+    ignorados = 0
+    erros: List[Dict[str, Any]] = []
+
+    for row in rows:
+        linha = row.get("_linha")
+        doc_raw = row.get("documento") or row.get("cnpj") or row.get("cpf_cnpj") or row.get("cpf")
+        doc = _clean_doc(doc_raw)
+        razao = str(row.get("razao_social") or row.get("nome") or row.get("tomador") or "").strip()
+
+        if len(doc) not in (11, 14):
+            erros.append({"linha": linha, "erro": f"Documento inválido ('{doc_raw or ''}')."})
+            continue
+        if not razao:
+            erros.append({"linha": linha, "erro": f"Razão social obrigatória para o documento {doc}."})
+            continue
+
+        existing_q = db.query(Customer).filter(Customer.documento == doc)
+        if client_id is not None:
+            existing_q = existing_q.filter(Customer.client_id == client_id)
+        else:
+            existing_q = existing_q.filter(Customer.client_id.is_(None))
+        existing = existing_q.first()
+
+        fields = {
+            "razao_social": razao,
+            "inscricao_municipal": str(row.get("inscricao_municipal") or "").strip() or None,
+            "email": str(row.get("email") or "").strip() or None,
+            "telefone": clean_digits(str(row.get("telefone") or "")) or None,
+            "cep": clean_digits(str(row.get("cep") or "")) or None,
+            "logradouro": str(row.get("logradouro") or row.get("endereco") or "").strip() or None,
+            "numero": str(row.get("numero") or "S/N").strip() or "S/N",
+            "complemento": str(row.get("complemento") or "").strip() or None,
+            "bairro": str(row.get("bairro") or "").strip() or None,
+            "codigo_municipio": clean_digits(str(row.get("codigo_municipio") or row.get("ibge") or "3201308")) or "3201308",
+            "uf": (str(row.get("uf") or "ES").strip() or "ES")[:2].upper(),
+        }
+
+        if existing:
+            if not atualizar_existentes:
+                ignorados += 1
+                continue
+            for k, v in fields.items():
+                if v is not None:
+                    setattr(existing, k, v)
+            atualizados += 1
+        else:
+            db.add(Customer(client_id=client_id, documento=doc, **fields))
+            criados += 1
+
+    db.commit()
+    return {
+        "total_lidas": len(rows),
+        "criados": criados,
+        "atualizados": atualizados,
+        "ignorados": ignorados,
+        "erros": erros,
+    }
+
+
+@router.get("/service-items/import/template")
+def download_services_template(format: str = Query("xlsx", description="csv ou xlsx")):
+    """Baixa planilha modelo pronta para importação de serviços recorrentes."""
+    headers = [
+        "titulo",
+        "descricao",
+        "valor_unitario",
+        "c_trib_nac",
+        "c_nbs",
+        "c_class_trib",
+        "cst_ibscbs",
+        "c_ind_op",
+        "aliquota_iss",
+        "iss_retido",
+        "reter_federais",
+        "codigo_interno",
+    ]
+    sample = [
+        "Consultoria Mensal em TI",
+        "Prestação de serviços contínuos de suporte e desenvolvimento de sistemas",
+        "2500.00",
+        "010101",
+        "115022000",
+        "000001",
+        "000",
+        "100301",
+        "2.0",
+        "nao",
+        "nao",
+        "SRV-001",
+    ]
+    return _build_template_response(headers, sample, "modelo_importacao_servicos", format)
+
+
+@router.post("/service-items/import")
+async def import_services_batch(
+    file: UploadFile = File(...),
+    client_id: Optional[int] = Form(None),
+    atualizar_existentes: bool = Form(True),
+    db: Session = Depends(get_db),
+):
+    """Importa serviços recorrentes em lote via CSV ou XLSX com preenchimento automático pelo Anexo VIII."""
+    content = await file.read()
+    try:
+        rows = _parse_spreadsheet_rows(content, file.filename or "import.csv")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Não foi possível ler a planilha: {exc}") from exc
+
+    criados = 0
+    atualizados = 0
+    ignorados = 0
+    erros: List[Dict[str, Any]] = []
+
+    for row in rows:
+        linha = row.get("_linha")
+        titulo = str(row.get("titulo") or row.get("nome") or row.get("servico") or "").strip()
+        descricao = str(row.get("descricao") or titulo).strip()
+        if not titulo:
+            erros.append({"linha": linha, "erro": "Título do serviço é obrigatório."})
+            continue
+
+        try:
+            valor = _parse_float(row.get("valor_unitario") or row.get("valor"), 0.0)
+            aliq_iss = _parse_float(row.get("aliquota_iss") or row.get("iss"), 2.0)
+        except ValueError:
+            erros.append({"linha": linha, "erro": f"Valor ou alíquota inválidos no serviço '{titulo}'."})
+            continue
+
+        ctrib, nbs, cclass, cst, indop = _enriquecer_servico_pelo_anexo_viii(
+            row.get("c_trib_nac") or row.get("ctribnac") or "010101",
+            row.get("c_nbs") or row.get("cnbs") or row.get("nbs"),
+            row.get("c_class_trib") or row.get("cclasstrib"),
+            row.get("cst_ibscbs") or row.get("cst"),
+            row.get("c_ind_op") or row.get("cindop") or row.get("indop"),
+        )
+
+        existing_q = db.query(ServiceItem).filter(ServiceItem.titulo == titulo)
+        if client_id is not None:
+            existing_q = existing_q.filter(ServiceItem.client_id == client_id)
+        else:
+            existing_q = existing_q.filter(ServiceItem.client_id.is_(None))
+        existing = existing_q.first()
+
+        fields = {
+            "codigo_interno": str(row.get("codigo_interno") or "").strip() or None,
+            "descricao": descricao,
+            "valor_unitario": valor,
+            "c_trib_nac": ctrib,
+            "c_nbs": nbs,
+            "c_class_trib": cclass,
+            "cst_ibscbs": cst,
+            "c_ind_op": indop,
+            "aliquota_iss": aliq_iss,
+            "iss_retido": 1 if _parse_bool(row.get("iss_retido")) else 0,
+            "reter_federais": 1 if _parse_bool(row.get("reter_federais")) else 0,
+        }
+
+        if existing:
+            if not atualizar_existentes:
+                ignorados += 1
+                continue
+            for k, v in fields.items():
+                setattr(existing, k, v)
+            atualizados += 1
+        else:
+            db.add(ServiceItem(client_id=client_id, titulo=titulo, **fields))
+            criados += 1
+
+    db.commit()
+    return {
+        "total_lidas": len(rows),
+        "criados": criados,
+        "atualizados": atualizados,
+        "ignorados": ignorados,
+        "erros": erros,
+    }

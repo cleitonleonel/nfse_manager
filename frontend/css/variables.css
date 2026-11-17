@@ -1,5 +1,6 @@
 /* --- CSS VARIABLES --- */
 :root {
+  color-scheme: dark;
   --bg:       #0a0c10;
   --bg2:      #12161f;
   --bg3:      #1a1f2e;
@@ -26,6 +27,7 @@
 }
 
 body.theme-light {
+  color-scheme: light;
   --bg:       #f8fafc;
   --bg2:      #ffffff;
   --bg3:      #f1f5f9;
