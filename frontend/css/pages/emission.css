@@ -142,11 +142,47 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
   margin-bottom: 14px;
   background: rgba(59, 130, 246, 0.04);
   padding: 14px;
   border-radius: var(--r);
   border: 1px solid rgba(59, 130, 246, 0.12);
+}
+
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  margin-bottom: 6px;
+}
+
+.field-label-row .form-label {
+  margin-bottom: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-action-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.field-action-link:hover {
+  text-decoration: underline;
 }
 
 .form-row-financeiro {

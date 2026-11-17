@@ -100,7 +100,9 @@
         <!-- Linha A: Serviço Municipal LC 116 + NBS Anexo VIII -->
         <div class="form-row-service-top">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">cTribNac (LC 116 - Catálogo Nacional)</label>
+            <div class="field-label-row">
+              <label class="form-label" title="cTribNac (LC 116 - Catálogo Nacional)">cTribNac (LC 116 - Catálogo Nacional)</label>
+            </div>
             <select class="form-input" id="em-ctribnac" onchange="App.onChangeCTribNac(this.value)">
               <option value="010101" selected>010101 — Análise e desenvolvimento de sistemas.</option>
             </select>
@@ -110,9 +112,9 @@
             </div>
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-              <label class="form-label" style="margin-bottom:0;">Classificação NBS (Anexo VIII - 9 dígitos)</label>
-              <button type="button" id="btn-show-all-nbs" onclick="App.loadAllNbsOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Carregar todas as 676 nomenclaturas NBS do catálogo oficial">Ver todas as NBS</button>
+            <div class="field-label-row">
+              <label class="form-label" title="Classificação NBS (Anexo VIII - 9 dígitos)">Classificação NBS (Anexo VIII - 9 dígitos)</label>
+              <button type="button" id="btn-show-all-nbs" class="field-action-link" onclick="App.loadAllNbsOptions()" title="Carregar todas as 676 nomenclaturas NBS do catálogo oficial">Ver todas as NBS</button>
             </div>
             <select class="form-input" id="em-cnbs-select" onchange="App.onSelectNbsOption(this.value)">
               <option value="115021000">115021000 — Programas não customizados</option>
@@ -127,9 +129,9 @@
         <!-- Linha B: Reforma Tributária IBS & CBS (NT 1.101) - 2 colunas amplas -->
         <div class="form-row-service-reforma">
           <div class="form-group" style="margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-              <label class="form-label" style="color:var(--accent); margin-bottom:0;">cClassTrib (IBS / CBS - 6 dígitos)</label>
-              <button type="button" id="btn-show-all-cclasstrib" onclick="App.toggleAllClassTribOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Alternar entre opções filtradas pela NBS e todas as classificações">Ver todas</button>
+            <div class="field-label-row">
+              <label class="form-label" style="color:var(--accent);" title="cClassTrib (IBS / CBS - 6 dígitos)">cClassTrib (IBS / CBS - 6 dígitos)</label>
+              <button type="button" id="btn-show-all-cclasstrib" class="field-action-link" onclick="App.toggleAllClassTribOptions()" title="Alternar entre opções filtradas pela NBS e todas as classificações">Ver todas</button>
             </div>
             <select class="form-input" id="em-cclasstrib" onchange="App.onSelectClassTrib(this.value)">
               <option value="000001" selected>000001 — Situações tributadas integralmente pelo IBS e CBS</option>
@@ -166,9 +168,9 @@
           </div>
 
           <div class="form-group" style="margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-              <label class="form-label" style="color:var(--accent); margin-bottom:0;">cIndOp (Indicador de Operação / Incidência)</label>
-              <button type="button" id="btn-show-all-cindop" onclick="App.toggleAllIndOpOptions()" style="background:none; border:none; padding:0; color:var(--accent); font-size:11px; font-weight:600; cursor:pointer;" title="Alternar entre indicadores compatíveis com a NBS e todos os indicadores">Ver todos</button>
+            <div class="field-label-row">
+              <label class="form-label" style="color:var(--accent);" title="cIndOp (Indicador de Operação / Incidência)">cIndOp (Indicador de Operação)</label>
+              <button type="button" id="btn-show-all-cindop" class="field-action-link" onclick="App.toggleAllIndOpOptions()" title="Alternar entre indicadores compatíveis com a NBS e todos os indicadores">Ver todos</button>
             </div>
             <select class="form-input" id="em-cindop" onchange="App.onSelectIndOp(this.value)">
               <option value="100301" selected>100301 — Domicílio principal do adquirente (Regra Geral Serviços)</option>

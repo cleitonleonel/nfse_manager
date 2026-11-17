@@ -10,6 +10,10 @@
   <i>Plataforma completa para gestão, sincronização, cálculo tributário (IBS/CBS e ISSQN) e emissão de NFS-e Nacional (ADN / Sefin Nacional v1.01) com backend FastAPI, banco PostgreSQL, frontend SPA e versão desktop nativa em Tauri.</i>
 </p>
 
+<p align="center">
+  🌐 <strong>Demo Online:</strong> <a href="https://nfse-manager.isolutionstech.com.br/" target="_blank">https://nfse-manager.isolutionstech.com.br/</a>
+</p>
+
 ---
 
 ## 📌 Sumário
@@ -18,7 +22,7 @@
 2. [Principais Funcionalidades](#-principais-funcionalidades)
 3. [Arquitetura e Stack Tecnológica](#-arquitetura-e-stack-tecnológica)
 4. [Estrutura de Diretórios](#-estrutura-de-diretórios)
-5. [Configuração e Variáveis de Ambiente](#-configuração-e-variáveis-de-ambiente)
+5. [Clonar e Configurar Variáveis de Ambiente](#-clonar-e-configurar-variáveis-de-ambiente)
 6. [Como Executar (Docker, Local e Desktop)](#-como-executar)
 7. [Referência da API e Exemplos Práticos](#-referência-da-api-e-exemplos-práticos)
 8. [Modelo de Dados (PostgreSQL)](#-modelo-de-dados-postgresql)
@@ -33,6 +37,8 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
 
 1. **Sincronização e Gestão via Portal Nacional**: autentica via credenciais ou Certificado Digital A1 (`.pfx`), consulta notas emitidas e recebidas por período, baixa XMLs e PDFs (com geração local offline de DANFSE quando o portal não disponibiliza o PDF), enriquece dados no banco **PostgreSQL** e exporta relatórios gerenciais.
 2. **Emissão ADN / Sefin Nacional v1.01 e Reforma Tributária (LC 214/2025 — NT 1.101)**: disponibiliza catálogos fiscais oficiais (`CST`, `cClassTrib`, `cTribNac`, `LC 116`, `Anexo VIII`, `cIndOp`), motor de cálculo e validação tributária (`ISSQN`, retenções federais e `IBS/CBS` para os cenários 2026, 2027–2032 e 2033+), construção e assinatura `XML-DSig` (`infDPS` e `infPedReg`), validação contra schemas `XSD v1.01` e transmissão mTLS de **Emissão de DPS**, **Cancelamento (`e101101`)** e **Substituição (`e105102`)**.
+
+> 🌐 **Demonstração ao vivo:** teste o sistema online em [https://nfse-manager.isolutionstech.com.br/](https://nfse-manager.isolutionstech.com.br/).
 
 ![Dashboard e Visão Geral](docs/assets/1.jpeg)
 ![Gerenciamento e Notas](docs/assets/2.jpeg)
