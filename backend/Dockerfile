@@ -9,15 +9,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace
 
-# Dependências de sistema para lxml, xmlsec/cryptography, psycopg2 e git (para instalar pynfse)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Dependências de sistema para lxml, cffi/cryptography, pillow, psycopg2 e git (para instalar pynfse)
+# Em arquiteturas 32-bit ARM (armhf / Raspberry Pi OS 32-bit), inclui rustc/cargo para compilar pydantic-core
+RUN set -eux; \
+    EXTRA_PKGS=""; \
+    if [ "$(dpkg --print-architecture)" = "armhf" ]; then EXTRA_PKGS="rustc cargo"; fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     build-essential \
+    pkg-config \
+    libffi-dev \
+    libssl-dev \
     libpq-dev \
     libxml2-dev \
     libxslt1-dev \
+    libjpeg-dev \
+    libfreetype-dev \
     zlib1g-dev \
+    $EXTRA_PKGS \
     && pip install --no-cache-dir poetry \
     && rm -rf /var/lib/apt/lists/*
 

@@ -61,6 +61,9 @@ A arquitetura Docker do projeto é modular: cada camada possui seu próprio `Doc
 - **Certificados Digitais A1 (`.pfx`)**: persistidos em `backend/certificados/`.
 - **XMLs, PDFs e Lotes ZIP**: persistidos em `backend/downloads/`.
 
+!!! tip "Raspberry Pi / ARM (`arm64` vs `armhf`)"
+    O `backend/Dockerfile` inclui `libffi-dev`, `libssl-dev`, `pkg-config`, `libjpeg-dev`, `libfreetype-dev` e instala automaticamente `rustc`/`cargo` quando detecta ambiente 32-bit (`armhf`). Ainda assim, recomenda-se usar **Raspberry Pi OS 64-bit (`arm64`/`aarch64`)**, pois há *wheels* pré-compilados no PyPI e o build é muito mais rápido.
+
 ---
 
 ## 3. Executando Localmente com Poetry
