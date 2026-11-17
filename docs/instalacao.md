@@ -4,7 +4,16 @@ O **NFSe Manager Pro** pode ser executado tanto de forma totalmente containeriza
 
 ---
 
-## 1. Variáveis de Ambiente (`.env`)
+## 1. Clonar o Repositório
+
+```bash
+git clone https://github.com/cleitonleonel/nfse_manager.git
+cd nfse_manager
+```
+
+---
+
+## 2. Variáveis de Ambiente (`.env`)
 
 Na raiz do projeto há um arquivo `.env.example`. Se desejar alterar credenciais ou portas, copie-o para `.env`:
 
@@ -28,7 +37,7 @@ cp .env.example .env
 
 ---
 
-## 2. Executando com Docker Compose (Recomendado)
+## 3. Executando com Docker Compose (Recomendado)
 
 A arquitetura Docker do projeto é modular: cada camada possui seu próprio `Dockerfile` e `docker-compose.yml` (`database/`, `backend/` e `frontend/`), enquanto o `docker-compose.yml` da raiz utiliza `include` para orquestrar todos os serviços juntos.
 
@@ -66,7 +75,7 @@ A arquitetura Docker do projeto é modular: cada camada possui seu próprio `Doc
 
 ---
 
-## 3. Executando Localmente com Poetry
+## 4. Executando Localmente com Poetry
 
 Para desenvolvimento local do Python/FastAPI:
 
@@ -92,7 +101,7 @@ Para desenvolvimento local do Python/FastAPI:
 
 ---
 
-## 4. Visualizando e Gerando a Documentação (MkDocs)
+## 5. Visualizando e Gerando a Documentação (MkDocs)
 
 Para rodar o servidor local da documentação com live-reload ou gerar o pacote estático do GitHub Pages:
 

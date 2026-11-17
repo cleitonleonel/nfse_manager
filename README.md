@@ -213,11 +213,13 @@ nfse_manager/
 
 ---
 
-## ⚙️ Configuração e Variáveis de Ambiente
+## ⚙️ Clonar e Configurar Variáveis de Ambiente
 
-Copie o arquivo [`.env.example`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.env.example) para `.env` na raiz do projeto caso deseje customizar portas ou credenciais:
+Clone o repositório e copie o arquivo [`.env.example`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.env.example) para `.env` na raiz do projeto caso deseje customizar portas ou credenciais:
 
 ```bash
+git clone https://github.com/cleitonleonel/nfse_manager.git
+cd nfse_manager
 cp .env.example .env
 ```
 
