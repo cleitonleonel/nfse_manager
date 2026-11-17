@@ -165,21 +165,28 @@ body.theme-light .topbar { background: rgba(255, 255, 255, 0.8); }
   }
   .topbar-title {
     display: block;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .topbar-actions {
     display: contents;
   }
   #auth-user-pill {
     order: 2;
-    padding: 4px 8px;
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 6px 0 8px;
     font-size: 12px;
   }
   .topbar-theme-btn {
     order: 3;
-    padding: 6px 8px;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
   }
   #sync-indicator {
     order: 4;
