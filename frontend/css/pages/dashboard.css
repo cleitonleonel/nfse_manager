@@ -98,6 +98,14 @@
   padding-bottom: 8px;
 }
 
+.about-version-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  text-align: left;
+}
+
 @media (max-width: 900px) {
   .about-grid-2col,
   .about-grid-support {
@@ -149,6 +157,9 @@
   .comp-toolbar #comp-month {
     flex: 1 1 100%;
     max-width: none !important;
+  }
+  .about-version-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

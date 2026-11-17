@@ -195,12 +195,12 @@ export async function loadRanking() {
         const renderList = (items, emptyMsg) => {
             if (!items || items.length === 0) return `<div style="color:var(--text3); font-size:13px;">${emptyMsg}</div>`;
             return items.map((item, i) => `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <div style="width:24px; height:24px; border-radius:50%; background:var(--bg-card); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--text); border:1px solid var(--border);">${i + 1}</div>
-                        <div style="font-weight:500; font-size:13px;" title="${item.razao_social}">${item.razao_social.length > 25 ? item.razao_social.substring(0, 25) + '...' : item.razao_social}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+                    <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                        <div style="width:24px; height:24px; flex-shrink:0; border-radius:50%; background:var(--bg-card); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--text); border:1px solid var(--border);">${i + 1}</div>
+                        <div style="font-weight:500; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${item.razao_social}">${item.razao_social}</div>
                     </div>
-                    <div style="font-weight:600; font-size:13px; color:var(--text);">${fmt(item.valor)}</div>
+                    <div style="font-weight:600; font-size:13px; color:var(--text); white-space:nowrap; flex-shrink:0;">${fmt(item.valor)}</div>
                 </div>
             `).join('');
         };
