@@ -27,11 +27,10 @@ COPY pyproject.toml poetry.lock* README.md ./
 # Instala dependências de produção
 RUN poetry install --only main --no-root
 
-# Copia o código do backend, migrações e CLI manage.py, e cria diretórios de dados
+# Copia o código do backend e CLI manage.py, e cria diretórios de migrações/dados
 COPY manage.py ./manage.py
 COPY backend/app ./backend/app
-COPY backend/migrations ./backend/migrations
-RUN mkdir -p /workspace/backend/certificados /workspace/backend/downloads
+RUN mkdir -p /workspace/backend/migrations/versions /workspace/backend/certificados /workspace/backend/downloads
 
 EXPOSE 8000
 

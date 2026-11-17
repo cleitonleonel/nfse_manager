@@ -16,5 +16,6 @@ ui/src-tauri/target
 ui/src-tauri/binaries
 backend/certificados/*
 backend/downloads/*
+backend/migrations/*
 docs/
 tests/

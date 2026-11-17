@@ -33,6 +33,7 @@ ui/src-tauri/binaries/
 *.env
 backend/certificados/
 backend/downloads/
+backend/migrations/
 certificados/
 downloads/
 
