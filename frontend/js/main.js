@@ -1,6 +1,6 @@
 import { api } from './core/api.js';
 import { state } from './core/state.js';
-import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, hideTaskToast, uiConfirm } from './core/ui.js';
+import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, initSidebarState, toggleSidebar, hideTaskToast, uiConfirm } from './core/ui.js';
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
@@ -47,7 +47,7 @@ window.App = {
     showPage,
     
     // UI
-    maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, hideTaskToast,
+    maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, toggleSidebar, hideTaskToast,
     
     // Dashboard
     loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport,
@@ -310,6 +310,7 @@ window.App = {
 
     async init() {
         if (localStorage.getItem('theme') === 'light') document.body.classList.add('theme-light');
+        initSidebarState();
 
         // Global click listener for dropdowns
         document.addEventListener('click', e => {

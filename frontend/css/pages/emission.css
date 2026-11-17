@@ -422,3 +422,37 @@
   border-radius: 8px;
   margin-bottom: 12px;
 }
+
+@media (max-width: 1080px) {
+  .emission-grid { grid-template-columns: minmax(0, 1fr); }
+  .emission-preview-card { position: static; }
+}
+
+@media (max-width: 640px) {
+  .emission-header-bar { padding: 14px; margin-bottom: 14px; }
+  .emission-header-bar h2 { font-size: 16px !important; }
+  .emission-tabs-group {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .emission-tabs-group .btn { width: 100%; justify-content: center; white-space: normal; text-align: center; }
+  .emission-card,
+  .emission-preview-card,
+  .batch-section-card { padding: 14px; }
+  .emission-card-header { flex-direction: column; align-items: stretch; }
+  .emission-quick-toolbar { width: 100%; flex-wrap: wrap; }
+  .emission-quick-toolbar .cs-wrap,
+  .emission-quick-toolbar select.form-input,
+  .emission-quick-toolbar .btn { width: 100%; flex: 1 1 100%; }
+  .form-row-service-top,
+  .form-row-service-reforma,
+  .form-row-3col,
+  .form-row-address-bottom,
+  .cadastros-recorrentes-grid { grid-template-columns: minmax(0, 1fr); }
+  .batch-toolbar,
+  .cadastros-toolbar { flex-direction: column; align-items: stretch; }
+  .batch-toolbar-group { width: 100%; }
+  .batch-toolbar-group .btn,
+  .batch-toolbar-group select { flex: 1 1 auto; }
+}

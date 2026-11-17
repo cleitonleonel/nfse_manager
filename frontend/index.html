@@ -12,7 +12,7 @@
 <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
-<link rel="stylesheet" href="css/style.css?v=17">
+<link rel="stylesheet" href="css/style.css?v=23">
 <script>
   if (localStorage.getItem('nfse_token')) {
     document.documentElement.classList.add('auth-checking');
@@ -22,25 +22,33 @@
 <body>
 
 <!-- SIDEBAR -->
-<nav class="sidebar">
-  <div class="sidebar-logo">
-    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-  </div>
-  <div class="nav-item active" onclick="App.showPage('dashboard')" id="nav-dashboard">
+<nav class="sidebar" id="app-sidebar">
+  <button type="button" class="sidebar-brand" id="sidebar-toggle-btn" onclick="App.toggleSidebar()" title="Clique na logo para expandir ou recolher o menu" aria-label="Expandir ou recolher menu lateral" aria-expanded="false">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <span class="sidebar-brand-text">NFSe Pro</span>
+  </button>
+  <div class="nav-item active" onclick="App.showPage('dashboard')" id="nav-dashboard" title="Dashboard">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    <span class="nav-label">Dashboard</span>
   </div>
-  <div class="nav-item" onclick="App.showPage('clients')" id="nav-clients">
+  <div class="nav-item" onclick="App.showPage('clients')" id="nav-clients" title="Clientes">
     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span class="nav-label">Clientes</span>
   </div>
   <div class="nav-item" onclick="App.showPage('invoices')" id="nav-invoices" title="Notas Fiscais">
     <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    <span class="nav-label">Notas Fiscais</span>
   </div>
-  <div class="nav-item" onclick="App.showPage('emission')" id="nav-emission" title="Emitir NFS-e (ADN / Reforma Tributária)">
+  <div class="nav-item" onclick="App.showPage('emission')" id="nav-emission" title="Emissor NFS-e">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    <span class="nav-label">Emissor ADN</span>
   </div>
   <div class="sidebar-spacer"></div>
-  <div class="nav-item" onclick="App.showPage('about')" id="nav-about" title="Sobre o Sistema / Configurações">
+  <div class="nav-item" onclick="App.showPage('about')" id="nav-about" title="Sobre o Sistema">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span class="nav-label">Sistema</span>
   </div>
 </nav>
 
@@ -50,11 +58,11 @@
     <div class="topbar-title" id="page-title">Dashboard</div>
     <div class="topbar-actions">
       <div class="dropdown" id="global-client-dropdown">
-        <button class="btn btn-secondary" onclick="this.nextElementSibling.classList.toggle('show')" id="global-client-btn" style="min-width: 250px; justify-content: space-between;">
+        <button class="btn btn-secondary" onclick="this.nextElementSibling.classList.toggle('show')" id="global-client-btn">
           <span>Todos os Clientes (Visão Geral)</span>
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
-        <div class="dropdown-menu" id="global-client-menu" style="min-width: 250px; max-height: 400px; overflow-y: auto;">
+        <div class="dropdown-menu" id="global-client-menu">
           <a href="#" class="dropdown-item" onclick="App.setGlobalClient('', 'Todos os Clientes (Visão Geral)'); return false;">
             <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Todos os Clientes (Visão Geral)
@@ -73,7 +81,7 @@
         <span class="auth-user-name" id="auth-topbar-label">Operador</span>
         <button class="btn btn-secondary btn-sm auth-logout-btn" onclick="App.logout()" title="Encerrar sessão">Sair</button>
       </div>
-      <button class="btn btn-ghost" onclick="App.toggleTheme()" title="Alternar Tema">
+      <button class="btn btn-ghost topbar-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       </button>
     </div>
@@ -117,18 +125,18 @@
         </div>
       </div>
 
-      <div id="auth-portal" style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:16px;">
-        <div class="form-group">
+      <div id="auth-portal" class="modal-grid-2">
+        <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Usuário Portal</label>
           <input type="text" class="form-input" id="c-user">
         </div>
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Senha Portal</label>
           <input type="password" class="form-input" id="c-pass">
         </div>
       </div>
 
-      <div id="auth-cert" style="display:none; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:16px;">
+      <div id="auth-cert" class="modal-grid-2" style="display:none;">
         <div class="form-group">
           <label class="form-label">Certificado (.pfx, .p12)</label>
           <label class="file-upload-wrapper">
@@ -192,7 +200,7 @@
             <button type="button" class="btn btn-secondary btn-sm" onclick="App.usarSmtpPadrao()" title="Carrega as configurações definidas no .env (DEFAULT_SMTP_*)">Usar envio padrão</button>
           </div>
         </div>
-        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+        <div class="modal-grid-2">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">E-mail do Prestador (Reply-To)</label>
             <input type="email" class="form-input" id="c-email" placeholder="fiscal@empresa.com.br">
@@ -202,7 +210,7 @@
             <input type="email" class="form-input" id="c-smtp-from" placeholder="Opcional (padrão = usuário SMTP)">
           </div>
         </div>
-        <div style="display:grid; grid-template-columns:minmax(0, 2fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+        <div class="modal-grid-2-1">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">Servidor SMTP (Host)</label>
             <input type="text" class="form-input" id="c-smtp-host" placeholder="Ex.: smtp.gmail.com ou smtp.office365.com">
@@ -212,7 +220,7 @@
             <input type="number" class="form-input" id="c-smtp-port" value="587" placeholder="587 ou 465">
           </div>
         </div>
-        <div style="display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-bottom:12px;">
+        <div class="modal-grid-2">
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">Usuário SMTP</label>
             <input type="text" class="form-input" id="c-smtp-user" placeholder="usuario@dominio.com.br">

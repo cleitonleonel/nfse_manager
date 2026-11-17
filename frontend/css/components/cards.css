@@ -9,3 +9,9 @@ body.theme-light .glass { background: rgba(255, 255, 255, 0.6); border: 1px soli
 
 .scroll-area { max-height: 55vh; overflow: auto; padding-right: 8px; }
 .sticky-filter { position: sticky; top: -32px; z-index: 40; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.5); }
+
+@media (max-width: 768px) {
+  .card { padding: 14px; border-radius: 14px; }
+  .sticky-filter { position: static; top: auto; padding: 14px !important; }
+  .scroll-area { max-height: none; padding-right: 0; }
+}

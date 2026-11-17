@@ -1,7 +1,7 @@
 /* --- CUSTOM DROPDOWN --- */
 .dropdown { position: relative; display: inline-block; }
 .dropdown-menu {
-  display: none; position: absolute; right: 0; top: calc(100% + 8px); background: var(--bg2); min-width: 180px;
+  display: none; position: absolute; right: 0; top: calc(100% + 8px); background: var(--bg2); min-width: 180px; max-width: calc(100vw - 24px);
   box-shadow: 0 10px 40px rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; z-index: 100; padding: 8px 0; animation: fadeSlideIn 0.2s ease;
 }
 .dropdown-menu.show { display: block; }

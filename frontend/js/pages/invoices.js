@@ -1,6 +1,6 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceStatusBadge } from '../core/ui.js';
+import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceSummaryCells } from '../core/ui.js';
 
 let progressCloseTimer = null;
 
@@ -102,19 +102,10 @@ function renderInvoiceRow(i, fmt) {
         `;
     }
     
-    const dataFmt = i.data_emissao ? new Date(i.data_emissao).toLocaleDateString('pt-BR') : '-';
-    const chaveDisplay = (i.chave && i.chave !== 'null') ? i.chave : (i.numero || 'Chave não sincronizada');
-    
     return `
         <tr>
             <td><input type="checkbox" class="row-check" value="${i.id}" data-xml="${escapeAttr(i.xml_path)}" data-pdf="${escapeAttr(i.pdf_path)}" data-client-id="${i.client_id}"></td>
-            <td>${dataFmt}</td>
-            <td>
-                <div style="font-size:13px; font-weight:600; color:var(--text); font-family:var(--mono); word-break: break-all;">${chaveDisplay}</div>
-                <div style="font-size:11.5px; color:var(--text3); font-family:var(--mono); margin-top:2px; word-break: break-all;">${chaveDisplay}</div>
-            </td>
-            <td style="font-weight:600; color:var(--text);">${fmt(i.valor)}</td>
-            <td>${renderInvoiceStatusBadge(i.status)}</td>
+            ${renderInvoiceSummaryCells(i, fmt(i.valor))}
             <td>${files}</td>
             <td><div class="table-actions-inline">${actions}</div></td>
         </tr>

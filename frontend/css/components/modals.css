@@ -154,3 +154,47 @@
   justify-content: flex-end;
   gap: 10px;
 }
+
+.modal-grid-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.modal-grid-2-1 {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 600px) {
+  .modal {
+    width: calc(100vw - 20px);
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    border-radius: 14px;
+  }
+  .modal-header,
+  .modal-body,
+  .modal-footer,
+  .app-dialog-header,
+  .app-dialog-body,
+  .app-dialog-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .modal-footer,
+  .app-dialog-footer {
+    flex-wrap: wrap;
+  }
+  .modal-footer .btn,
+  .app-dialog-footer .btn {
+    flex: 1 1 120px;
+  }
+  .modal-grid-2,
+  .modal-grid-2-1 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

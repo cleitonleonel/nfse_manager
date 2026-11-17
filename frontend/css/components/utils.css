@@ -78,6 +78,16 @@
   100% { background-position: -200% 0; }
 }
 
+@media (max-width: 768px) {
+  .task-toast {
+    left: 12px;
+    right: 12px;
+    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-width: none;
+  }
+}
+
 .loader {
   width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%;
   animation: spin 0.8s linear infinite;

@@ -23,6 +23,8 @@
   --mono:     'JetBrains Mono', monospace;
   --r:        10px;
   --r2:       16px;
+  --ctrl-h:   40px;
+  --ctrl-h-sm: 34px;
   --shadow:   0 10px 30px -10px rgba(0,0,0,0.5);
 }
 

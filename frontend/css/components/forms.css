@@ -3,13 +3,32 @@
 .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; }
 .form-input {
   width: 100%; background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: var(--r); padding: 10px 14px; color: var(--text); font-family: var(--sans); font-size: 14px;
-  box-sizing: border-box; height: 42px; transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  border-radius: var(--r); padding: 0 14px; color: var(--text); font-family: var(--sans); font-size: 13.5px;
+  box-sizing: border-box; height: var(--ctrl-h); min-height: var(--ctrl-h); line-height: 1.3;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .form-input::placeholder { color: var(--text3); opacity: 0.9; }
+input[type="date"].form-input,
+input[type="month"].form-input {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: var(--ctrl-h);
+}
+input[type="date"].form-input-sm,
+input[type="month"].form-input-sm {
+  line-height: var(--ctrl-h-sm);
+}
+.form-input-sm {
+  height: var(--ctrl-h-sm) !important;
+  min-height: var(--ctrl-h-sm) !important;
+  padding: 0 10px;
+  font-size: 12.5px;
+  border-radius: 8px;
+}
 textarea.form-input {
   height: auto;
-  min-height: 68px;
+  min-height: 76px;
+  padding: 10px 14px;
 }
 .form-input:not(select):focus {
   border-color: var(--accent);
@@ -57,16 +76,21 @@ select.form-input {
   overflow: hidden;
   max-width: 100%;
 }
+select.form-input.form-input-sm {
+  background-position: calc(100% - 10px) center;
+  background-size: 14px 14px;
+  padding-right: 30px;
+}
 select.form-input option { background: var(--bg2); color: var(--text); }
 select.form-input optgroup { background: var(--bg2); color: var(--text3); font-weight: 700; font-style: normal; }
 
 .file-upload-wrapper {
   position: relative; display: flex; align-items: center; background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: var(--r); padding: 0; overflow: hidden; transition: border-color 0.2s;
+  border-radius: var(--r); padding: 0; height: var(--ctrl-h); box-sizing: border-box; overflow: hidden; transition: border-color 0.2s;
 }
 .file-upload-wrapper:focus-within { border-color: var(--accent); }
 .file-upload-btn {
-  background: var(--bg4); color: var(--text); padding: 10px 16px; font-weight: 500; font-size: 13px;
+  background: var(--bg4); color: var(--text); padding: 0 14px; height: 100%; font-weight: 500; font-size: 13px;
   cursor: pointer; display: flex; align-items: center; gap: 8px; border-right: 1px solid var(--border2); transition: background 0.2s;
 }
 .file-upload-btn:hover { background: var(--bg5); }

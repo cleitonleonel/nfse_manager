@@ -50,7 +50,9 @@ class CustomSelect {
 
         this.trigger = document.createElement('button');
         this.trigger.type = 'button';
-        this.trigger.className = 'cs-trigger form-input';
+        this.trigger.className = select.classList.contains('form-input-sm')
+            ? 'cs-trigger form-input form-input-sm'
+            : 'cs-trigger form-input';
         this.trigger.setAttribute('aria-haspopup', 'listbox');
         this.trigger.setAttribute('aria-expanded', 'false');
         if (select.title) this.trigger.title = select.title;

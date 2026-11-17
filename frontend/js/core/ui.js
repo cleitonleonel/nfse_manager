@@ -482,6 +482,21 @@ export function toggleTheme() {
     return isLight;
 }
 
+export function initSidebarState() {
+    const expanded = localStorage.getItem('sidebar_expanded') === '1';
+    document.body.classList.toggle('sidebar-expanded', expanded);
+    const btn = document.getElementById('sidebar-toggle-btn');
+    if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+export function toggleSidebar() {
+    const expanded = document.body.classList.toggle('sidebar-expanded');
+    localStorage.setItem('sidebar_expanded', expanded ? '1' : '0');
+    const btn = document.getElementById('sidebar-toggle-btn');
+    if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    return expanded;
+}
+
 export function maskPhone(input) {
     let v = input.value.replace(/\D/g, '');
     if (v.length > 11) v = v.slice(0, 11);
@@ -503,13 +518,30 @@ export function escapeAttr(str) {
 export function renderInvoiceStatusBadge(status) {
     const raw = String(status || 'desconhecido');
     const norm = raw.toLowerCase();
-    let style = 'background:var(--amber-bg); color:var(--amber);';
+    let style = 'background:var(--amber-bg); color:var(--amber); border-color:rgba(245,158,11,0.28);';
     if (['gerada', 'emitida', 'autorizada', 'normal'].includes(norm)) {
-        style = 'background:var(--green-bg); color:var(--green);';
+        style = 'background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.28);';
     } else if (['cancelada', 'substituida', 'erro', 'rejeitada'].includes(norm)) {
-        style = 'background:var(--red-bg); color:var(--red);';
+        style = 'background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.28);';
     }
-    return `<span class="badge" style="${style}"><span class="badge-dot"></span> ${escapeDialogHtml(raw)}</span>`;
+    return `<span class="badge badge-ctrl" style="${style}"><span class="badge-dot"></span> ${escapeDialogHtml(raw)}</span>`;
+}
+
+export function renderInvoiceSummaryCells(invoice, formattedValue) {
+    const dataFmt = invoice?.data_emissao ? new Date(invoice.data_emissao).toLocaleDateString('pt-BR') : '-';
+    const hasChave = invoice?.chave && invoice.chave !== 'null';
+    const hasNumero = invoice?.numero && invoice.numero !== 'null';
+    const chaveDisplay = hasChave ? String(invoice.chave) : (hasNumero ? String(invoice.numero) : 'Chave não sincronizada');
+    const keyLabel = (hasChave && hasNumero && String(invoice.numero) !== String(invoice.chave))
+        ? `#${invoice.numero} · ${invoice.chave}`
+        : chaveDisplay;
+
+    return `
+        <td><span class="tbl-cell-chip">${escapeDialogHtml(dataFmt)}</span></td>
+        <td><span class="tbl-cell-chip tbl-cell-chip--key" title="${escapeDialogHtml(chaveDisplay)}">${escapeDialogHtml(keyLabel)}</span></td>
+        <td><span class="tbl-cell-chip tbl-cell-chip--value">${escapeDialogHtml(formattedValue)}</span></td>
+        <td>${renderInvoiceStatusBadge(invoice?.status)}</td>
+    `;
 }
 
 export function renderInvoiceFileButtons(invoice, emptyLabel = 'Pendente') {
