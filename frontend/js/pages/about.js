@@ -354,20 +354,100 @@ export async function initAbout() {
         await loadSystemEnvironment();
     }
 
-    const adminSection = document.getElementById('admin-users-section');
-    if (adminSection) {
-        let role = null;
-        try {
-            const raw = localStorage.getItem('nfse_user');
-            role = raw ? JSON.parse(raw)?.role : null;
-        } catch (_) {}
+    if (document.getElementById('about-catalogs-card')) {
+        await loadCatalogsStatus(false);
+    }
 
+    const adminSection = document.getElementById('admin-users-section');
+    const syncCatalogBtn = document.getElementById('btn-sync-catalogs');
+    let role = null;
+    try {
+        const raw = localStorage.getItem('nfse_user');
+        role = raw ? JSON.parse(raw)?.role : null;
+    } catch (_) {}
+
+    if (syncCatalogBtn) {
+        syncCatalogBtn.style.display = role === 'admin' ? 'inline-flex' : 'none';
+    }
+
+    if (adminSection) {
         if (role === 'admin') {
             adminSection.style.display = 'block';
             await loadUsers();
         } else {
             adminSection.style.display = 'none';
         }
+    }
+}
+
+function renderCatalogsStatus(status) {
+    const versaoDb = status?.versao_db ? `${status.versao_db}${status.data_versao_db ? ` (${status.data_versao_db})` : ''}` : '-';
+    const totais = status?.totais || {};
+    const totaisLabel = `${totais.nbs ?? 0} NBS · ${totais.cclasstrib ?? 0} cClass · ${totais.indop ?? 0} cIndOp`;
+    const updatedAt = status?.atualizado_em ? String(status.atualizado_em).slice(0, 10) : 'Embutido';
+    const modeLabel = status?.usando_override_externo ? 'Cache Compartilhado (Override)' : 'Embutido (pynfse)';
+    const anexosLabel = [status?.anexo_vii_versao, status?.anexo_viii_versao].filter(Boolean).join(' | ') || '-';
+
+    setText('cat-versao-db', versaoDb);
+    setText('cat-totais', totaisLabel);
+    setText('cat-updated-at', updatedAt);
+    setText('cat-source-mode', modeLabel);
+    setText('cat-dir-path', status?.catalogs_dir_configurado || status?.catalogs_dir || '-');
+    setText('cat-anexos-ver', anexosLabel);
+
+    const banner = document.getElementById('cat-sync-banner');
+    const guidance = document.getElementById('cat-sync-guidance');
+    if (banner && guidance) {
+        banner.classList.remove('is-ready', 'is-warn');
+        const rem = status?.remoto;
+        if (rem?.erro) {
+            banner.classList.add('is-warn');
+            guidance.innerText = `Base local ativa (${versaoDb}). Não foi possível consultar as fontes oficiais agora: ${rem.erro}`;
+        } else if (rem?.precisa_atualizar) {
+            banner.classList.add('is-warn');
+            const novas = rem?.alteracoes?.join(', ') || rem?.remoto?.versao_db || 'nova versão disponível';
+            guidance.innerText = `Atualização oficial disponível (${novas}). Administradores podem clicar em "Sincronizar Oficiais" para atualizar sem reinstalar o app.`;
+        } else if (rem) {
+            banner.classList.add('is-ready');
+            guidance.innerText = `Catálogos oficiais sincronizados com a Receita Federal (${versaoDb}) e Portal Nacional NFS-e.`;
+        } else {
+            banner.classList.add('is-ready');
+            guidance.innerText = `Catálogos carregados (${versaoDb}). Clique em "Verificar Tabelas" para checar novidades na Receita Federal e gov.br/nfse.`;
+        }
+    }
+}
+
+export async function loadCatalogsStatus(checkRemote = false) {
+    const card = document.getElementById('about-catalogs-card');
+    if (!card) return;
+    const btnCheck = document.getElementById('btn-check-catalogs');
+    if (btnCheck && checkRemote) btnCheck.disabled = true;
+    try {
+        const qs = checkRemote ? '?check_remote=true' : '';
+        const res = await api(`/catalogs/status${qs}`);
+        renderCatalogsStatus(res);
+    } catch (e) {
+        setText('cat-sync-guidance', `Erro ao consultar catálogos: ${e.message}`);
+    } finally {
+        if (btnCheck) btnCheck.disabled = false;
+    }
+}
+
+export async function syncOfficialCatalogs() {
+    const btn = document.getElementById('btn-sync-catalogs');
+    if (btn) btn.disabled = true;
+    const taskId = `cat-sync-${Date.now()}`;
+    showTaskToast(taskId, 'Sincronizando tabelas oficiais (RFB / gov.br)...');
+    try {
+        setTaskProgress(taskId, 35, 'Baixando CST, cClassTrib, 920 NBS e Anexos VII/VIII...');
+        const res = await api('/catalogs/sync?force=true', { method: 'POST' });
+        const meta = res?.metadados || {};
+        renderCatalogsStatus(meta);
+        completeTaskToast(taskId, `Tabelas oficiais atualizadas (${meta.versao_db || 'OK'}).`);
+    } catch (e) {
+        failTaskToast(taskId, `Falha ao sincronizar catálogos: ${e.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 

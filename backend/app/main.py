@@ -18,7 +18,9 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
+from app.core.config import get_catalogs_dir  # noqa: E402
 from app.models import init_db  # noqa: E402
+from pynfse.adn import set_catalogs_dir  # noqa: E402
 from app.api.routers import (  # noqa: E402
     auth,
     clients,
@@ -36,8 +38,9 @@ from app.api.routers import (  # noqa: E402
 from app.services.scheduler_service import SchedulerService  # noqa: E402
 from app.version import VERSION as __PROJECT_VERSION  # noqa: E402
 
-# Initialize database
+# Initialize database & official catalogs directory override
 init_db()
+set_catalogs_dir(get_catalogs_dir(), reload=False)
 
 
 @asynccontextmanager

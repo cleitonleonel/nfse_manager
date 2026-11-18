@@ -100,9 +100,12 @@ curl -X POST "http://localhost:8000/api/clients" \
 | `GET` | `/api/catalogs/servicos/{c_trib_nac}` | — |
 | `GET` | `/api/catalogs/lc116` | — |
 | `GET` | `/api/catalogs/correlacoes` | `q`, `item_lc116`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `indop`, `limite` |
-| `GET` | `/api/catalogs/nbs/{c_nbs}/combinacoes` | `c_trib_nac` (retorna `cClassTrib` e `cIndOp` compatíveis com a NBS) |
+| `GET` | `/api/catalogs/nbs` | `q`, `item_lc116`, `apenas_anexo_viii`, `limite` (lista oficial completa com 920+ NBS) |
+| `GET` | `/api/catalogs/nbs/{c_nbs}/combinacoes` | `c_trib_nac` (retorna `cClassTrib` e `cIndOp` compatíveis no Anexo VIII ou Regra Geral) |
 | `GET` | `/api/catalogs/indop` | — |
 | `GET` | `/api/catalogs/favoritos` | — |
+| `GET` | `/api/catalogs/status` | `check_remote` (`bool` para checar versão vigente na RFB e `gov.br/nfse`) |
+| `POST` | `/api/catalogs/sync` | `force`, `validar_calculadora` (**Admin** — sincroniza tabelas oficiais no `NFSE_CATALOGS_DIR`) |
 
 ---
 

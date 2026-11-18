@@ -9,7 +9,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.routers.auth import get_current_user
+from app.api.routers.auth import get_current_user, require_admin_user
+from app.models import User
 from app.services.adn_service import AdnService
 
 router = APIRouter(prefix="/api/catalogs", tags=["catalogs"], dependencies=[Depends(get_current_user)])
@@ -27,10 +28,10 @@ def get_cst_table(
 def get_cclasstrib_table(
     cst: Optional[str] = Query(None, description="Filtrar pelo código CST (3 dígitos, ex: 000, 200)"),
     apenas_nfse: bool = Query(False, description="Retornar apenas códigos com IndNfse=True ou presentes no Anexo VIII"),
-    apenas_anexo_viii: bool = Query(False, description="Retornar apenas os 27 códigos do Anexo VIII da NFS-e"),
+    apenas_anexo_viii: bool = Query(False, description="Retornar apenas os códigos presentes no Anexo VIII da NFS-e"),
     q: Optional[str] = Query(None, description="Busca textual por código ou descrição"),
 ):
-    """Lista e filtra a tabela completa de 138 códigos cClassTrib da Reforma Tributária."""
+    """Lista e filtra a tabela oficial de códigos cClassTrib da Reforma Tributária."""
     return AdnService.listar_cclasstrib(
         cst=cst,
         apenas_nfse=apenas_nfse,
@@ -83,7 +84,7 @@ def get_correlacoes_anexo_viii(
     indop: Optional[str] = Query(None, description="Filtrar pelo código cIndOp (ex: 100301)"),
     limite: int = Query(100, ge=1, le=2000),
 ):
-    """Busca na matriz oficial do Anexo VIII (1.739 correlações entre LC 116, NBS, INDOP e cClassTrib)."""
+    """Busca na matriz oficial do Anexo VIII (correlações entre LC 116, NBS, INDOP e cClassTrib)."""
     return AdnService.buscar_correlacoes(
         q=q,
         item_lc116=item_lc116,
@@ -101,6 +102,22 @@ def get_indop_table():
     return AdnService.listar_indop()
 
 
+@router.get("/nbs")
+def get_nbs_table(
+    q: Optional[str] = Query(None, description="Busca textual por código NBS ou descrição"),
+    item_lc116: Optional[str] = Query(None, description="Filtrar pelo subitem da LC 116 (ex: 01.01)"),
+    apenas_anexo_viii: bool = Query(False, description="Retornar apenas NBS listadas no Anexo VIII"),
+    limite: int = Query(1000, ge=1, le=2000),
+):
+    """Lista e pesquisa a tabela oficial completa de códigos NBS (920+ itens)."""
+    return AdnService.listar_nbs(
+        q=q,
+        item_lc116=item_lc116,
+        apenas_anexo_viii=apenas_anexo_viii,
+        limite=limite,
+    )
+
+
 @router.get("/nbs/{c_nbs}/combinacoes")
 def get_nbs_combinacoes(
     c_nbs: str,
@@ -114,3 +131,30 @@ def get_nbs_combinacoes(
 def get_favoritos():
     """Retorna os presets favoritos de serviços para preenchimento rápido de DPS."""
     return AdnService.listar_favoritos()
+
+
+@router.get("/status")
+def get_catalogs_status(
+    check_remote: bool = Query(
+        False,
+        description="Consultar também a API da Receita Federal e gov.br/nfse para verificar atualizações",
+    ),
+):
+    """Retorna metadados, versão oficial vigente (RFB / Anexos VII e VIII), diretório ativo e totais dos catálogos."""
+    return AdnService.obter_status_catalogos(check_remote=check_remote)
+
+
+@router.post("/sync")
+def sync_catalogs_from_official_sources(
+    force: bool = Query(False, description="Forçar gravação mesmo se a versão oficial já estiver atual"),
+    validar_calculadora: bool = Query(
+        False,
+        description="Consultar combinações aceitas na calculadora piloto RFB por NBS (mais lento)",
+    ),
+    _admin: User = Depends(require_admin_user),
+):
+    """Sincroniza os catálogos fiscais no cache compartilhado a partir das fontes oficiais RFB e gov.br/nfse (somente admin)."""
+    return AdnService.sincronizar_catalogos_oficiais(
+        force=force,
+        validar_calculadora=validar_calculadora,
+    )

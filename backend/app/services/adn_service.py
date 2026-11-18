@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import datetime
 import json
+from pathlib import Path
 import re
 import threading
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,7 +21,12 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_, update
 from sqlalchemy.orm import Session
 
-from app.core.config import get_downloads_dir, resolve_storage_path, to_storage_relative_path
+from app.core.config import (
+    get_catalogs_dir,
+    get_downloads_dir,
+    resolve_storage_path,
+    to_storage_relative_path,
+)
 from app.models import Client, Customer, Invoice, ServiceItem
 from app.schemas import (
     CancelarNfseRequest,
@@ -38,6 +44,7 @@ from pynfse.adn import (
     AdnNfseClient,
     DpsSigner,
     XsdValidator,
+    atualizar_catalogos_oficiais,
     buscar_correlacoes_anexo_viii,
     build_dps_xml,
     build_evento_cancelamento_xml,
@@ -45,15 +52,22 @@ from pynfse.adn import (
     calcular_tributacao,
     clean_digits,
     formatar_id_dps,
+    get_catalogs_dir as get_pynfse_catalogs_dir,
     listar_cclasstrib,
     listar_cst,
     listar_favoritos,
     listar_indop,
+    listar_nbs,
     listar_servicos_ctribnac,
     listar_subitens_lc116,
     obter_cclasstrib,
+    obter_metadados_catalogos,
+    obter_nbs,
     obter_servico_ctribnac,
+    set_catalogs_dir,
+    validar_combinacao_nbs,
     validar_regras_ibscbs,
+    verificar_atualizacao_oficial,
 )
 
 
@@ -137,17 +151,31 @@ class AdnService:
     # 1. Catálogos Fiscais (delegados ao pynfse.adn)
     # ==========================================================================
 
-    @staticmethod
-    def listar_cst(apenas_nfse: bool = False):
+    @classmethod
+    def _ensure_catalogs_dir(cls) -> Path:
+        target = get_catalogs_dir()
+        try:
+            current = get_pynfse_catalogs_dir()
+            if current.resolve() != target.resolve():
+                set_catalogs_dir(target, reload=True)
+        except Exception:
+            set_catalogs_dir(target, reload=True)
+        return target
+
+    @classmethod
+    def listar_cst(cls, apenas_nfse: bool = False):
+        cls._ensure_catalogs_dir()
         return listar_cst(apenas_nfse=apenas_nfse)
 
-    @staticmethod
+    @classmethod
     def listar_cclasstrib(
+        cls,
         cst: Optional[str] = None,
         apenas_nfse: bool = False,
         apenas_anexo_viii: bool = False,
         q: Optional[str] = None,
     ):
+        cls._ensure_catalogs_dir()
         return listar_cclasstrib(
             cst=cst,
             apenas_nfse=apenas_nfse,
@@ -155,28 +183,34 @@ class AdnService:
             q=q,
         )
 
-    @staticmethod
-    def obter_cclasstrib(codigo: str):
+    @classmethod
+    def obter_cclasstrib(cls, codigo: str):
+        cls._ensure_catalogs_dir()
         return obter_cclasstrib(codigo)
 
-    @staticmethod
+    @classmethod
     def listar_servicos(
+        cls,
         item_lc116: Optional[str] = None,
         q: Optional[str] = None,
         limite: int = 400,
     ):
+        cls._ensure_catalogs_dir()
         return listar_servicos_ctribnac(item_lc116=item_lc116, q=q, limite=limite)
 
-    @staticmethod
-    def obter_servico(c_trib_nac: str):
+    @classmethod
+    def obter_servico(cls, c_trib_nac: str):
+        cls._ensure_catalogs_dir()
         return obter_servico_ctribnac(c_trib_nac)
 
-    @staticmethod
-    def listar_lc116():
+    @classmethod
+    def listar_lc116(cls):
+        cls._ensure_catalogs_dir()
         return listar_subitens_lc116()
 
-    @staticmethod
+    @classmethod
     def buscar_correlacoes(
+        cls,
         q: Optional[str] = None,
         item_lc116: Optional[str] = None,
         c_trib_nac: Optional[str] = None,
@@ -185,6 +219,7 @@ class AdnService:
         indop: Optional[str] = None,
         limite: int = 100,
     ):
+        cls._ensure_catalogs_dir()
         return buscar_correlacoes_anexo_viii(
             q=q,
             item_lc116=item_lc116,
@@ -195,13 +230,66 @@ class AdnService:
             limite=limite,
         )
 
-    @staticmethod
-    def listar_indop():
+    @classmethod
+    def listar_indop(cls):
+        cls._ensure_catalogs_dir()
         return listar_indop()
 
-    @staticmethod
-    def listar_combinacoes_por_nbs(c_nbs: str, c_trib_nac: Optional[str] = None) -> Dict[str, Any]:
+    @classmethod
+    def listar_nbs(
+        cls,
+        q: Optional[str] = None,
+        item_lc116: Optional[str] = None,
+        apenas_anexo_viii: bool = False,
+        limite: int = 1000,
+    ):
+        cls._ensure_catalogs_dir()
+        return listar_nbs(
+            q=q,
+            item_lc116=item_lc116,
+            apenas_anexo_viii=apenas_anexo_viii,
+            limite=limite,
+        )
+
+    @classmethod
+    def obter_nbs(cls, c_nbs: str):
+        cls._ensure_catalogs_dir()
+        return obter_nbs(c_nbs)
+
+    @classmethod
+    def validar_combinacao_nbs(cls, c_nbs: str, c_class_trib: str, c_ind_op: str) -> Dict[str, Any]:
+        cls._ensure_catalogs_dir()
+        return validar_combinacao_nbs(c_nbs, c_class_trib, c_ind_op)
+
+    @classmethod
+    def obter_status_catalogos(cls, check_remote: bool = False) -> Dict[str, Any]:
+        target_dir = cls._ensure_catalogs_dir()
+        meta = dict(obter_metadados_catalogos())
+        meta["catalogs_dir_configurado"] = str(target_dir)
+        if check_remote:
+            try:
+                meta["remoto"] = verificar_atualizacao_oficial()
+            except Exception as exc:
+                meta["remoto"] = {"erro": str(exc), "precisa_atualizar": False}
+        return meta
+
+    @classmethod
+    def sincronizar_catalogos_oficiais(
+        cls,
+        force: bool = False,
+        validar_calculadora: bool = False,
+    ) -> Dict[str, Any]:
+        target_dir = cls._ensure_catalogs_dir()
+        return atualizar_catalogos_oficiais(
+            destino_dir=target_dir,
+            force=force,
+            validar_calculadora=validar_calculadora,
+        )
+
+    @classmethod
+    def listar_combinacoes_por_nbs(cls, c_nbs: str, c_trib_nac: Optional[str] = None) -> Dict[str, Any]:
         """Retorna as opções compatíveis de cClassTrib e cIndOp para um código NBS (9 dígitos)."""
+        cls._ensure_catalogs_dir()
         nbs_clean = clean_digits(c_nbs or "").zfill(9) if clean_digits(c_nbs or "") else ""
         ctrib_clean = clean_digits(c_trib_nac or "").zfill(6) if clean_digits(c_trib_nac or "") else None
 
@@ -213,6 +301,7 @@ class AdnService:
         if not correlacoes and nbs_clean and ctrib_clean:
             correlacoes = buscar_correlacoes_anexo_viii(c_nbs=nbs_clean, limite=500)
 
+        nbs_info = obter_nbs(nbs_clean) if nbs_clean else None
         indop_lookup = {
             str(i.get("cIndOp") or "").zfill(6): i.get("local_incidencia") or ""
             for i in listar_indop()
@@ -252,20 +341,59 @@ class AdnService:
                     "indop": indop,
                     "nome_cClassTrib": corr.get("nome_cClassTrib") or "",
                     "local_incidencia_ibs": corr.get("local_incidencia_ibs") or indop_lookup.get(indop) or "",
+                    "fonte": corr.get("fonte") or "anexo_viii",
                 }
             )
+
+        if not combinacoes and nbs_info:
+            for item in nbs_info.get("combinacoes") or []:
+                ct = str(item.get("cClassTrib") or "").strip().zfill(6)
+                indop = str(item.get("cIndOp") or item.get("indop") or "").strip().zfill(6)
+                cst = str(item.get("cst") or "").strip().zfill(3) if item.get("cst") else ""
+                if ct and ct not in cclasstrib_map:
+                    meta = obter_cclasstrib(ct) or {}
+                    cclasstrib_map[ct] = {
+                        "codigo": ct,
+                        "cst": cst or str(meta.get("cst") or ct[:3]).zfill(3),
+                        "nome": meta.get("nome") or f"Classificação {ct}",
+                        "nome_reduzido": meta.get("nome_reduzido") or "",
+                        "perc_red_ibs": meta.get("perc_red_ibs", 0.0),
+                        "perc_red_cbs": meta.get("perc_red_cbs", 0.0),
+                    }
+                if indop and indop not in cindop_map:
+                    cindop_map[indop] = {
+                        "cIndOp": indop,
+                        "local_incidencia": indop_lookup.get(indop) or "Local de incidência padrão",
+                    }
+                combinacoes.append(
+                    {
+                        "cTribNac": ctrib_clean,
+                        "cNBS": nbs_clean,
+                        "cClassTrib": ct,
+                        "cst": cst or str(ct[:3]).zfill(3),
+                        "indop": indop,
+                        "nome_cClassTrib": cclasstrib_map.get(ct, {}).get("nome") or "",
+                        "local_incidencia_ibs": indop_lookup.get(indop) or "",
+                        "fonte": item.get("fonte") or nbs_info.get("fonte") or "regra_geral",
+                    }
+                )
 
         return {
             "c_nbs": nbs_clean,
             "c_trib_nac": ctrib_clean,
+            "descricao_nbs": nbs_info.get("descricao") if nbs_info else "",
+            "no_anexo_viii": bool(nbs_info.get("no_anexo_viii")) if nbs_info else len(correlacoes) > 0,
+            "regra_geral": bool(nbs_info and not correlacoes),
+            "fonte": nbs_info.get("fonte") if nbs_info else ("anexo_viii" if correlacoes else ""),
             "possui_correlacoes": len(combinacoes) > 0,
             "cclasstrib_compativeis": list(cclasstrib_map.values()),
             "cindop_compativeis": list(cindop_map.values()),
             "combinacoes": combinacoes,
         }
 
-    @staticmethod
-    def listar_favoritos():
+    @classmethod
+    def listar_favoritos(cls):
+        cls._ensure_catalogs_dir()
         return listar_favoritos()
 
     # ==========================================================================
@@ -752,9 +880,25 @@ class AdnService:
             try:
                 adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
                 resultado_adn = await adn_client.emitir_dps(xml_assinado)
+                if resultado_adn.get("dps_xml_assinado") and resultado_adn["dps_xml_assinado"] != xml_assinado:
+                    xml_assinado = resultado_adn["dps_xml_assinado"]
+                    xml_dps_path = cls._salvar_xml_disco(xml_assinado, "dps", f"{id_dps}.xml")
                 if not resultado_adn.get("sucesso"):
                     sc = int(resultado_adn.get("status_code") or 0)
-                    ultimo_erro_envio = str(resultado_adn.get("mensagem") or resultado_adn.get("erro") or f"HTTP {sc}")
+                    resp_obj = resultado_adn.get("resposta")
+                    erros_sefin = resp_obj.get("erros") if isinstance(resp_obj, dict) else None
+                    if isinstance(erros_sefin, list) and erros_sefin and isinstance(erros_sefin[0], dict):
+                        err0 = erros_sefin[0]
+                        cod_e = str(err0.get("Codigo") or err0.get("codigo") or "")
+                        desc_e = str(err0.get("Descricao") or err0.get("descricao") or "")
+                        ultimo_erro_envio = f"{cod_e} - {desc_e}".strip(" -")
+                        if cod_e == "E0039" and str(prestador.get("regime") or "normal").lower() == "normal":
+                            ultimo_erro_envio += (
+                                " (Dica: caso o prestador seja optante pelo Simples Nacional ME/EPP ou MEI, "
+                                "configure o Regime Tributário como 'simples' ou 'mei')."
+                            )
+                    else:
+                        ultimo_erro_envio = str(resultado_adn.get("mensagem") or resultado_adn.get("erro") or f"HTTP {sc}")
                     if sc == 0 or sc >= 500:
                         foi_para_contingencia = True
             except Exception as exc:

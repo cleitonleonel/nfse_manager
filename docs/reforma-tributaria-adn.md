@@ -4,15 +4,18 @@ O **NFSe Manager Pro** integra o pacote `pynfse.adn` através da camada [`AdnSer
 
 ---
 
-## 1. Catálogos Fiscais Embarcados (`/api/catalogs`)
+## 1. Catálogos Fiscais Oficiais e Atualizáveis (`/api/catalogs`)
 
-A aplicação disponibiliza para consulta instantânea:
+A aplicação consome os catálogos oficiais mantidos pela `pynfse` (base RFB `V0073` + Anexos VII v1.03.00 e VIII v1.02.00) e permite atualizá-los diretamente na interface (**Sistema & Administração → Catálogos Tributários Oficiais**) ou via API (`/api/catalogs/sync`) sem depender de terceiros:
 
 - **18 Códigos de Situação Tributária (`CST`)** do IBS/CBS (`/api/catalogs/cst`).
-- **138 Classificações Tributárias (`cClassTrib`)** da Reforma Tributária (`/api/catalogs/cclasstrib`), sendo **66 aplicáveis à NFS-e** (`apenas_nfse=true`) e **27 do Anexo VIII** (`apenas_anexo_viii=true`), com indicadores de redução de alíquota, diferimento, crédito presumido e estorno.
+- **173+ Classificações Tributárias (`cClassTrib`)** da Reforma Tributária (`/api/catalogs/cclasstrib`), com filtro por `apenas_nfse=true`, `apenas_anexo_viii=true`, indicadores de redução de alíquota, diferimento, crédito presumido e estorno.
+- **920 Códigos NBS Oficiais** (`/api/catalogs/nbs` e `/api/catalogs/nbs/{c_nbs}/combinacoes`), cobrindo tanto os **731 NBS do Anexo VIII** quanto os demais códigos com enquadramento na **Regra Geral** (`CST 000` / `cClassTrib 000001` / `cIndOp 100301`).
 - **338 Códigos de Tributação Nacional (`cTribNac` — 6 dígitos)** distribuídos nos 41 grupos da **LC 116/2003** (`/api/catalogs/servicos` e `/api/catalogs/lc116`), integrados na tela de emissão via seletor pesquisável.
-- **1.739 Correlações Oficiais do Anexo VIII** (cobrindo **676 códigos NBS distintos**) cruzando `Item LC 116 x cTribNac x NBS x cIndOp x cClassTrib` (`/api/catalogs/correlacoes`), com filtro automático por `cTribNac` ou listagem completa na interface.
-- **28 Códigos Indicadores de Operação (`cIndOp`)** definindo o local de incidência do IBS/CBS (`/api/catalogs/indop`).
+- **1.603+ Correlações Oficiais do Anexo VIII** cruzando `Item LC 116 x cTribNac x NBS x cIndOp x cClassTrib` (`/api/catalogs/correlacoes`), com filtro automático por `cTribNac` ou listagem completa na interface.
+- **48+ Códigos Indicadores de Operação (`cIndOp`)** combinando o Anexo VII v1.03.00 e a Calculadora RFB (`/api/catalogs/indop`).
+
+> 💡 **Atualização em ambiente multiusuário / WTS:** As sincronizações via `POST /api/catalogs/sync` (exclusivo para administradores) salvam os arquivos JSON no diretório compartilhado definido por `NFSE_CATALOGS_DIR` (padrão `{NFSE_DATA_DIR}/catalogs`), aplicando a atualização imediatamente sem reinstalar o aplicativo.
 
 ---
 

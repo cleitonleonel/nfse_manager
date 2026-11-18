@@ -67,14 +67,14 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
     - **Importação por Planilha de Notas (CSV `;`/`,` e XLSX)**: upload de notas heterogêneas em staging (`BatchImport` / `BatchImportItem`), sem transmissão automática, com **validação em 3 níveis** (Estrutural com CPF/CNPJ alfanumérico, Cadastral e Fiscal/XSD v1.01), edição/correção inline por linha (`PATCH`), processamento sequencial com estado `UNKNOWN` e consulta prévia via `consultar_dps` antes de qualquer reenvio, cancelamento e exportação CSV/XLSX.
     - **Emissão Rápida em Lote**: seleção múltipla de tomadores cadastrados e serviço padrão na tela de emissão.
   - **CNPJ Alfanumérico e Consulta Automática de CNPJ/CEP (`/api/lookup/*`)**: campo exclusivo para CNPJ (numérico ou alfanumérico, com máscara `XX.XXX.XXX/XXXX-XX`) e disparo automático ao completar os 14 caracteres do CNPJ ou 8 dígitos do CEP, preenchendo razão social, endereço e código IBGE de 7 dígitos.
-  - **Seletores Pesquisáveis com Catálogo Oficial Completo**: dropdown customizado (`CustomSelect`, imune ao bug de popup GTK/Linux) com busca sem acentos integrando todos os **338 serviços `cTribNac`** (41 grupos da LC 116), **676 códigos NBS** (com vínculo automático ou listagem completa), **66 `cClassTrib`** aplicáveis à NFS-e e **28 `cIndOp`**.
+  - **Seletores Pesquisáveis com Catálogo Oficial Completo**: dropdown customizado (`CustomSelect`, imune ao bug de popup GTK/Linux) com busca sem acentos integrando todos os **338 serviços `cTribNac`** (41 grupos da LC 116), **920 códigos NBS oficiais** (Anexo VIII com vínculo automático + listagem completa com Regra Geral), **`cClassTrib`** aplicáveis à NFS-e (173 totais) e **48 `cIndOp`**.
   - **Card de Conferência Prévia e Validação XSD**: prévia de impostos e validação `DPS_v1.01.xsd` antes do envio.
   - **Fila de Contingência Offline (`/api/adn/fila`) e Worker em Background (`/api/adn/worker/*`)**: armazenamento seguro de DPS assinadas quando há queda de conexão/instabilidade na Sefin, com retransmissão manual em lote (`/api/adn/fila/reenviar`) ou automática periódica pelo `SchedulerService`.
   - **Envio de XML + DANFSe por E-mail (`/api/adn/nfse/{id}/enviar-email`)**: disparo via SMTP próprio do Prestador (com botão **"Usar envio padrão"** carregando `DEFAULT_SMTP_*` do `.env`) ou fallback global do sistema, cabeçalho `Reply-To` para o e-mail do cliente, recuperação/download sob demanda de XML e PDF ausentes (`ensure_invoice_files`) e bloqueio HTTP `422` caso nenhum anexo esteja disponível.
   - Cancelamento de NFS-e (`e101101`) e Substituição de NFS-e (`<subst>` + evento `e105102`).
   - Consulta de parâmetros municipais (convênio e alíquotas por código IBGE).
 - **Motor Tributário da Reforma Tributária (NT 1.101 / LC 214/2025)**:
-  - Catálogos completos: 18 `CST`, 138 `cClassTrib`, 338 serviços `cTribNac`, subitens da `LC 116/2003`, 1.739 correlações do `Anexo VIII` e 28 indicadores `cIndOp`.
+  - Catálogos oficiais embarcados e atualizáveis (`V0073`): 18 `CST`, 173 `cClassTrib`, 920 códigos `NBS`, 338 serviços `cTribNac`, subitens da `LC 116/2003`, 1.603 correlações do `Anexo VIII` v1.02.00 e 48 indicadores `cIndOp` (Anexo VII v1.03.00 + Calculadora RFB), com sincronização via API oficial RFB/`gov.br` em `NFSE_CATALOGS_DIR`.
   - Cálculo integrado de `ISSQN`, retenções federais (`PIS`, `COFINS`, `IRRF`, `CSLL`, `INSS`) e `IBS/CBS` (com suporte a reduções de alíquota, diferimento, crédito presumido, tributação regular e compras governamentais).
 - **Analytics e Relatórios**:
   - Dashboard com KPIs financeiros, gráfico temporal (`7d`, `30d`, `90d`, `12m`), ranking de clientes e enriquecimento de notas via XML.
@@ -250,7 +250,7 @@ cp .env.example .env
 | `NFSE_ENCRYPTION_KEY` | Derivada automaticamente se omitida | Chave mestra (Fernet/AES) para criptografia em repouso de senhas |
 | `JWT_SECRET_KEY` | Derivada de `NFSE_ENCRYPTION_KEY` se omitida | Chave secreta para assinatura de tokens JWT (`HS256`) dos operadores |
 | `DEFAULT_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` / `FROM` / `TLS` | Vazio (`587`, `TLS=1`) | Servidor SMTP padrão no `.env` (fallback quando o Prestador não tem SMTP próprio e envios de suporte) |
-| `NFSE_DATA_DIR` / `NFSE_CERTS_DIR` / `NFSE_DOWNLOADS_DIR` | `backend/` | Diretórios compartilhados para `.pfx`, XMLs e PDFs (compatível com rede/UNC no Windows Server) |
+| `NFSE_DATA_DIR` / `NFSE_CERTS_DIR` / `NFSE_DOWNLOADS_DIR` / `NFSE_CATALOGS_DIR` | `backend/` | Diretórios compartilhados para `.pfx`, XMLs/PDFs e cache atualizado dos catálogos oficiais (compatível com rede/UNC no Windows Server) |
 | `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar na tela de login após existir um administrador |
 | `NFSE_SCHEDULER_MODE` | `auto` | Modo do worker de contingência (`auto`, `leader` ou `disabled`) |
 | `NFSE_DISABLE_SELF_UPDATE` | `0` (`1` em sidecar) | Bloqueia auto-atualização via GitHub pela interface em ambientes gerenciados / WTS |
@@ -431,14 +431,18 @@ curl -X POST "http://localhost:8000/api/sync" \
 ### 4. Catálogos Fiscais da Reforma Tributária (`/api/catalogs`)
 
 - `GET /api/catalogs/cst?apenas_nfse=true` — Lista os 18 códigos CST do IBS/CBS.
-- `GET /api/catalogs/cclasstrib?cst=200&apenas_anexo_viii=true&q=...` — Filtra os 138 códigos `cClassTrib`.
+- `GET /api/catalogs/cclasstrib?cst=200&apenas_anexo_viii=true&q=...` — Filtra os 173+ códigos `cClassTrib`.
 - `GET /api/catalogs/cclasstrib/{codigo}` — Detalhes e percentuais de redução de um `cClassTrib` (ex.: `200029`).
 - `GET /api/catalogs/servicos?item_lc116=01.01&q=sistemas` — Pesquisa os 338 códigos `cTribNac`.
 - `GET /api/catalogs/servicos/{c_trib_nac}` — Detalhes de incidência de ISSQN e correlações do serviço.
 - `GET /api/catalogs/lc116` — Lista subitens da LC 116/2003 e seus desdobramentos.
 - `GET /api/catalogs/correlacoes` — Matriz oficial do Anexo VIII (`LC 116 x NBS x cIndOp x cClassTrib`).
-- `GET /api/catalogs/indop` — Lista os 28 indicadores de operação (`cIndOp`).
+- `GET /api/catalogs/nbs?q=...&apenas_anexo_viii=false` — Lista e pesquisa a tabela oficial completa com os 920 códigos NBS (incluindo Regra Geral fora do Anexo VIII).
+- `GET /api/catalogs/nbs/{c_nbs}/combinacoes` — Opções compatíveis de `cClassTrib` e `cIndOp` por NBS (Anexo VIII ou Regra Geral).
+- `GET /api/catalogs/indop` — Lista os 48+ indicadores de operação (`cIndOp`).
 - `GET /api/catalogs/favoritos` — Presets rápidos de serviços frequentes.
+- `GET /api/catalogs/status?check_remote=false` — Versão vigente (`versao_db`), totais e verificação opcional contra a RFB e `gov.br/nfse`.
+- `POST /api/catalogs/sync` — Sincroniza os catálogos no cache compartilhado (`NFSE_CATALOGS_DIR`) direto das fontes oficiais (somente Admin).
 
 ### 5. Calculadora e Validador Tributário (`/api/tax`)
 

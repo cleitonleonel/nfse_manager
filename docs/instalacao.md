@@ -36,6 +36,7 @@ cp .env.example .env
 | `NFSE_DATA_DIR` | `backend/` (ou `%PROGRAMDATA%\NFSeManager` no binário frozen Windows) | Diretório raiz compartilhado para certificados e downloads (ex.: share UNC `\\SERVIDOR\NFSeData`) |
 | `NFSE_CERTS_DIR` | `{NFSE_DATA_DIR}/certificados` | Diretório dedicado para armazenamento dos certificados `.pfx` |
 | `NFSE_DOWNLOADS_DIR` | `{NFSE_DATA_DIR}/downloads` | Diretório dedicado para XMLs, PDFs e lotes ZIP |
+| `NFSE_CATALOGS_DIR` | `{NFSE_DATA_DIR}/catalogs` | Cache compartilhado gravável dos catálogos oficiais sincronizados (`V0073`, NBS, `cClassTrib`, Anexos VII/VIII) |
 | `NFSE_DEPLOYMENT_MODE` | Auto-detectado | Modo exibido no diagnóstico (`server`, `standalone`, `client`) |
 | `NFSE_SCHEDULER_MODE` | `auto` | Controle do worker de contingência (`auto`, `leader` ou `disabled`) |
 | `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar após o 1º admin (`0` fecha o cadastro público para uso corporativo) |

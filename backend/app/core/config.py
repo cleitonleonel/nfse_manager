@@ -85,6 +85,14 @@ def get_downloads_dir() -> Path:
     return get_data_dir() / "downloads"
 
 
+def get_catalogs_dir() -> Path:
+    """Retorna o diretório de cache gravável dos catálogos fiscais (`NFSE_CATALOGS_DIR` -> `PYNFSE_CATALOGS_DIR` -> `data_dir/catalogs`)."""
+    custom = (os.getenv("NFSE_CATALOGS_DIR") or os.getenv("PYNFSE_CATALOGS_DIR") or "").strip()
+    if custom:
+        return Path(custom).expanduser()
+    return get_data_dir() / "catalogs"
+
+
 def get_sqlite_db_path() -> Path:
     """Retorna o caminho do banco SQLite (`NFSE_DB_PATH` -> `data_dir/nfse.db`)."""
     custom = (os.getenv("NFSE_DB_PATH") or "").strip()

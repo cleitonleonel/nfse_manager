@@ -65,6 +65,64 @@
         </div>
     </div>
 
+    <!-- CATÁLOGOS TRIBUTÁRIOS OFICIAIS (RFB / GOV.BR) -->
+    <div class="card glass about-env-card" id="about-catalogs-card">
+        <div class="env-header">
+            <div>
+                <div class="env-header-title">
+                    <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    <span>Catálogos Tributários Oficiais (RFB / gov.br)</span>
+                </div>
+                <div class="env-header-sub">Tabelas oficiais de NBS, CST, cClassTrib, Anexo VII (cIndOp) e Anexo VIII usadas na emissão IBS/CBS.</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-check-catalogs" onclick="App.loadCatalogsStatus(true)" title="Verificar se há nova versão na Receita Federal / gov.br">
+                    <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Verificar Tabelas
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-sync-catalogs" style="display:none;" onclick="App.syncOfficialCatalogs()" title="Baixar e atualizar tabelas oficiais no cache compartilhado">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Sincronizar Oficiais
+                </button>
+            </div>
+        </div>
+
+        <div class="env-tiles-grid">
+            <div class="env-tile">
+                <div class="env-tile-label">Base Calculadora RFB</div>
+                <div class="env-tile-value" id="cat-versao-db">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Totais Ativos</div>
+                <div class="env-tile-value" id="cat-totais">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Última Atualização</div>
+                <div class="env-tile-value" id="cat-updated-at">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Modo de Carregamento</div>
+                <div class="env-tile-value" id="cat-source-mode">-</div>
+            </div>
+        </div>
+
+        <div class="env-dirs-grid">
+            <div class="env-dir-item">
+                <div class="env-dir-label"><span>Diretório / Cache dos Catálogos</span></div>
+                <div class="env-dir-path" id="cat-dir-path">-</div>
+            </div>
+            <div class="env-dir-item">
+                <div class="env-dir-label"><span>Anexos Portal NFS-e (VII / VIII)</span></div>
+                <div class="env-dir-path" id="cat-anexos-ver">-</div>
+            </div>
+        </div>
+
+        <div class="env-wts-banner" id="cat-sync-banner">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div id="cat-sync-guidance">Carregando status dos catálogos tributários...</div>
+        </div>
+    </div>
+
     <!-- GESTÃO DE EQUIPE & OPERADORES (APENAS ADMIN) -->
     <div class="card glass users-section" id="admin-users-section" style="display:none;">
         <div class="users-header">

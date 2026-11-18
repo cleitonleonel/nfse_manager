@@ -418,7 +418,7 @@ async function populateNbsSelectFromCorrelacoes(correlacoes, preferredNbs = null
     for (const c of correlacoes) {
         const rawNbs = (c.cNBS || c.c_nbs || c.nbs || '').replace(/\D/g, '');
         if (rawNbs && !nbsMap.has(rawNbs)) {
-            const desc = c.descricao_nbs || c.nome_cClassTrib || 'Serviço tributável';
+            const desc = c.descricao_nbs || c.descricao || c.nome_cClassTrib || 'Serviço tributável';
             nbsMap.set(rawNbs, desc);
         }
     }
@@ -456,7 +456,7 @@ export async function loadAllNbsOptions(forceAll = null) {
     try {
         if (!allAnexoViiiCorrelacoes) {
             if (toggleBtn) toggleBtn.textContent = 'Carregando...';
-            allAnexoViiiCorrelacoes = await api('/catalogs/correlacoes?limite=2000');
+            allAnexoViiiCorrelacoes = await api('/catalogs/nbs?limite=1500');
         }
         showingAllNbs = true;
         currentCorrelacoes = allAnexoViiiCorrelacoes || [];
@@ -464,10 +464,10 @@ export async function loadAllNbsOptions(forceAll = null) {
         await populateNbsSelectFromCorrelacoes(
             currentCorrelacoes,
             currentNbs || null,
-            'Catálogo Completo NBS — Anexo VIII'
+            'Catálogo Oficial Completo NBS (RFB + Anexo VIII)'
         );
         if (toggleBtn) toggleBtn.textContent = 'Filtrar pelo cTribNac';
-        if (hintNbs) hintNbs.innerHTML = `<span>Exibindo todas as nomenclaturas NBS oficiais do Anexo VIII (${document.getElementById('em-cnbs-select')?.options.length || 0} códigos)</span>`;
+        if (hintNbs) hintNbs.innerHTML = `<span>Exibindo todas as nomenclaturas NBS oficiais (${document.getElementById('em-cnbs-select')?.options.length || 0} códigos)</span>`;
     } catch (e) {
         console.warn('Erro ao carregar todas as NBS:', e);
         if (toggleBtn) toggleBtn.textContent = 'Ver todas as NBS';
@@ -566,7 +566,9 @@ export async function onSelectNbsOption(nbsCode) {
     const hintClass = document.getElementById('hint-cclasstrib');
     if (hintClass) {
         const qtdCt = currentNbsCombinations?.cclasstrib_compativeis?.length || 0;
-        const nomeCt = corr?.nome_cClassTrib || 'Classificação padrão';
+        const nomeCt = corr?.nome_cClassTrib
+            || currentNbsCombinations?.cclasstrib_compativeis?.[0]?.nome
+            || 'Classificação padrão';
         hintClass.innerHTML = qtdCt > 0
             ? `<span>${qtdCt} opção(ões) compatível(is) com NBS ${cleanNbs} · ${escapeHtml(nomeCt)}</span>`
             : `<span>${escapeHtml(nomeCt)}</span>`;
@@ -574,7 +576,9 @@ export async function onSelectNbsOption(nbsCode) {
     const hintIndop = document.getElementById('hint-cindop');
     if (hintIndop) {
         const qtdInd = currentNbsCombinations?.cindop_compativeis?.length || 0;
-        const localInd = corr?.local_incidencia_ibs || 'Incidência padrão';
+        const localInd = corr?.local_incidencia_ibs
+            || currentNbsCombinations?.cindop_compativeis?.[0]?.local_incidencia
+            || 'Incidência padrão';
         hintIndop.innerHTML = qtdInd > 0
             ? `<span>${qtdInd} indicador(es) compatível(is) com NBS ${cleanNbs} · ${escapeHtml(localInd)}</span>`
             : `<span>Incidência: ${escapeHtml(localInd)}</span>`;

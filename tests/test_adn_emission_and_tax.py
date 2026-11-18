@@ -137,10 +137,10 @@ def test_client_fiscal_fields_crud(api_client: TestClient, test_pfx_file: tuple[
 
 
 def test_catalog_counts_and_lookup():
-    assert len(listar_cst()) == 18
-    assert len(listar_cclasstrib(apenas_nfse=False)) == 138
-    assert len(listar_servicos_ctribnac()) == 338
-    assert len(listar_indop()) == 28
+    assert len(listar_cst()) >= 18
+    assert len(listar_cclasstrib(apenas_nfse=False)) >= 138
+    assert len(listar_servicos_ctribnac()) >= 338
+    assert len(listar_indop()) >= 28
 
     ct_saude = obter_cclasstrib("200029")
     assert ct_saude is not None
@@ -174,7 +174,7 @@ def test_catalog_api_endpoints_comprehensive(api_client: TestClient):
 
     r_ct_anexo = api_client.get("/api/catalogs/cclasstrib", params={"apenas_anexo_viii": True})
     assert r_ct_anexo.status_code == 200
-    assert len(r_ct_anexo.json()) == 27
+    assert len(r_ct_anexo.json()) >= 27
 
     r_ct_detail = api_client.get("/api/catalogs/cclasstrib/200029")
     assert r_ct_detail.status_code == 200
@@ -207,11 +207,58 @@ def test_catalog_api_endpoints_comprehensive(api_client: TestClient):
 
     r_indop = api_client.get("/api/catalogs/indop")
     assert r_indop.status_code == 200
-    assert len(r_indop.json()) == 28
+    assert len(r_indop.json()) >= 28
+
+    r_nbs = api_client.get("/api/catalogs/nbs", params={"limite": 1500})
+    assert r_nbs.status_code == 200
+    nbs_items = r_nbs.json()
+    assert len(nbs_items) >= 920
+
+    r_nbs_anexo = api_client.get("/api/catalogs/nbs", params={"apenas_anexo_viii": True, "limite": 1500})
+    assert r_nbs_anexo.status_code == 200
+    assert 600 <= len(r_nbs_anexo.json()) < len(nbs_items)
+
+    # NBS fora do Anexo VIII deve retornar regra geral (CST 000 / cClassTrib 000001 / cIndOp 100301)
+    nao_anexo = next(item["cNBS"] for item in nbs_items if not item.get("no_anexo_viii"))
+    r_nbs_comb_rg = api_client.get(f"/api/catalogs/nbs/{nao_anexo}/combinacoes")
+    assert r_nbs_comb_rg.status_code == 200
+    comb_rg = r_nbs_comb_rg.json()
+    assert comb_rg["regra_geral"] is True
+    assert comb_rg["possui_correlacoes"] is True
+    assert any(c["codigo"] == "000001" for c in comb_rg["cclasstrib_compativeis"])
+
+    r_status = api_client.get("/api/catalogs/status")
+    assert r_status.status_code == 200
+    st = r_status.json()
+    assert st["totais"]["nbs"] >= 920
+    assert st["totais"]["cclasstrib"] >= 173
+    assert st["versao_db"]
 
     r_fav = api_client.get("/api/catalogs/favoritos")
     assert r_fav.status_code == 200
     assert len(r_fav.json()) >= 6
+
+
+def test_catalog_sync_uses_configured_override_dir(api_client: TestClient, tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("NFSE_CATALOGS_DIR", str(tmp_path / "custom_catalogs"))
+    fake_sync = {
+        "atualizado": True,
+        "destino_dir": str(tmp_path / "custom_catalogs"),
+        "metadados": {
+            "versao_db": "V0099",
+            "data_versao_db": "2026-12-01",
+            "totais": {"nbs": 920, "cclasstrib": 173, "indop": 48},
+        },
+    }
+    with patch("app.services.adn_service.atualizar_catalogos_oficiais", return_value=fake_sync) as mock_sync:
+        r = api_client.post("/api/catalogs/sync?force=true")
+    assert r.status_code == 200, r.text
+    assert r.json()["metadados"]["versao_db"] == "V0099"
+    mock_sync.assert_called_once()
+    assert mock_sync.call_args.kwargs["destino_dir"] == tmp_path / "custom_catalogs"
+    assert mock_sync.call_args.kwargs["force"] is True
 
 
 # ==============================================================================

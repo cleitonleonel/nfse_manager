@@ -481,3 +481,39 @@ def test_support_message_dispatches_email_and_telegram(monkeypatch):
             json={"email": "user@test.com", "whatsapp": "", "message": "Falhou tudo"},
         )
     assert res_fail.status_code == 502
+
+
+@pytest.mark.real_auth
+def test_catalogs_sync_requires_admin_role(monkeypatch, tmp_path):
+    """Garante que apenas administradores podem disparar a sincronização oficial de catálogos."""
+    from unittest.mock import patch
+
+    _reset_users()
+    create_admin_user("admin_cat", "admin_cat@teste.com", "AdminPassword1!", "Admin Catalogo")
+    admin_headers = _login_headers("admin_cat", "AdminPassword1!")
+    res_op = client.post(
+        "/api/auth/users",
+        headers=admin_headers,
+        json={
+            "username": "operador_cat",
+            "email": "op_cat@teste.com",
+            "full_name": "Operador Catalogo",
+            "password": "OperPassword1!",
+            "role": "operador",
+        },
+    )
+    assert res_op.status_code == 200, res_op.text
+    op_headers = _login_headers("operador_cat", "OperPassword1!")
+
+    # Operador pode consultar status, mas não pode disparar /sync (403)
+    assert client.get("/api/catalogs/status", headers=op_headers).status_code == 200
+    assert client.post("/api/catalogs/sync", headers=op_headers).status_code == 403
+
+    monkeypatch.setenv("NFSE_CATALOGS_DIR", str(tmp_path / "rbac_catalogs"))
+    with patch(
+        "app.services.adn_service.atualizar_catalogos_oficiais",
+        return_value={"atualizado": False, "metadados": {"versao_db": "V0073"}},
+    ):
+        r_admin = client.post("/api/catalogs/sync", headers=admin_headers)
+    assert r_admin.status_code == 200
+    assert r_admin.json()["metadados"]["versao_db"] == "V0073"
