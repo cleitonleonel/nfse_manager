@@ -14,6 +14,7 @@ import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
@@ -35,7 +36,7 @@ from app.core.security import (
 )
 from app.database import SessionLocal, resolve_database_url
 from app.main import app
-from app.models import Client, Invoice, User
+from app.models import BatchImport, BatchImportItem, Client, Customer, Invoice, ServiceItem, User
 from app.services.lookup_service import _clean_cnpj
 from app.services.scheduler_service import SchedulerService
 import manage
@@ -201,6 +202,7 @@ def test_migrations_engine_and_manage_cli(tmp_path: Path, monkeypatch):
 # ==============================================================================
 
 
+@pytest.mark.real_auth
 def test_auth_router_lifecycle():
     # Garante a existência do admin via `create_admin_user`
     admin = create_admin_user("admin_master", "master@empresa.com.br", "MasterPass123", "Master Admin")
@@ -301,6 +303,7 @@ def test_auth_router_lifecycle():
     assert res_del.status_code == 200
 
 
+@pytest.mark.real_auth
 def test_auth_public_registration_bootstrap_and_role():
     db = SessionLocal()
     try:
@@ -355,7 +358,12 @@ def test_certificate_expiration_alerts_and_dashboard_stats(tmp_path: Path):
     now = datetime.datetime.now(datetime.UTC)
     db = SessionLocal()
     try:
-        # Limpa clientes anteriores para isolar a contagem dos certificados
+        # Limpa clientes anteriores (respeitando FKs com PRAGMA foreign_keys=ON)
+        db.query(BatchImportItem).delete()
+        db.query(BatchImport).delete()
+        db.query(Invoice).delete()
+        db.query(Customer).delete()
+        db.query(ServiceItem).delete()
         db.query(Client).delete()
         db.commit()
 

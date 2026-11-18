@@ -1,6 +1,114 @@
 <div class="page-content" id="page-about">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-shrink: 0;">
-        <h2 style="font-size:24px; font-weight:700;">Sobre a Plataforma</h2>
+        <h2 style="font-size:24px; font-weight:700;">Sistema &amp; Administração</h2>
+    </div>
+
+    <!-- AMBIENTE MULTIUSUÁRIO & INFRAESTRUTURA -->
+    <div class="card glass about-env-card" id="about-env-card">
+        <div class="env-header">
+            <div>
+                <div class="env-header-title">
+                    <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    <span>Ambiente Multiusuário &amp; Infraestrutura</span>
+                </div>
+                <div class="env-header-sub">Diagnóstico de banco de dados, diretórios compartilhados e conexão da API.</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="App.loadSystemEnvironment()" title="Atualizar diagnóstico">
+                    <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Atualizar
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-config-server-url" onclick="App.openServerUrlModal()">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Configurar Servidor
+                </button>
+            </div>
+        </div>
+
+        <div class="env-tiles-grid">
+            <div class="env-tile">
+                <div class="env-tile-label">Banco de Dados</div>
+                <div class="env-tile-value" id="env-db-type">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Modo de Operação</div>
+                <div class="env-tile-value" id="env-op-mode">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Worker / Agendador</div>
+                <div class="env-tile-value" id="env-worker-status">-</div>
+            </div>
+            <div class="env-tile">
+                <div class="env-tile-label">Origem da API</div>
+                <div class="env-tile-value is-mono" id="env-api-origin">-</div>
+            </div>
+        </div>
+
+        <div class="env-dirs-grid">
+            <div class="env-dir-item">
+                <div class="env-dir-label">
+                    <span>Diretório de Certificados (A1)</span>
+                </div>
+                <div class="env-dir-path" id="env-certs-dir">-</div>
+            </div>
+            <div class="env-dir-item">
+                <div class="env-dir-label">
+                    <span>Diretório de Notas / Downloads</span>
+                </div>
+                <div class="env-dir-path" id="env-downloads-dir">-</div>
+            </div>
+        </div>
+
+        <div class="env-wts-banner" id="env-wts-banner">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div id="env-wts-guidance">Carregando diagnóstico do ambiente...</div>
+        </div>
+    </div>
+
+    <!-- GESTÃO DE EQUIPE & OPERADORES (APENAS ADMIN) -->
+    <div class="card glass users-section" id="admin-users-section" style="display:none;">
+        <div class="users-header">
+            <div>
+                <div class="env-header-title">
+                    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Gestão de Equipe &amp; Operadores</span>
+                </div>
+                <div class="env-header-sub">Cadastre colaboradores, defina permissões (Admin/Operador) e gerencie acessos.</div>
+            </div>
+            <div class="users-toolbar">
+                <div class="users-search-wrap">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" class="form-input" id="users-search-input" placeholder="Buscar por nome, usuário ou e-mail..." oninput="App.filterUsersTable()">
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="App.loadUsers()" title="Atualizar lista de operadores">
+                    <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Atualizar
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="App.openOperatorModal()">
+                    <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Novo Operador
+                </button>
+            </div>
+        </div>
+
+        <div class="tbl-container">
+            <table class="tbl" id="users-table">
+                <thead>
+                    <tr>
+                        <th>Operador</th>
+                        <th>E-mail</th>
+                        <th>Papel</th>
+                        <th>Status</th>
+                        <th style="text-align:right;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body">
+                    <tr>
+                        <td colspan="5" style="text-align:center; color:var(--text3);">Carregando operadores...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div class="card glass">

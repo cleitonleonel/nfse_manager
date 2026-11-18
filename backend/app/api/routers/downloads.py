@@ -6,14 +6,16 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 
-from app.api.deps import BACKEND_DIR, DOWNLOADS_DIR, get_nfse_client, has_valid_certificate
-from app.api.state import tasks_status
+from app.api.deps import get_nfse_client, has_valid_certificate
+from app.api.routers.auth import get_current_user
+from app.api.state import TaskStore
+from app.core.config import BACKEND_DIR, get_certs_dir, get_data_dir, get_downloads_dir, resolve_storage_path
 from app.database import SessionLocal
-from app.models import Client, Invoice
+from app.models import Client, Invoice, User
 from app.schemas import DownloadRequest, HtmlToXmlRequest, XmlToPdfRequest
 from app.services.html_xml_service import (
     converter_arquivo_html_para_xml,
@@ -26,7 +28,7 @@ from app.services.html_xml_service import (
 from pynfse.xml_parser import extrair_dados_nfse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/download", tags=["download"])
+router = APIRouter(prefix="/api/download", tags=["download"], dependencies=[Depends(get_current_user)])
 
 
 def _path_candidates(path: str) -> List[str]:
@@ -36,6 +38,10 @@ def _path_candidates(path: str) -> List[str]:
         return []
 
     candidates = [raw, os.path.normpath(raw)]
+
+    resolved_storage = resolve_storage_path(raw, kind="downloads")
+    if resolved_storage:
+        candidates.append(str(resolved_storage))
 
     stripped_parts = []
     for part in Path(raw).parts:
@@ -51,16 +57,23 @@ def _path_candidates(path: str) -> List[str]:
         else:
             candidates.append(os.path.join(*stripped_parts))
 
+    downloads_dir = get_downloads_dir()
+    certs_dir = get_certs_dir()
+    data_dir = get_data_dir()
+
     expanded_candidates = list(candidates)
     for c in candidates:
         p = Path(c)
         if not p.is_absolute():
+            expanded_candidates.append(str(downloads_dir / p))
+            expanded_candidates.append(str(data_dir / p))
             expanded_candidates.append(str(BACKEND_DIR / p))
         else:
             parts = p.parts
-            for anchor in ("downloads", "certificados"):
+            for anchor, anchor_base in (("downloads", downloads_dir), ("certificados", certs_dir)):
                 if anchor in parts:
-                    idx = parts.index(anchor)
+                    idx = len(parts) - 1 - parts[::-1].index(anchor)
+                    expanded_candidates.append(str(anchor_base.joinpath(*parts[idx + 1 :])))
                     expanded_candidates.append(str(BACKEND_DIR.joinpath(*parts[idx:])))
 
     unique_candidates = []
@@ -68,6 +81,70 @@ def _path_candidates(path: str) -> List[str]:
         if candidate and candidate not in unique_candidates:
             unique_candidates.append(candidate)
     return unique_candidates
+
+
+def _is_within_root(target: Path, root: Path) -> bool:
+    try:
+        return target.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _is_path_allowed_for_download(db, requested_path: str, resolved_path: Optional[str] = None) -> bool:
+    """Valida contra Path Traversal permitindo apenas storage de downloads, `save_path` de clientes ou rotas em `Invoice`."""
+    raw = (requested_path or "").strip()
+    if not raw or "\x00" in raw:
+        return False
+
+    if resolved_path and "\x00" in resolved_path:
+        return False
+
+    cands = _path_candidates(raw)
+    if resolved_path:
+        cands.extend([resolved_path, str(Path(resolved_path).resolve())])
+    cands = [c for c in dict.fromkeys(cands) if c]
+
+    # 1. Verifica se está explicitamente registrado em alguma Invoice
+    if cands:
+        inv_match = (
+            db.query(Invoice.id)
+            .filter(
+                or_(
+                    Invoice.xml_path.in_(cands),
+                    Invoice.pdf_path.in_(cands),
+                    Invoice.xml_dps_path.in_(cands),
+                    Invoice.xml_evento_path.in_(cands),
+                )
+            )
+            .first()
+        )
+        if inv_match is not None:
+            return True
+
+    # 2. Monta raízes permitidas: get_downloads_dir() e save_path de clientes cadastrados
+    allowed_roots: List[Path] = [get_downloads_dir()]
+    for (sp_raw,) in db.query(Client.save_path).filter(Client.save_path.is_not(None), Client.save_path != "").all():
+        sp_resolved = resolve_storage_path(sp_raw, kind="downloads")
+        if sp_resolved:
+            allowed_roots.append(sp_resolved)
+
+    check_targets: List[Path] = []
+    if resolved_path:
+        check_targets.append(Path(resolved_path))
+    else:
+        raw_p = Path(raw)
+        if raw_p.is_absolute():
+            check_targets.append(raw_p)
+        else:
+            # Caminhos relativos são avaliados contra get_downloads_dir() e BACKEND_DIR
+            check_targets.append(get_downloads_dir() / raw_p)
+            check_targets.append(BACKEND_DIR / raw_p)
+
+    for target in check_targets:
+        if any(_is_within_root(target, root) for root in allowed_roots):
+            return True
+
+    return False
 
 
 def _resolve_existing_path(path: str) -> Optional[str]:
@@ -251,7 +328,9 @@ def _sincronizar_arquivos_nota_certificado(
             _converter_html_para_xml_local(invoice, invoice.pdf_path)
 
         if (
-            not invoice.pdf_path or invoice.pdf_path.lower().endswith(".html") or not Path(invoice.pdf_path).exists()
+            not invoice.pdf_path
+            or invoice.pdf_path.lower().endswith(".html")
+            or not _resolve_existing_path(invoice.pdf_path)
         ) and invoice.xml_path:
             if on_progress:
                 on_progress("local_pdf")
@@ -421,22 +500,34 @@ def _ensure_file_available(db, path: str) -> Optional[str]:
     return None
 
 
-def background_download(task_id: str, invoice_ids: List[int], client_id: int, action_type: str):
+def background_download(
+    task_id: str,
+    invoice_ids: List[int],
+    client_id: int,
+    action_type: str,
+    created_by: Optional[str] = None,
+):
     """Executa downloads em background."""
     db = SessionLocal()
     try:
-        tasks_status[task_id] = {"status": "running", "message": "Iniciando downloads...", "progress": 0}
+        TaskStore.set_task(
+            task_id,
+            {"status": "running", "message": "Iniciando downloads...", "progress": 0},
+            kind="download",
+            created_by=created_by,
+        )
 
         clients_cache = {}
         invoices = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
         total = len(invoices)
 
         if total == 0:
-            tasks_status[task_id] = {
-                "status": "failed",
-                "message": "Nenhuma nota encontrada para baixar.",
-                "progress": 0,
-            }
+            TaskStore.set_task(
+                task_id,
+                {"status": "failed", "message": "Nenhuma nota encontrada para baixar.", "progress": 0},
+                kind="download",
+                created_by=created_by,
+            )
             return
 
         for idx, invoice in enumerate(invoices):
@@ -452,18 +543,17 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                         logger.warning(f"Cliente {actual_client_id} não encontrado para a nota {invoice.id}")
                         continue
 
-                    tasks_status[task_id]["message"] = f"Autenticando {client_db.razao_social}..."
+                    TaskStore.update_task(task_id, message=f"Autenticando {client_db.razao_social}...")
                     nfse = get_nfse_client(client_db)
                     nfse.autenticar()
                     nfse.define_tipo_consulta(action_type)
                     clients_cache[actual_client_id] = nfse
 
                 nfse = clients_cache[actual_client_id]
-                tasks_status[task_id].update(
-                    {
-                        "message": f"Baixando nota {invoice.numero} ({idx + 1}/{total})...",
-                        "progress": min(invoice_base + 5, 95),
-                    }
+                TaskStore.update_task(
+                    task_id,
+                    message=f"Baixando nota {invoice.numero} ({idx + 1}/{total})...",
+                    progress=min(invoice_base + 5, 95),
                 )
 
                 if _usa_usuario_senha_sem_certificado(nfse):
@@ -474,11 +564,10 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                         or not _resolve_existing_path(invoice.pdf_path)
                     )
                     if precisa_xml or precisa_pdf:
-                        tasks_status[task_id].update(
-                            {
-                                "message": f"Obtendo HTML de impressão e gerando XML/PDF da nota {invoice.numero} ({idx + 1}/{total})...",
-                                "progress": min(invoice_base + int(invoice_span * 0.5), 95),
-                            }
+                        TaskStore.update_task(
+                            task_id,
+                            message=f"Obtendo HTML de impressão e gerando XML/PDF da nota {invoice.numero} ({idx + 1}/{total})...",
+                            progress=min(invoice_base + int(invoice_span * 0.5), 95),
                         )
                         _obter_xml_e_pdf_via_html_impressao(nfse, invoice)
                 else:
@@ -487,59 +576,91 @@ def background_download(task_id: str, invoice_ids: List[int], client_id: int, ac
                         step: str, _num=invoice.numero, _i=idx + 1, _base=invoice_base, _span=invoice_span
                     ):
                         if step == "xml":
-                            tasks_status[task_id].update(
-                                {
-                                    "message": f"Baixando XML da nota {_num} ({_i}/{total})...",
-                                    "progress": min(_base + int(_span * 0.35), 95),
-                                }
+                            TaskStore.update_task(
+                                task_id,
+                                message=f"Baixando XML da nota {_num} ({_i}/{total})...",
+                                progress=min(_base + int(_span * 0.35), 95),
                             )
                         elif step == "pdf":
-                            tasks_status[task_id].update(
-                                {
-                                    "message": f"Baixando PDF da nota {_num} ({_i}/{total})...",
-                                    "progress": min(_base + int(_span * 0.75), 95),
-                                }
+                            TaskStore.update_task(
+                                task_id,
+                                message=f"Baixando PDF da nota {_num} ({_i}/{total})...",
+                                progress=min(_base + int(_span * 0.75), 95),
                             )
                         elif step == "html_to_xml":
-                            tasks_status[task_id]["message"] = (
-                                f"Convertendo HTML da nota {_num} para XML ({_i}/{total})..."
+                            TaskStore.update_task(
+                                task_id,
+                                message=f"Convertendo HTML da nota {_num} para XML ({_i}/{total})...",
                             )
                         elif step == "local_pdf":
-                            tasks_status[task_id]["message"] = f"Gerando PDF local da nota {_num} ({_i}/{total})..."
+                            TaskStore.update_task(
+                                task_id,
+                                message=f"Gerando PDF local da nota {_num} ({_i}/{total})...",
+                            )
 
                     _sincronizar_arquivos_nota_certificado(nfse, invoice, on_progress=_update_step)
 
                 db.add(invoice)
                 db.commit()
-                tasks_status[task_id].update(
-                    {"progress": invoice_end, "message": f"Nota {invoice.numero} concluída ({idx + 1}/{total})."}
+                TaskStore.update_task(
+                    task_id,
+                    progress=invoice_end,
+                    message=f"Nota {invoice.numero} concluída ({idx + 1}/{total}).",
                 )
             except Exception as ne:
                 logger.error(f"Erro na nota {invoice.id}: {ne}")
                 continue
 
-        tasks_status[task_id] = {"status": "completed", "message": "Downloads concluídos com sucesso.", "progress": 100}
+        TaskStore.set_task(
+            task_id,
+            {"status": "completed", "message": "Downloads concluídos com sucesso.", "progress": 100},
+            kind="download",
+            created_by=created_by,
+        )
     except Exception as e:
         logger.error(f"Download error: {e}")
-        tasks_status[task_id] = {"status": "failed", "message": str(e), "progress": 0}
+        TaskStore.set_task(
+            task_id,
+            {"status": "failed", "message": str(e), "progress": 0},
+            kind="download",
+            created_by=created_by,
+        )
     finally:
         db.close()
 
 
 @router.post("/sync-portal")
-def sync_portal_download(payload: DownloadRequest, background_tasks: BackgroundTasks):
+def sync_portal_download(
+    payload: DownloadRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
     """Dispara download de notas do portal para o disco em background."""
     task_id = f"dl_{payload.client_id}_{os.urandom(4).hex()}"
-    background_tasks.add_task(background_download, task_id, payload.invoice_ids, payload.client_id, payload.action_type)
+    background_tasks.add_task(
+        background_download,
+        task_id,
+        payload.invoice_ids,
+        payload.client_id,
+        payload.action_type,
+        current_user.username,
+    )
     return {"task_id": task_id}
 
 
 @router.get("/file")
-def download_file(path: str):
-    """Servir arquivo do disco para o navegador."""
+def download_file(path: str, _current_user: User = Depends(get_current_user)):
+    """Servir arquivo do disco para o navegador com validação contra Path Traversal."""
+    if not path or "\x00" in path:
+        raise HTTPException(status_code=403, detail="Caminho de arquivo inválido.")
+
     db = SessionLocal()
     try:
+        if not _is_path_allowed_for_download(db, path):
+            raise HTTPException(status_code=403, detail="Acesso negado ao caminho solicitado.")
         resolved_path = _ensure_file_available(db, path)
+        if resolved_path and not _is_path_allowed_for_download(db, path, resolved_path):
+            raise HTTPException(status_code=403, detail="Acesso negado ao arquivo resolvido.")
     finally:
         db.close()
 
@@ -574,7 +695,7 @@ def create_batch_zip(payload: dict):
     if not resolved_paths:
         raise HTTPException(status_code=404, detail="Nenhum arquivo pôde ser recuperado para gerar o lote.")
 
-    temp_dir = DOWNLOADS_DIR / "temp"
+    temp_dir = get_downloads_dir() / "temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
     zip_name = f"lote_{os.urandom(4).hex()}.zip"
     zip_path = str(temp_dir / zip_name)
@@ -622,7 +743,7 @@ def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
                 )
                 out_p = Path(out_str)
             else:
-                out_dir = DOWNLOADS_DIR / "converted" / "xmls"
+                out_dir = get_downloads_dir() / "converted" / "xmls"
                 out_dir.mkdir(parents=True, exist_ok=True)
                 out_p = out_dir / f"{chave or 'nfse_convertida'}.xml"
             out_p.parent.mkdir(parents=True, exist_ok=True)
@@ -691,7 +812,7 @@ def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False
             )
 
         status_nota = payload.status or (invoice.status if invoice else "NORMAL") or "NORMAL"
-        default_dir = DOWNLOADS_DIR / "converted"
+        default_dir = get_downloads_dir() / "converted"
 
         res = converter_xml_para_pdf_pynfse(
             xml_content=payload.xml_content,

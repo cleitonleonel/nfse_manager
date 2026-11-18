@@ -12,10 +12,19 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import allow_public_register
 from app.core.security import create_access_token, hash_password, verify_access_token, verify_password
 from app.database import get_db
 from app.models import User
-from app.schemas import ChangePasswordRequest, LoginRequest, TokenResponse, UserCreate, UserRegister, UserResponse
+from app.schemas import (
+    ChangePasswordRequest,
+    LoginRequest,
+    TokenResponse,
+    UserCreate,
+    UserRegister,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -47,9 +56,13 @@ def require_admin_user(current_user: User = Depends(get_current_user)) -> User:
 
 @router.get("/status")
 def auth_status(db: Session = Depends(get_db)):
-    """Indica se já existem operadores cadastrados no banco de dados."""
+    """Indica se já existem operadores cadastrados no banco de dados e se o auto-cadastro está aberto."""
     total_users = db.query(User).count()
-    return {"has_users": total_users > 0, "total_users": total_users}
+    return {
+        "has_users": total_users > 0,
+        "total_users": total_users,
+        "allow_self_register": allow_public_register(),
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -80,8 +93,12 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
     """Cadastra um novo operador e já retorna um token JWT autenticado.
 
     O primeiro operador cadastrado no sistema recebe automaticamente o papel `admin`;
-    os demais são criados como `operador`.
+    os demais são criados como `operador` (respeitando `NFSE_ALLOW_PUBLIC_REGISTER`).
     """
+    total_users = db.query(User).count()
+    if total_users > 0 and not allow_public_register():
+        raise HTTPException(status_code=403, detail="Auto-cadastro público desabilitado pelo administrador.")
+
     uname = (payload.username or "").strip()
     if len(uname) < 3:
         raise HTTPException(status_code=400, detail="O usuário deve ter pelo menos 3 caracteres.")
@@ -97,7 +114,7 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
     if email_clean and db.query(User).filter(User.email == email_clean).first():
         raise HTTPException(status_code=400, detail=f"E-mail '{email_clean}' já está em uso.")
 
-    is_first_user = db.query(User).count() == 0
+    is_first_user = total_users == 0
     role = "admin" if is_first_user else "operador"
 
     new_user = User(
@@ -183,6 +200,65 @@ def create_user(
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    admin: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Atualiza dados, papel, status ativo ou senha de um operador (restrito a administradores)."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    if target.id == admin.id:
+        if payload.is_active is not None and payload.is_active == 0:
+            raise HTTPException(status_code=400, detail="Não é permitido desativar o próprio usuário autenticado.")
+        if payload.role is not None and payload.role != "admin":
+            raise HTTPException(status_code=400, detail="Não é permitido rebaixar o próprio perfil para operador.")
+
+    will_deactivate = payload.is_active is not None and payload.is_active == 0
+    will_demote = payload.role is not None and payload.role != "admin"
+    if target.role == "admin" and target.is_active == 1 and (will_deactivate or will_demote):
+        other_active_admins = (
+            db.query(User)
+            .filter(User.id != target.id, User.role == "admin", User.is_active == 1)
+            .count()
+        )
+        if other_active_admins == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é permitido desativar ou rebaixar o último administrador ativo do sistema.",
+            )
+
+    fields_set = payload.model_fields_set
+    if "email" in fields_set:
+        email_clean = (payload.email or "").strip().lower() or None
+        if email_clean:
+            conflict = db.query(User).filter(User.email == email_clean, User.id != target.id).first()
+            if conflict:
+                raise HTTPException(status_code=400, detail=f"E-mail '{email_clean}' já está em uso.")
+        target.email = email_clean
+
+    if "full_name" in fields_set:
+        target.full_name = (payload.full_name or "").strip() or None
+
+    if payload.role is not None:
+        target.role = payload.role
+
+    if payload.is_active is not None:
+        target.is_active = int(payload.is_active)
+
+    if payload.password is not None:
+        target.password_hash = hash_password(payload.password)
+
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return target
 
 
 @router.delete("/users/{user_id}")

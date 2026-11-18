@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import resolve_storage_path
 from app.database import SessionLocal
 from app.main import app
 from app.models import Client, Invoice, init_db
@@ -106,8 +107,9 @@ def test_client_fiscal_fields_crud(api_client: TestClient, test_pfx_file: tuple[
     assert created["regime_tributario"] == "simples"
     assert created["serie_dps_padrao"] == "800"
     assert created["ultimo_numero_dps"] == 5
-    assert "backend/certificados/" in created["cert_path"].replace("\\", "/")
-    assert Path(created["cert_path"]).exists()
+    assert created["cert_path"].replace("\\", "/") == f"{cnpj_crud}/test.pfx"
+    resolved_cert = resolve_storage_path(created["cert_path"], kind="certs")
+    assert resolved_cert is not None and resolved_cert.exists()
 
     # Atualiza campos fiscais via PUT
     r_upd = api_client.put(
@@ -615,7 +617,9 @@ def test_emission_api_endpoints_offline_and_online_mocked(
     assert emit_data["assinado_com_certificado"] is True
     assert emit_data["chave_acesso"] == chave_autorizada
     assert emit_data["envio_adn"]["sucesso"] is True
-    assert "backend/downloads/adn/dps/" in emit_data["xml_dps_path"].replace("\\", "/")
+    assert emit_data["xml_dps_path"].replace("\\", "/").startswith("adn/dps/")
+    resolved_dps = resolve_storage_path(emit_data["xml_dps_path"], kind="downloads")
+    assert resolved_dps is not None and resolved_dps.exists()
     invoice_id_emitida = emit_data["invoice_id"]
 
     # 3. Substituir a NFS-e recém-emitida (/api/adn/nfse/substituir) com transmissão online mockada

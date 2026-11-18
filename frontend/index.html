@@ -77,9 +77,12 @@
         Sincronizando...
       </div>
       <div class="auth-user-pill" id="auth-user-pill" style="display:none;">
-        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span class="auth-user-name" id="auth-topbar-label">Operador</span>
-        <button class="btn btn-secondary btn-sm auth-logout-btn" onclick="App.logout()" title="Encerrar sessão">Sair</button>
+        <button type="button" class="auth-user-trigger" id="auth-profile-trigger" onclick="App.openProfileModal()" title="Minha Conta e Alterar Senha">
+          <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span class="auth-user-name" id="auth-topbar-label">Operador</span>
+          <span class="auth-role-badge is-operador" id="auth-topbar-role">Operador</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm auth-logout-btn" onclick="App.logout()" title="Encerrar sessão">Sair</button>
       </div>
       <button class="btn btn-ghost topbar-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -247,12 +250,196 @@
   </div>
 </div>
 
+<!-- MODAL: MINHA CONTA / ALTERAR SENHA -->
+<div class="modal-overlay" id="modal-account-profile">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 style="font-weight:600;">Minha Conta</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-account-profile')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="profile-summary-card">
+        <div class="profile-avatar" id="profile-avatar-initials">OP</div>
+        <div class="profile-meta">
+          <div class="profile-fullname" id="profile-fullname">Operador</div>
+          <div class="profile-sub">
+            <span class="is-mono" id="profile-username">@operador</span>
+            <span>&middot;</span>
+            <span id="profile-email">Sem e-mail</span>
+          </div>
+        </div>
+        <span class="auth-role-badge is-operador" id="profile-role-badge">Operador</span>
+      </div>
+
+      <form id="form-change-password" onsubmit="event.preventDefault(); App.submitChangeMyPassword();">
+        <div class="profile-section-title">Alterar Minha Senha</div>
+        <div class="form-group">
+          <label class="form-label" for="prof-current-pwd">Senha Atual</label>
+          <div class="modal-pwd-wrap">
+            <input type="password" class="form-input" id="prof-current-pwd" placeholder="Digite sua senha atual" autocomplete="current-password" required>
+            <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('prof-current-pwd', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-grid-2">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="prof-new-pwd">Nova Senha</label>
+            <div class="modal-pwd-wrap">
+              <input type="password" class="form-input" id="prof-new-pwd" placeholder="Mín. 4 caracteres" autocomplete="new-password" required>
+              <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('prof-new-pwd', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+                <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="prof-confirm-pwd">Confirmar Nova Senha</label>
+            <div class="modal-pwd-wrap">
+              <input type="password" class="form-input" id="prof-confirm-pwd" placeholder="Repita a nova senha" autocomplete="new-password" required>
+              <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('prof-confirm-pwd', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+                <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-feedback-box" id="prof-pwd-feedback"></div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-account-profile')">Fechar</button>
+      <button type="button" class="btn btn-primary" id="btn-save-my-pwd" onclick="App.submitChangeMyPassword()">Atualizar Senha</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CRIAR / EDITAR OPERADOR -->
+<div class="modal-overlay" id="modal-operator">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 style="font-weight:600;" id="op-modal-title">Novo Operador</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="op-id" value="">
+      <div class="form-group">
+        <label class="form-label" for="op-fullname">Nome Completo</label>
+        <input type="text" class="form-input" id="op-fullname" placeholder="Ex: João Pereira">
+      </div>
+      <div class="modal-grid-2">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label" for="op-username">Usuário</label>
+          <input type="text" class="form-input" id="op-username" placeholder="joao.pereira" autocomplete="off">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label" for="op-role">Papel de Acesso</label>
+          <select class="form-input" id="op-role">
+            <option value="operador">Operador</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="op-email">E-mail (Opcional)</label>
+        <input type="email" class="form-input" id="op-email" placeholder="operador@escritorio.com.br">
+      </div>
+      <div class="form-group" id="op-password-group">
+        <label class="form-label" for="op-password">Senha Inicial</label>
+        <div class="modal-pwd-wrap">
+          <input type="password" class="form-input" id="op-password" placeholder="Mín. 4 caracteres" autocomplete="new-password">
+          <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('op-password', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="form-group" id="op-active-group" style="margin-bottom:0;">
+        <label class="modal-checkbox-row">
+          <input type="checkbox" id="op-is-active" checked>
+          <span>Operador ativo (permitir acesso ao sistema)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-operator')">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="btn-save-operator" onclick="App.saveOperator()">Salvar Operador</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: REDEFINIR SENHA DO OPERADOR -->
+<div class="modal-overlay" id="modal-operator-reset-pwd">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 style="font-weight:600;">Redefinir Senha de Operador</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator-reset-pwd')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="reset-op-id" value="">
+      <div class="modal-info-banner">
+        Definindo nova senha de acesso para <strong id="reset-op-user-label">@operador</strong>.
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reset-op-pwd">Nova Senha</label>
+        <div class="modal-pwd-wrap">
+          <input type="password" class="form-input" id="reset-op-pwd" placeholder="Mín. 4 caracteres" autocomplete="new-password">
+          <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('reset-op-pwd', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label" for="reset-op-pwd-confirm">Confirmar Nova Senha</label>
+        <div class="modal-pwd-wrap">
+          <input type="password" class="form-input" id="reset-op-pwd-confirm" placeholder="Repita a nova senha" autocomplete="new-password">
+          <button type="button" class="modal-pwd-toggle" onclick="App.togglePasswordVisibility('reset-op-pwd-confirm', this)" aria-label="Mostrar senha" title="Mostrar/ocultar senha">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-operator-reset-pwd')">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="btn-submit-reset-pwd" onclick="App.submitResetOperatorPassword()">Redefinir Senha</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONFIGURAR SERVIDOR CENTRAL (WTS / DESKTOP) -->
+<div class="modal-overlay modal-topmost" id="modal-server-url">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 style="font-weight:600;">Configurar Servidor Central</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-server-url')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-info-banner">
+        Informe o endereço do servidor central do escritório (ex.: <span style="font-family:var(--mono);">http://192.168.1.10:8000</span>) para compartilhar banco PostgreSQL, certificados e notas entre múltiplas sessões WTS/Desktop. Deixe em branco para usar a instância local atual.
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label" for="server-url-input">URL do Servidor Central</label>
+        <input type="url" class="form-input" id="server-url-input" placeholder="http://servidor-fiscal:8000 (vazio = modo local)">
+      </div>
+      <div class="modal-feedback-box" id="server-url-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="App.clearServerUrl()" title="Limpar URL e retornar ao modo local">Modo Local</button>
+      <button type="button" class="btn btn-secondary" id="btn-test-server-url" onclick="App.testServerUrl()">Testar Conexão</button>
+      <button type="button" class="btn btn-primary" id="btn-save-server-url" onclick="App.saveServerUrl()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TELA CHEIA: LOGIN / CADASTRO -->
 <div class="auth-screen" id="auth-screen">
-  <button type="button" class="btn btn-secondary auth-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema Claro / Escuro">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-    <span>Alternar Tema</span>
-  </button>
+  <div class="auth-top-controls">
+    <button type="button" class="btn btn-secondary auth-server-btn" id="auth-server-config-btn" onclick="App.openServerUrlModal()" title="Configurar URL do Servidor Central">
+      <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      <span>Servidor</span>
+    </button>
+    <button type="button" class="btn btn-secondary auth-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema Claro / Escuro">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <span>Alternar Tema</span>
+    </button>
+  </div>
 
   <div class="auth-shell">
     <!-- PAINEL ESQUERDO (SHOWCASE) -->

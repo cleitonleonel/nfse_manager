@@ -120,4 +120,41 @@ ui/
 - ✅ Menu de tray: "Mostrar Janela" / "Encerrar"
 - ✅ Tamanho mínimo de janela (960×600)
 - ✅ Centralizado na primeira abertura
-- ✅ Servidor Python iniciado automaticamente
+- ✅ Detecção automática de servidor central vs sidecar em porta livre (`127.0.0.1:0`)
+
+---
+
+## Operação Multiusuário (Windows Server / WTS)
+
+Em ambientes com múltiplos usuários simultâneos (ex.: **Windows Server com Terminal Services / WTS** ou rede local), o shell Desktop Tauri evita conflito na porta `8000` e compartilhamento concorrente de SQLite seguindo a ordem de configuração abaixo:
+
+1. Variável de ambiente `NFSE_SERVER_URL` (ex.: `http://127.0.0.1:8000` ou `http://servidor-fiscal:8000`).
+2. Arquivo global da máquina:
+   - Windows: `%PROGRAMDATA%\NFSeManager\desktop.json`
+   - Linux: `/etc/nfse-manager/desktop.json`
+3. Arquivo por usuário:
+   - Windows: `%APPDATA%\br.com.nfse.manager\desktop.json`
+   - Linux: `$HOME/.config/nfse-manager/desktop.json`
+
+Exemplo de `desktop.json`:
+
+```json
+{
+  "mode": "auto",
+  "server_url": "http://127.0.0.1:8000",
+  "data_dir": "D:\\NFSeData",
+  "disable_scheduler": false
+}
+```
+
+### Modos disponíveis
+- **`auto` (padrão)**: sonda `server_url` (ou `http://127.0.0.1:8000/api/health`). Se o serviço central estiver ativo, a janela conecta diretamente a ele **sem** subir outro processo Python. Caso contrário, aloca uma porta TCP livre (`127.0.0.1:0`) e inicia um sidecar isolado.
+- **`central` / `remote`**: conecta diretamente ao `server_url` configurado sem iniciar sidecar local.
+- **`sidecar`**: força o uso do sidecar local em porta livre automática (`--host 127.0.0.1 --port <PORTA>`).
+
+### Parâmetros CLI do `server.py` (Serviço Central / Sidecar)
+- `--host`: endereço de escuta (padrão `0.0.0.0`).
+- `--port`: porta TCP (padrão `8000`; use `0` para alocação automática de porta livre).
+- `--data-dir`: define `NFSE_DATA_DIR` (banco, certificados e downloads).
+- `--disable-scheduler`: desabilita o worker interno neste processo (`NFSE_SCHEDULER_MODE=disabled`).
+

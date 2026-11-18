@@ -24,14 +24,27 @@ echo ""
 TARGET_TRIPLE=$(rustc -Vv | grep host | cut -f2 -d' ')
 echo "🎯 Target: $TARGET_TRIPLE"
 
+# Selecionar Python com dependências do projeto
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+    PY_CMD=("$PYTHON_BIN")
+elif python3 -c "import fastapi, pynfse" 2>/dev/null; then
+    PY_CMD=(python3)
+elif command -v poetry >/dev/null 2>&1; then
+    PY_CMD=(poetry run python)
+else
+    PY_CMD=(python3)
+fi
+
+echo "🐍 Python: ${PY_CMD[*]}"
+
 # Garantir que PyInstaller está instalado
 echo ""
 echo "📦 Verificando PyInstaller..."
 cd "$PROJECT_ROOT"
 
-if ! python3 -c "import PyInstaller" 2>/dev/null; then
+if ! "${PY_CMD[@]}" -c "import PyInstaller" 2>/dev/null; then
     echo "   Instalando PyInstaller..."
-    pip3 install pyinstaller
+    "${PY_CMD[@]}" -m pip install pyinstaller
 fi
 
 # Limpar build anterior
@@ -43,9 +56,15 @@ rm -rf "$PROJECT_ROOT/dist" "$PROJECT_ROOT/build" "$PROJECT_ROOT/__pycache__"
 echo ""
 echo "🏗️  Empacotando servidor Python..."
 cd "$PROJECT_ROOT"
-pyinstaller \
+"${PY_CMD[@]}" -m PyInstaller \
+    --noconfirm \
     --onefile \
     --name server \
+    --paths backend \
+    --collect-submodules app \
+    --collect-all pynfse \
+    --collect-all signxml \
+    --collect-all cryptography \
     --hidden-import uvicorn.logging \
     --hidden-import uvicorn.loops \
     --hidden-import uvicorn.loops.auto \
@@ -58,12 +77,20 @@ pyinstaller \
     --hidden-import uvicorn.lifespan.on \
     --hidden-import fastapi \
     --hidden-import sqlalchemy \
+    --hidden-import sqlalchemy.dialects.postgresql \
+    --hidden-import sqlalchemy.dialects.sqlite \
+    --hidden-import psycopg2 \
+    --hidden-import httpx2 \
+    --hidden-import openpyxl \
+    --hidden-import reportlab \
     --hidden-import lxml \
     --hidden-import bs4 \
+    --hidden-import multipart \
     --hidden-import requests \
     --hidden-import requests_pkcs12 \
     --add-data "frontend:frontend" \
-    --add-data "backend/downloads:backend/downloads" \
+    --add-data "pyproject.toml:." \
+    --add-data "backend/migrations:backend/migrations" \
     server.py
 
 # Criar diretório de binários do Tauri
@@ -71,6 +98,7 @@ echo ""
 echo "📁 Copiando binário para src-tauri/binaries/..."
 mkdir -p "$BINARIES_DIR"
 cp "$PROJECT_ROOT/dist/server" "$BINARIES_DIR/server-$TARGET_TRIPLE"
+chmod +x "$BINARIES_DIR/server-$TARGET_TRIPLE"
 
 echo ""
 echo "✅ Sidecar criado em: src-tauri/binaries/server-$TARGET_TRIPLE"

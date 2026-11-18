@@ -6,23 +6,27 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 
 ## 1. Saúde, Autenticação JWT e Sistema (`/api/health`, `/api/auth`, `/api/system`, `/api/support`)
 
+> 🔒 **Proteção JWT**: exceto `/api/health`, `/api/auth/status`, `/api/auth/login` e `/api/auth/register`, todos os demais endpoints da API exigem `Authorization: Bearer <token>`.
+
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Healthcheck leve (`{"status": "ok", "version": "..."}`) |
-| `GET` | `/api/auth/status` | Indica se já existem operadores cadastrados no banco (`{"has_users": bool, "total_users": int}`) |
-| `POST` | `/api/auth/register` | Cadastra novo operador e retorna token JWT Bearer (o 1º usuário criado recebe `role == "admin"`, demais `"operador"`) |
+| `GET` | `/api/auth/status` | Indica se existem operadores cadastrados e se auto-cadastro público está habilitado (`{"has_users": bool, "total_users": int, "allow_self_register": bool}`) |
+| `POST` | `/api/auth/register` | Cadastra novo operador e retorna token JWT Bearer (o 1º usuário criado recebe `role == "admin"`, demais `"operador"`; respeita `NFSE_ALLOW_PUBLIC_REGISTER=0` após o bootstrap) |
 | `POST` | `/api/auth/login` | Autentica um operador por `username` ou `email` e retorna token JWT Bearer |
 | `GET` | `/api/auth/me` | Retorna os dados do operador autenticado pelo cabeçalho `Authorization: Bearer <token>` |
 | `POST` | `/api/auth/change-password` | Altera a senha do operador autenticado |
 | `GET` | `/api/auth/users` | Lista todos os operadores cadastrados (restrito a `role == "admin"`) |
 | `POST` | `/api/auth/users` | Cadastra novo operador (restrito a `role == "admin"`) |
+| `PATCH` | `/api/auth/users/{user_id}` | Atualiza dados, papel (`admin` \| `operador`), status ativo ou redefine senha de um operador (restrito a `role == "admin"`, protegendo contra auto-bloqueio/remoção do último admin) |
 | `DELETE` | `/api/auth/users/{user_id}` | Remove um operador pelo ID (restrito a `role == "admin"`) |
 | `GET` | `/api/system/version` | Retorna a versão atual lida do `pyproject.toml` |
+| `GET` | `/api/system/environment` | Retorna diagnóstico de implantação (dialeto do banco, modo servidor/local, diretórios configurados, status do worker e prontidão multiusuário) |
 | `GET` | `/api/system/check-update` | Consulta a última release no GitHub e compara com a versão local |
-| `POST` | `/api/system/update/download` | Baixa o pacote ZIP da release em background para `release/staging/` |
-| `POST` | `/api/system/update/apply` | Aplica os arquivos de `release/staging/` com backup transacional e reinicia |
-| `GET` | `/api/system/list-folders` | Lista subdiretórios do servidor para seleção visual de pastas |
-| `POST` | `/api/support/message` | Registra envio de mensagem de suporte |
+| `POST` | `/api/system/update/download` | Baixa o pacote ZIP da release em background para `release/staging/` (restrito a `role == "admin"`, bloqueado se `NFSE_DISABLE_SELF_UPDATE=1`) |
+| `POST` | `/api/system/update/apply` | Aplica os arquivos de `release/staging/` com backup transacional e reinicia (restrito a `role == "admin"`) |
+| `GET` | `/api/system/list-folders` | Lista subdiretórios do servidor para seleção visual de pastas (restrito a `role == "admin"`) |
+| `POST` | `/api/support/message` | Encaminha mensagem de suporte via E-mail (`DEFAULT_SMTP_*` / `SUPPORT_EMAIL_TO`) e Telegram Bot (`SUPPORT_TELEGRAM_BOT_TOKEN` / `SUPPORT_TELEGRAM_CHAT_ID`) |
 
 ---
 

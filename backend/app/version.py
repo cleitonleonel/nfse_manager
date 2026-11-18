@@ -7,6 +7,7 @@ O arquivo tenta ler `project.version` (PEP 621) e ainda suporta `tool.poetry.ver
 """
 
 from pathlib import Path
+import sys
 import tomllib
 from typing import Optional
 
@@ -40,13 +41,18 @@ def get_version() -> str:
 
     Se não for possível ler o arquivo, retorna `0.0.0` como fallback.
     """
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "pyproject.toml")
     current_file = Path(__file__).resolve()
-    project_root = current_file.parents[2]
-    pyproject_path = project_root / "pyproject.toml"
+    candidates.append(current_file.parents[2] / "pyproject.toml")
+    candidates.append(Path.cwd() / "pyproject.toml")
 
-    version = _read_pyproject_version(pyproject_path)
-    if version:
-        return str(version)
+    for pyproject_path in candidates:
+        version = _read_pyproject_version(pyproject_path)
+        if version:
+            return str(version)
     return "0.0.0"
 
 

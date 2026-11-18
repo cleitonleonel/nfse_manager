@@ -5,12 +5,13 @@ Delega ao `AdnService` (que utiliza o motor tributário de `pynfse.adn`).
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.routers.auth import get_current_user
 from app.schemas import TaxCalculationRequest, TaxValidationRequest
 from app.services.adn_service import AdnService
 
-router = APIRouter(prefix="/api/tax", tags=["tax", "ibscbs"])
+router = APIRouter(prefix="/api/tax", tags=["tax", "ibscbs"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/calculate")

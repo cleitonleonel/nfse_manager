@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user
 from app.constants import DEFAULT_PERIOD, PERIOD_DAYS_MAP
 from app.database import get_db
 from app.models import Client, Invoice
@@ -14,7 +15,7 @@ from app.schemas import DashboardStats, ChartData, ChartPoint
 from app.services.html_xml_service import enriquecer_nota_com_xml
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/api/analytics", tags=["analytics"], dependencies=[Depends(get_current_user)])
 
 
 def filtro_nota_valida_para_calculo():

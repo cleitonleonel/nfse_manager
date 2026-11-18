@@ -11,13 +11,16 @@ import asyncio
 import datetime
 import logging
 import os
+import socket
+import uuid
 from typing import Any, Dict, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import delete, or_, text, update
+from sqlalchemy.exc import IntegrityError
 
-from app.core.config import load_dotenv_if_present
-from app.database import SessionLocal
-from app.models import Client, Invoice
+from app.core.config import get_scheduler_mode, load_dotenv_if_present
+from app.database import SessionLocal, engine
+from app.models import Client, Invoice, SchedulerLock
 from app.schemas import ReenviarFilaRequest
 from app.services.adn_service import AdnService
 from app.services.email_service import EmailService
@@ -30,8 +33,13 @@ logger = logging.getLogger(__name__)
 class SchedulerService:
     """Gerencia o worker periódico de reenvio da fila de contingência em background."""
 
+    _LOCK_NAME = "nfse_fila_retry_worker"
+    _PG_LOCK_KEY = 785412369
+
     _task: Optional[asyncio.Task] = None
     _running: bool = False
+    _is_leader: bool = False
+    _owner_id: Optional[str] = None
     _last_run_at: Optional[str] = None
     _last_result: Dict[str, Any] = {
         "total_processadas": 0,
@@ -41,13 +49,26 @@ class SchedulerService:
     }
 
     @classmethod
+    def _get_owner_id(cls) -> str:
+        if not cls._owner_id:
+            cls._owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        return cls._owner_id
+
+    @classmethod
+    def get_lock_backend(cls) -> str:
+        dialect = engine.dialect.name
+        return "pg_advisory_lock" if dialect == "postgresql" else "sqlite_lease"
+
+    @classmethod
     def get_config(cls) -> Dict[str, Any]:
+        scheduler_mode = get_scheduler_mode()
         enabled_raw = (os.getenv("AUTO_RETRY_FILA_ENABLED") or "1").strip().lower()
-        enabled = enabled_raw not in ("0", "false", "no")
+        enabled = (scheduler_mode != "disabled") and (enabled_raw not in ("0", "false", "no"))
         interval = max(10, int(os.getenv("AUTO_RETRY_FILA_INTERVAL_SECONDS") or "300"))
         max_tentativas = max(1, int(os.getenv("AUTO_RETRY_MAX_TENTATIVAS") or "10"))
         return {
             "enabled": enabled,
+            "scheduler_mode": scheduler_mode,
             "interval_seconds": interval,
             "max_tentativas": max_tentativas,
         }
@@ -55,9 +76,14 @@ class SchedulerService:
     @classmethod
     def get_status(cls) -> Dict[str, Any]:
         cfg = cls.get_config()
+        scheduler_mode = cfg.get("scheduler_mode", get_scheduler_mode())
+        is_leader = bool(cls._is_leader) if cfg["enabled"] else False
         return {
             "enabled": cfg["enabled"],
+            "scheduler_mode": scheduler_mode,
             "worker_running": cls._running,
+            "is_leader": is_leader,
+            "lock_backend": cls.get_lock_backend(),
             "interval_seconds": cfg["interval_seconds"],
             "max_tentativas": cfg["max_tentativas"],
             "ultima_execucao": cls._last_run_at,
@@ -65,21 +91,121 @@ class SchedulerService:
         }
 
     @classmethod
+    def _acquire_distributed_lock(cls, db, interval_seconds: int) -> tuple[bool, Any]:
+        dialect = db.bind.dialect.name if db.bind is not None else engine.dialect.name
+        if dialect == "postgresql":
+            lock_conn = db.get_bind().connect()
+            try:
+                acquired = bool(
+                    lock_conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": cls._PG_LOCK_KEY}).scalar()
+                )
+                if not acquired:
+                    lock_conn.close()
+                    return False, None
+                return True, lock_conn
+            except Exception:
+                lock_conn.close()
+                raise
+
+        now_naive = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        lease_seconds = max(60, min(int(interval_seconds or 300), 600))
+        locked_until = now_naive + datetime.timedelta(seconds=lease_seconds)
+        owner = cls._get_owner_id()
+
+        try:
+            db.add(
+                SchedulerLock(
+                    lock_name=cls._LOCK_NAME,
+                    owner_id=owner,
+                    locked_until=locked_until,
+                    updated_at=now_naive,
+                )
+            )
+            db.commit()
+            return True, None
+        except IntegrityError:
+            db.rollback()
+
+        res = db.execute(
+            update(SchedulerLock)
+            .where(
+                SchedulerLock.lock_name == cls._LOCK_NAME,
+                or_(
+                    SchedulerLock.locked_until < now_naive,
+                    SchedulerLock.owner_id == owner,
+                ),
+            )
+            .values(
+                owner_id=owner,
+                locked_until=locked_until,
+                updated_at=now_naive,
+            )
+        )
+        db.commit()
+        return (res.rowcount or 0) > 0, None
+
+    @classmethod
+    def _release_distributed_lock(cls, db, lock_conn: Any) -> None:
+        dialect = db.bind.dialect.name if db.bind is not None else engine.dialect.name
+        if dialect == "postgresql":
+            if lock_conn is not None:
+                try:
+                    lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": cls._PG_LOCK_KEY})
+                except Exception as exc:
+                    logger.debug("Erro ao liberar pg_advisory_unlock: %s", exc)
+                finally:
+                    try:
+                        lock_conn.close()
+                    except Exception:
+                        pass
+            return
+
+        try:
+            db.execute(
+                delete(SchedulerLock).where(
+                    SchedulerLock.lock_name == cls._LOCK_NAME,
+                    SchedulerLock.owner_id == cls._get_owner_id(),
+                )
+            )
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.debug("Erro ao liberar SchedulerLock: %s", exc)
+
+    @classmethod
     async def run_fila_retry_cycle(cls) -> Dict[str, Any]:
         """Executa um ciclo completo de verificação e reenvio de notas na fila de contingência."""
         cfg = cls.get_config()
         max_tent = cfg["max_tentativas"]
         db = SessionLocal()
+        lock_acquired = False
+        lock_conn = None
         try:
-            pendentes = (
+            lock_acquired, lock_conn = cls._acquire_distributed_lock(db, cfg.get("interval_seconds", 300))
+            if not lock_acquired:
+                cls._is_leader = False
+                return {
+                    "total_processadas": 0,
+                    "autorizadas": 0,
+                    "falhas": 0,
+                    "emails_enviados": 0,
+                    "skipped_lock": True,
+                }
+
+            cls._is_leader = True
+            dialect = db.bind.dialect.name if db.bind is not None else engine.dialect.name
+            query = (
                 db.query(Invoice)
                 .filter(
                     Invoice.status == "fila_contingencia",
                     or_(Invoice.tentativas_envio.is_(None), Invoice.tentativas_envio < max_tent),
                 )
                 .order_by(Invoice.id.asc())
-                .all()
             )
+            if dialect == "postgresql":
+                query = query.with_for_update(skip_locked=True)
+
+            pendentes = query.all()
             if not pendentes:
                 cls._last_run_at = datetime.datetime.now(datetime.UTC).isoformat()
                 res_empty = {
@@ -128,6 +254,8 @@ class SchedulerService:
             cls._last_result = res_final
             return res_final
         finally:
+            if lock_acquired:
+                cls._release_distributed_lock(db, lock_conn)
             db.close()
 
     @classmethod
@@ -151,13 +279,17 @@ class SchedulerService:
     def start(cls) -> None:
         cfg = cls.get_config()
         if not cfg["enabled"]:
+            cls._is_leader = False
             return
+        if cfg.get("scheduler_mode") == "leader":
+            cls._is_leader = True
         if cls._task is None or cls._task.done():
             cls._task = asyncio.create_task(cls._worker_loop())
 
     @classmethod
     async def stop(cls) -> None:
         cls._running = False
+        cls._is_leader = False
         if cls._task and not cls._task.done():
             cls._task.cancel()
             try:

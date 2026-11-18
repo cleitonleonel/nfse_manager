@@ -275,6 +275,41 @@ class BatchImportItem(Base):
     invoice = relationship("Invoice")
 
 
+class BackgroundTask(Base):
+    """Estado persistente de tarefas em background compartilhado entre múltiplos workers."""
+
+    __tablename__ = "background_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    kind = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="running", index=True)
+    message = Column(String, nullable=True)
+    progress = Column(Integer, nullable=False, default=0)
+    result_json = Column(String, nullable=True)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class SchedulerLock(Base):
+    """Lease lock distribuído no banco para eleição de líder do worker agendado (fallback SQLite)."""
+
+    __tablename__ = "scheduler_locks"
+
+    lock_name = Column(String, primary_key=True, index=True)
+    owner_id = Column(String, nullable=False)
+    locked_until = Column(DateTime, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
 def init_db():
     import time
     from sqlalchemy import inspect

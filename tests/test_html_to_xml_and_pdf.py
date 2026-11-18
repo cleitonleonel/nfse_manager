@@ -208,7 +208,8 @@ def test_rotas_html_to_xml_e_xml_to_pdf_via_pynfse(tmp_path):
     assert resp_dl.content.startswith(b"%PDF")
 
 
-def test_download_file_converte_html_automaticamente_em_xml_e_pdf(tmp_path):
+def test_download_file_converte_html_automaticamente_em_xml_e_pdf(tmp_path, monkeypatch):
+    monkeypatch.setenv("NFSE_DOWNLOADS_DIR", str(tmp_path))
     client = TestClient(app)
 
     html_file = tmp_path / "pdfs" / "32013081219495981000113000000000086326010205340809.html"

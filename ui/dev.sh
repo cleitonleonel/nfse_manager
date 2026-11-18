@@ -16,26 +16,45 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 echo "🚀 NFSe Manager — Modo Desenvolvimento"
 echo ""
 
-# Verificar se o servidor já está rodando
-if curl -s http://localhost:8000/api/clients > /dev/null 2>&1; then
-    echo "✅ Servidor Python já está rodando em localhost:8000"
+# Verificar se já existe um servidor completo (API + Frontend) rodando na porta 8000
+DEV_PORT=8000
+PYTHON_PID=""
+
+if curl -sf http://127.0.0.1:8000/api/health > /dev/null 2>&1 && curl -sf http://127.0.0.1:8000/ > /dev/null 2>&1; then
+    echo "✅ Servidor Python (API + Frontend) já está rodando em 127.0.0.1:8000"
 else
-    echo "▶️  Iniciando servidor Python..."
+    # Se a porta 8000 já estiver ocupada (ex: container Docker nfse_backend API-only), usa outra porta livre
+    if python3 -c "import socket, sys; s = socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', 8000)) == 0 else 1)" 2>/dev/null; then
+        DEV_PORT=$(python3 -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()")
+        echo "ℹ️  Porta 8000 em uso (provavelmente Docker API-only). Iniciando servidor dev na porta ${DEV_PORT}..."
+    else
+        echo "▶️  Iniciando servidor Python na porta ${DEV_PORT}..."
+    fi
+
     cd "$PROJECT_ROOT"
-    python3 server.py &
+    if python3 -c "import uvicorn" >/dev/null 2>&1; then
+        PY_CMD=(python3)
+    elif command -v poetry >/dev/null 2>&1; then
+        PY_CMD=(poetry run python)
+    else
+        PY_CMD=(python3)
+    fi
+
+    "${PY_CMD[@]}" server.py --host 127.0.0.1 --port "$DEV_PORT" &
     PYTHON_PID=$!
     echo "   PID: $PYTHON_PID"
 
     # Aguardar o servidor subir
     echo -n "   Aguardando servidor "
-    for i in {1..15}; do
+    for i in {1..20}; do
         sleep 1
         echo -n "."
-        if curl -s http://localhost:8000/api/clients > /dev/null 2>&1; then
+        if curl -sf "http://127.0.0.1:${DEV_PORT}/api/health" > /dev/null 2>&1 && curl -sf "http://127.0.0.1:${DEV_PORT}/" > /dev/null 2>&1; then
             echo " ✅"
             break
         fi
     done
+    export NFSE_SERVER_URL="http://127.0.0.1:${DEV_PORT}"
 fi
 
 echo ""

@@ -17,6 +17,8 @@ from pynfse.html_to_xml import (
 )
 from pynfse.xml_parser import extrair_dados_nfse
 
+from app.core.config import get_downloads_dir, resolve_storage_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -213,7 +215,9 @@ def montar_caminho_destino_nfse(
     cnpj_usuario = getattr(nfse, "_cnpj_usuario", None) or (nfse.obter_cnpj() if hasattr(nfse, "obter_cnpj") else None)
     razao_social = getattr(nfse, "razao_social", None)
     tipo_consulta = getattr(nfse, "_tipo_consulta", None) or "outros"
-    save_path = getattr(nfse, "save_path", None) or "downloads"
+    raw_save_path = getattr(nfse, "save_path", None)
+    resolved_save = resolve_storage_path(raw_save_path, kind="downloads") if raw_save_path else None
+    save_path = str(resolved_save) if resolved_save else str(get_downloads_dir())
     estrutura = getattr(nfse, "path_structure", None) or "{CLIENTE}/{TIPO}/{ANO}/{MES}"
 
     tags = {

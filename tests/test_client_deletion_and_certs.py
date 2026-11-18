@@ -1,11 +1,11 @@
 """Testes de exclusão de clientes, limpeza de arquivos físicos e organização de certificados por CNPJ."""
 
 import io
-from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api.deps import DOWNLOADS_DIR
 from app.api.routers.clients import CERTIFICADOS_DIR
+from app.core.config import resolve_storage_path
 from app.database import Base, SessionLocal, engine
 from app.main import app
 from app.models import Client, Invoice
@@ -43,8 +43,10 @@ def test_certificado_salvo_em_subpasta_por_cnpj():
     cert_path_str = data["cert_path"]
 
     # Verificar que o arquivo foi gravado dentro de uma subpasta nomeada com o CNPJ
-    cert_path = Path(cert_path_str)
-    assert cert_path.exists()
+    # e persistido como caminho relativo portável
+    assert cert_path_str.replace("\\", "/") == f"{safe_cnpj}/meu_certificado.pfx"
+    cert_path = resolve_storage_path(cert_path_str, kind="certs")
+    assert cert_path is not None and cert_path.exists()
     assert cert_path.parent.name == safe_cnpj
     assert cert_path.name == "meu_certificado.pfx"
     assert cert_path.read_bytes() == b"PFX_CONTENT_FICTICIO_1234"

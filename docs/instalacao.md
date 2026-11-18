@@ -32,8 +32,20 @@ cp .env.example .env
 | `BACKEND_PORT` | `8000` | Porta HTTP do Backend FastAPI |
 | `FRONTEND_PORT` | `3000` | Porta HTTP do Frontend Nginx |
 | `NFSE_ENCRYPTION_KEY` | *(chave mestra padrão de dev)* | Chave simétrica para criptografia em repouso das senhas de clientes e certificados (AES/Fernet) |
+| `JWT_SECRET_KEY` | Derivada de `NFSE_ENCRYPTION_KEY` | Chave secreta para assinatura de tokens JWT (`HS256`) dos operadores |
+| `NFSE_DATA_DIR` | `backend/` (ou `%PROGRAMDATA%\NFSeManager` no binário frozen Windows) | Diretório raiz compartilhado para certificados e downloads (ex.: share UNC `\\SERVIDOR\NFSeData`) |
+| `NFSE_CERTS_DIR` | `{NFSE_DATA_DIR}/certificados` | Diretório dedicado para armazenamento dos certificados `.pfx` |
+| `NFSE_DOWNLOADS_DIR` | `{NFSE_DATA_DIR}/downloads` | Diretório dedicado para XMLs, PDFs e lotes ZIP |
+| `NFSE_DEPLOYMENT_MODE` | Auto-detectado | Modo exibido no diagnóstico (`server`, `standalone`, `client`) |
+| `NFSE_SCHEDULER_MODE` | `auto` | Controle do worker de contingência (`auto`, `leader` ou `disabled`) |
+| `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar após o 1º admin (`0` fecha o cadastro público para uso corporativo) |
+| `NFSE_DISABLE_SELF_UPDATE` | `0` (`1` em sidecar frozen) | Desabilita auto-atualização via GitHub na UI (`403`) em servidores gerenciados / WTS |
+| `DEFAULT_SMTP_*` | Vazio (`PORT=587`, `TLS=1`) | Credenciais SMTP padrão do sistema (envio de NFS-e sem SMTP próprio e notificações de suporte) |
+| `SUPPORT_EMAIL_TO` | `cleiton.leonel@gmail.com` | Destinatário das mensagens enviadas pelo formulário de Suporte & Feedback |
+| `SUPPORT_TELEGRAM_BOT_TOKEN` | Vazio | Token do bot Telegram (`@BotFather`) para encaminhar mensagens de suporte |
+| `SUPPORT_TELEGRAM_CHAT_ID` | `@cleitonLC` | `chat_id` numérico (para DM privada após `/start`) ou canal/grupo de destino no Telegram |
 
-> 🔒 **Dica de Segurança:** Em produção, gere uma chave criptográfica forte para `NFSE_ENCRYPTION_KEY` (por exemplo: `python -c "import secrets; print(secrets.token_hex(32))"`).
+> 🔒 **Dica de Segurança:** Em produção, gere uma chave criptográfica forte para `NFSE_ENCRYPTION_KEY` (por exemplo: `python -c "import secrets; print(secrets.token_hex(32))"`). Em ambientes multiusuário (escritórios contábeis), configure `NFSE_ALLOW_PUBLIC_REGISTER=0` e `DB_FALLBACK_SQLITE=0` após criar o administrador inicial, garantindo que os operadores sejam cadastrados apenas pelo Admin em **Sistema → Gestão de Equipe**.
 
 ---
 

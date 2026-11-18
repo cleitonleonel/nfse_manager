@@ -123,3 +123,86 @@ def test_health_endpoint_and_docker_files_exist():
     ]
     for path in expected_files:
         assert path.exists(), f"Arquivo Docker ausente: {path}"
+
+
+def test_bump_version_and_sync_all_manifests(tmp_path: Path):
+    import json
+    import sys
+
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    import bump_version
+    import sync_version
+
+    # Verifica cálculo semântico
+    assert bump_version.parse_next_version("0.1.0", "patch") == "0.1.1"
+    assert bump_version.parse_next_version("0.1.0", "minor") == "0.2.0"
+    assert bump_version.parse_next_version("0.1.0", "major") == "1.0.0"
+    assert bump_version.parse_next_version("0.1.0", "v1.2.3") == "1.2.3"
+
+    # Cria árvore temporária simulando os manifestos do projeto
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "nfse"\nversion = "0.1.0"\n', encoding="utf-8")
+    (tmp_path / "ui" / "src-tauri").mkdir(parents=True)
+    (tmp_path / "frontend" / "views").mkdir(parents=True)
+    (tmp_path / "ui" / "package.json").write_text('{"name": "nfse", "version": "1.0.0"}\n', encoding="utf-8")
+    (tmp_path / "ui" / "package-lock.json").write_text(
+        '{"name": "nfse", "version": "1.0.0", "packages": {"": {"version": "1.0.0"}}}\n', encoding="utf-8"
+    )
+    (tmp_path / "ui" / "src-tauri" / "Cargo.toml").write_text(
+        '[package]\nname = "nfse"\nversion = "1.0.0"\n\n[dependencies]\ntauri = { version = "1.8" }\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "ui" / "src-tauri" / "tauri.conf.json").write_text(
+        '{"package": {"productName": "NFSe", "version": "1.0.0"}}\n', encoding="utf-8"
+    )
+    (tmp_path / "frontend" / "views" / "about.html").write_text(
+        '<span class="badge">v0.1.0</span><div id="installed-version-tag">0.1.0</div>', encoding="utf-8"
+    )
+
+    bump_version.update_pyproject_version(tmp_path / "pyproject.toml", "0.2.0")
+    changed = sync_version.sync_all_version_files(tmp_path, "0.2.0")
+
+    assert "ui/package.json" in changed
+    assert "ui/package-lock.json" in changed
+    assert "ui/src-tauri/Cargo.toml" in changed
+    assert "ui/src-tauri/tauri.conf.json" in changed
+    assert "frontend/views/about.html" in changed
+
+    assert json.loads((tmp_path / "ui" / "package.json").read_text())["version"] == "0.2.0"
+    lock_data = json.loads((tmp_path / "ui" / "package-lock.json").read_text())
+    assert lock_data["version"] == "0.2.0"
+    assert lock_data["packages"][""]["version"] == "0.2.0"
+    assert json.loads((tmp_path / "ui" / "src-tauri" / "tauri.conf.json").read_text())["package"]["version"] == "0.2.0"
+    cargo_txt = (tmp_path / "ui" / "src-tauri" / "Cargo.toml").read_text()
+    assert 'version = "0.2.0"' in cargo_txt
+    assert 'tauri = { version = "1.8" }' in cargo_txt
+
+    # Idempotência do changelog.txt e CHANGELOG.md
+    txt_file = tmp_path / "changelog.txt"
+    md_file = tmp_path / "CHANGELOG.md"
+    analysis = {
+        "new_version": "0.2.0",
+        "previous_version": "0.1.0",
+        "previous_tag": "v0.1.0",
+        "generated_at": "2026-11-18 12:00:00",
+        "notes": "Notas de teste",
+        "commits": [{"sha": "abc1234", "date": "2026-11-18", "author": "dev", "subject": "feat: teste", "category": "Novas Funcionalidades"}],
+        "commits_by_category": {
+            "Novas Funcionalidades": [
+                {"sha": "abc1234", "date": "2026-11-18", "author": "dev", "subject": "feat: teste", "category": "Novas Funcionalidades"}
+            ]
+        },
+        "committed_shortstat": "1 file changed",
+        "working_files": {},
+        "working_shortstat": "",
+        "files_by_layer": {"Backend (API, Serviços & Banco)": [("backend/app/main.py", "M")]},
+    }
+    bump_version.upsert_changelog_txt(txt_file, "0.2.0", bump_version.format_changelog_txt_entry(analysis))
+    bump_version.upsert_changelog_txt(txt_file, "0.2.0", bump_version.format_changelog_txt_entry(analysis))
+    assert txt_file.read_text(encoding="utf-8").count("VERSAO v0.2.0") == 1
+
+    bump_version.upsert_changelog_md(md_file, "0.2.0", bump_version.format_changelog_md_entry(analysis))
+    bump_version.upsert_changelog_md(md_file, "0.2.0", bump_version.format_changelog_md_entry(analysis))
+    assert md_file.read_text(encoding="utf-8").count("## v0.2.0") == 1

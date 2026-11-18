@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user
 from app.constants import (
     DEFAULT_AMBIENTE,
     DEFAULT_CODIGO_MUNICIPIO,
@@ -18,6 +19,14 @@ from app.constants import (
     DEFAULT_SERIE_DPS,
     DEFAULT_UF,
 )
+from app.core.config import (
+    BACKEND_DIR,
+    get_certs_dir,
+    get_data_dir,
+    get_downloads_dir,
+    resolve_storage_path,
+    to_storage_relative_path,
+)
 from app.database import get_db
 from app.models import Client, Invoice
 from app.schemas import ClientResponse
@@ -26,24 +35,24 @@ from pynfse.adn import DpsSigner
 
 logger = logging.getLogger(__name__)
 
-BACKEND_DIR = Path(__file__).resolve().parents[3]
-CERTIFICADOS_DIR = BACKEND_DIR / "certificados"
-DOWNLOADS_DIR = BACKEND_DIR / "downloads"
+CERTIFICADOS_DIR = get_certs_dir()
+DOWNLOADS_DIR = get_downloads_dir()
 
 
 def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str]:
     """
     Salva com segurança o arquivo de certificado do cliente em uma pasta dedicada por CNPJ
-    (ex: backend/certificados/{safe_cnpj}/{safe_filename}).
+    (ex: `{certs_dir}/{safe_cnpj}/{safe_filename}`) e retorna o caminho relativo portável.
     """
     if not cert_file or not cert_file.filename:
         return None
 
+    certs_dir = get_certs_dir()
     safe_cnpj = re.sub(r"\D", "", cnpj or "")
     if not safe_cnpj:
         safe_cnpj = "cliente_sem_cnpj"
 
-    client_cert_dir = CERTIFICADOS_DIR / safe_cnpj
+    client_cert_dir = certs_dir / safe_cnpj
     client_cert_dir.mkdir(parents=True, exist_ok=True)
 
     # Limpa certificados anteriores na pasta do cliente para não acumular arquivos
@@ -61,25 +70,26 @@ def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str
     cert_file_path = client_cert_dir / safe_filename
     cert_file_path.write_bytes(cert_file.file.read())
 
-    # Limpa também possíveis certificados legados na raiz de CERTIFICADOS_DIR
-    for legacy in CERTIFICADOS_DIR.glob(f"{safe_cnpj}_*"):
+    # Limpa também possíveis certificados legados na raiz de certs_dir
+    for legacy in certs_dir.glob(f"{safe_cnpj}_*"):
         if legacy.is_file():
             try:
                 legacy.unlink(missing_ok=True)
             except Exception:
                 pass
 
-    return str(cert_file_path)
+    return to_storage_relative_path(cert_file_path, "certs")
 
 
 def extrair_metadados_certificado_pfx(
     cert_path: Optional[str], cert_password: Optional[str]
 ) -> tuple[Optional[datetime.datetime], Optional[str]]:
     """Inspeciona o arquivo .pfx A1 e retorna `(cert_valid_until_utc, cert_subject)`."""
-    if not cert_path or not Path(cert_path).is_file():
+    resolved = resolve_storage_path(cert_path, kind="certs")
+    if not resolved or not resolved.is_file():
         return None, None
     try:
-        signer = DpsSigner(pfx_path=str(cert_path), pfx_password=cert_password or "")
+        signer = DpsSigner(pfx_path=str(resolved), pfx_password=cert_password or "")
         cert = getattr(signer, "certificate", None) or getattr(signer, "_certificate", None)
         if cert is None:
             return None, None
@@ -104,14 +114,16 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
     safe_cnpj = re.sub(r"\D", "", client.cnpj or "")
     arquivos_removidos = 0
     pastas_removidas: List[str] = []
+    certs_dir = get_certs_dir()
+    downloads_dir = get_downloads_dir()
 
     # 1. Remover arquivos individuais vinculados às notas fiscais
     for inv in invoices:
         for attr in ("xml_path", "pdf_path", "xml_dps_path", "xml_evento_path"):
             path_str = getattr(inv, attr, None)
             if path_str:
-                p = Path(path_str)
-                if p.is_file():
+                p = resolve_storage_path(path_str, kind="downloads")
+                if p and p.is_file():
                     try:
                         p.unlink(missing_ok=True)
                         arquivos_removidos += 1
@@ -120,7 +132,7 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
 
     # 2. Remover diretório e arquivos de certificados
     if safe_cnpj:
-        client_cert_dir = CERTIFICADOS_DIR / safe_cnpj
+        client_cert_dir = certs_dir / safe_cnpj
         if client_cert_dir.exists() and client_cert_dir.is_dir():
             try:
                 shutil.rmtree(client_cert_dir, ignore_errors=True)
@@ -128,8 +140,8 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
             except Exception as e:
                 logger.warning(f"Erro ao remover diretório de certificados {client_cert_dir}: {e}")
 
-        # Limpar certificados legados salvos na raiz de CERTIFICADOS_DIR
-        for legacy in CERTIFICADOS_DIR.glob(f"{safe_cnpj}_*"):
+        # Limpar certificados legados salvos na raiz de certs_dir
+        for legacy in certs_dir.glob(f"{safe_cnpj}_*"):
             if legacy.is_file():
                 try:
                     legacy.unlink(missing_ok=True)
@@ -138,16 +150,16 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
                     pass
 
     if client.cert_path:
-        cp = Path(client.cert_path)
-        if cp.is_file():
+        cp = resolve_storage_path(client.cert_path, kind="certs")
+        if cp and cp.is_file():
             try:
                 cp.unlink(missing_ok=True)
                 arquivos_removidos += 1
             except Exception:
                 pass
 
-    # 3. Remover diretórios de downloads do cliente em DOWNLOADS_DIR
-    if DOWNLOADS_DIR.exists():
+    # 3. Remover diretórios de downloads do cliente em downloads_dir
+    if downloads_dir.exists():
         alvos = set()
         if safe_cnpj:
             alvos.add(safe_cnpj)
@@ -156,7 +168,7 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
         if client.razao_social:
             alvos.add(client.razao_social.strip())
 
-        for item in DOWNLOADS_DIR.iterdir():
+        for item in downloads_dir.iterdir():
             if item.is_dir():
                 clean_name = item.name.strip()
                 # Verifica se é a pasta do cliente (por CNPJ, razão social ou prefixo)
@@ -169,20 +181,26 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
 
     # 4. Se client.save_path foi configurado de forma personalizada e dedicada ao cliente
     if client.save_path:
-        sp = Path(client.save_path)
+        sp = resolve_storage_path(client.save_path, kind="downloads")
         # Proteção estrita contra remoção de diretórios protegidos do sistema ou do app
-        diretorios_protegidos = (
-            BACKEND_DIR,
-            DOWNLOADS_DIR,
-            CERTIFICADOS_DIR,
-            Path("/"),
-            Path.home(),
-            BACKEND_DIR.parent,
-        )
+        diretorios_protegidos = {
+            p.resolve()
+            for p in (
+                BACKEND_DIR,
+                get_data_dir(),
+                downloads_dir,
+                certs_dir,
+                Path("/"),
+                Path.home(),
+                BACKEND_DIR.parent,
+            )
+            if p.exists()
+        }
         if (
-            sp.exists()
+            sp
+            and sp.exists()
             and sp.is_dir()
-            and sp not in diretorios_protegidos
+            and sp.resolve() not in diretorios_protegidos
             and (safe_cnpj in sp.name or (client.razao_social and client.razao_social.strip() in sp.name))
         ):
             try:
@@ -197,7 +215,7 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
     }
 
 
-router = APIRouter(prefix="/api/clients", tags=["clients"])
+router = APIRouter(prefix="/api/clients", tags=["clients"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("", response_model=List[ClientResponse])
@@ -219,7 +237,8 @@ def get_certificate_alerts(
     alterou_banco = False
 
     for c in clients:
-        if c.cert_path and c.cert_valid_until is None and Path(c.cert_path).is_file():
+        resolved_cert = resolve_storage_path(c.cert_path, kind="certs") if c.cert_path else None
+        if resolved_cert and c.cert_valid_until is None and resolved_cert.is_file():
             v_dt, subj = extrair_metadados_certificado_pfx(c.cert_path, c.cert_password)
             if v_dt:
                 c.cert_valid_until = v_dt

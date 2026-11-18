@@ -11,7 +11,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user, require_admin_user
 from app.database import get_db
+from app.models import User
 from app.schemas import (
     CancelarNfseRequest,
     EmitirDpsLoteRequest,
@@ -25,7 +27,11 @@ from app.schemas import (
 from app.services.adn_service import AdnService
 from app.services.scheduler_service import SchedulerService
 
-router = APIRouter(prefix="/api/adn", tags=["adn", "emission", "events"])
+router = APIRouter(
+    prefix="/api/adn",
+    tags=["adn", "emission", "events"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("/dps/preview")
@@ -104,6 +110,6 @@ def get_worker_status():
 
 
 @router.post("/worker/trigger")
-async def trigger_worker_cycle():
+async def trigger_worker_cycle(_admin: User = Depends(require_admin_user)):
     """Dispara imediatamente um ciclo do Worker de Retransmissão Automática da Fila de Contingência."""
     return await SchedulerService.run_fila_retry_cycle()

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 
 
@@ -91,8 +91,16 @@ class UserCreate(BaseModel):
     username: str
     email: Optional[str] = None
     full_name: Optional[str] = None
-    password: str
-    role: str = "operador"
+    password: str = Field(..., min_length=4)
+    role: Literal["admin", "operador"] = "operador"
+
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[Literal["admin", "operador"]] = None
+    is_active: Optional[int] = Field(None, ge=0, le=1)
+    password: Optional[str] = Field(None, min_length=4)
 
 
 class UserRegister(BaseModel):

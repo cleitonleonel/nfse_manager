@@ -22,14 +22,27 @@ import zipfile
 from pathlib import Path
 
 import httpx2 as httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import text
 
-from app.api.state import tasks_status
+from app.api.routers.auth import get_current_user, require_admin_user
+from app.api.state import TaskStore, tasks_status  # noqa: F401
+from app.core.config import (
+    get_certs_dir,
+    get_data_dir,
+    get_deployment_mode,
+    get_downloads_dir,
+    is_self_update_disabled,
+)
+from app.database import engine
+from app.models import User
 from app.schemas import SupportMessage, UpdateApplyRequest, UpdateDownloadRequest
+from app.services.scheduler_service import SchedulerService
+from app.services.support_service import SupportService
 from app.version import VERSION as CURRENT_VERSION
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["system", "support"])
+router = APIRouter(prefix="/api", tags=["system", "support"], dependencies=[Depends(get_current_user)])
 
 REPO_OWNER = "cleitonleonel"
 REPO_NAME = "nfse_manager"
@@ -84,24 +97,27 @@ def _stage_from_zip(zip_path: Path, staging_dir: Path, task_id: str) -> None:
             with zipf.open(member, "r") as src, target.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
 
-            tasks_status[task_id].update(
-                {
-                    "phase": "extracting",
-                    "message": f"Extraindo arquivos da atualização... ({idx + 1}/{total})",
-                    "progress": min(95, 40 + int(55 * ((idx + 1) / total))),
-                }
+            TaskStore.update_task(
+                task_id,
+                phase="extracting",
+                message=f"Extraindo arquivos da atualização... ({idx + 1}/{total})",
+                progress=min(95, 40 + int(55 * ((idx + 1) / total))),
             )
 
 
 def _download_release_package(task_id: str, version: str | None = None) -> None:
     release_info = None
     try:
-        tasks_status[task_id] = {
-            "status": "running",
-            "phase": "checking",
-            "message": "Consultando a última release no GitHub...",
-            "progress": 0,
-        }
+        TaskStore.set_task(
+            task_id,
+            {
+                "status": "running",
+                "phase": "checking",
+                "message": "Consultando a última release no GitHub...",
+                "progress": 0,
+            },
+            kind="update_download",
+        )
 
         release_info = _latest_release_data()
         latest_tag = (release_info.get("tag_name") or "").removeprefix("v")
@@ -112,12 +128,11 @@ def _download_release_package(task_id: str, version: str | None = None) -> None:
         if not zipball_url:
             raise RuntimeError("A release mais recente não possui zipball_url.")
 
-        tasks_status[task_id].update(
-            {
-                "phase": "downloading",
-                "message": f"Baixando atualização {latest_tag or version or CURRENT_VERSION}...",
-                "progress": 1,
-            }
+        TaskStore.update_task(
+            task_id,
+            phase="downloading",
+            message=f"Baixando atualização {latest_tag or version or CURRENT_VERSION}...",
+            progress=1,
         )
 
         download_dir = DOWNLOAD_ROOT / (latest_tag or version or CURRENT_VERSION)
@@ -141,44 +156,50 @@ def _download_release_package(task_id: str, version: str | None = None) -> None:
                             pct = int(min(35, (written / total) * 35))
                         else:
                             pct = 20
-                        tasks_status[task_id].update(
-                            {
-                                "phase": "downloading",
-                                "message": f"Baixando atualização... {written // 1024} KB",
-                                "progress": max(1, pct),
-                            }
+                        TaskStore.update_task(
+                            task_id,
+                            phase="downloading",
+                            message=f"Baixando atualização... {written // 1024} KB",
+                            progress=max(1, pct),
                         )
 
-        tasks_status[task_id].update(
-            {
-                "phase": "extracting",
-                "message": "Extraindo atualização para a pasta release/...",
-                "progress": 40,
-            }
+        TaskStore.update_task(
+            task_id,
+            phase="extracting",
+            message="Extraindo atualização para a pasta release/...",
+            progress=40,
         )
 
         _stage_from_zip(zip_path, staging_dir, task_id)
 
-        tasks_status[task_id] = {
-            "status": "completed",
-            "phase": "ready",
-            "message": f"Atualização {latest_tag} baixada e preparada em release/staging.",
-            "progress": 100,
-            "version": latest_tag,
-            "staged_path": str(staging_dir),
-            "zip_path": str(zip_path),
-            "release_url": release_info.get("html_url"),
-            "restart_required": True,
-        }
+        TaskStore.set_task(
+            task_id,
+            {
+                "status": "completed",
+                "phase": "ready",
+                "message": f"Atualização {latest_tag} baixada e preparada em release/staging.",
+                "progress": 100,
+                "version": latest_tag,
+                "staged_path": str(staging_dir),
+                "zip_path": str(zip_path),
+                "release_url": release_info.get("html_url"),
+                "restart_required": True,
+            },
+            kind="update_download",
+        )
     except Exception as exc:
         logger.error("Falha ao baixar atualização: %s", exc, exc_info=True)
-        tasks_status[task_id] = {
-            "status": "failed",
-            "phase": "failed",
-            "message": str(exc),
-            "progress": 0,
-            "release_url": release_info.get("html_url") if release_info else None,
-        }
+        TaskStore.set_task(
+            task_id,
+            {
+                "status": "failed",
+                "phase": "failed",
+                "message": str(exc),
+                "progress": 0,
+                "release_url": release_info.get("html_url") if release_info else None,
+            },
+            kind="update_download",
+        )
 
 
 def _copy_tree_transactional(source_dir: Path, target_dir: Path) -> None:
@@ -238,10 +259,17 @@ def _restart_self_after_delay(delay: float = 1.0) -> None:
 
 
 @router.post("/support/message")
-async def send_support_message(payload: SupportMessage):
-    """Enviar mensagem de suporte."""
-    logger.info("Support Message Received: %s", payload)
-    return {"message": "Mensagem enviada com sucesso! Nossa equipe entrará em contato em breve."}
+async def send_support_message(
+    payload: SupportMessage,
+    current_user: User = Depends(get_current_user),
+):
+    """Enviar mensagem de suporte por E-mail e Telegram (quando configurados)."""
+    return await SupportService.enviar_mensagem(
+        remetente_email=payload.email,
+        whatsapp=payload.whatsapp,
+        mensagem=payload.message,
+        operador=getattr(current_user, "username", None),
+    )
 
 
 @router.get("/system/check-update")
@@ -275,18 +303,82 @@ async def check_system_update():
         return {"current_version": CURRENT_VERSION, "error": str(e)}
 
 
+def _is_dir_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".write_test_{os.getpid()}_{threading.get_ident()}"
+        probe.write_bytes(b"")
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
+@router.get("/system/environment")
+def get_system_environment(_current_user: User = Depends(get_current_user)):
+    """Retorna diagnóstico completo de implantação, banco, diretórios e worker agendado."""
+    database_dialect = engine.dialect.name
+    database_connected = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        database_connected = True
+    except Exception:
+        database_connected = False
+
+    data_dir = get_data_dir()
+    certs_dir = get_certs_dir()
+    downloads_dir = get_downloads_dir()
+    certs_writable = _is_dir_writable(certs_dir)
+    downloads_writable = _is_dir_writable(downloads_dir)
+
+    sched_status = SchedulerService.get_status()
+    return {
+        "version": CURRENT_VERSION,
+        "deployment_mode": get_deployment_mode(database_dialect),
+        "database_dialect": database_dialect,
+        "database_connected": database_connected,
+        "paths": {
+            "data_dir": str(data_dir),
+            "certs_dir": str(certs_dir),
+            "downloads_dir": str(downloads_dir),
+            "certs_writable": certs_writable,
+            "downloads_writable": downloads_writable,
+        },
+        "scheduler": {
+            "enabled": bool(sched_status.get("enabled")),
+            "is_leader": bool(sched_status.get("is_leader")),
+            "backend": sched_status.get("lock_backend", "sqlite_lease"),
+        },
+        "self_update_allowed": not is_self_update_disabled(),
+        "multiuser_ready": bool(database_dialect == "postgresql" and certs_writable and downloads_writable),
+    }
+
+
 @router.post("/system/update/download")
-def start_update_download(payload: UpdateDownloadRequest, background_tasks: BackgroundTasks):
+def start_update_download(
+    payload: UpdateDownloadRequest,
+    background_tasks: BackgroundTasks,
+    _admin: User = Depends(require_admin_user),
+):
     """Baixa a release mais recente em background para a pasta release/staging."""
+    if is_self_update_disabled():
+        raise HTTPException(status_code=403, detail="Auto-atualização desabilitada neste ambiente.")
     task_id = f"update_{os.urandom(4).hex()}"
     background_tasks.add_task(_download_release_package, task_id, payload.version)
     return {"task_id": task_id}
 
 
 @router.post("/system/update/apply")
-def apply_downloaded_update(payload: UpdateApplyRequest):
+def apply_downloaded_update(
+    payload: UpdateApplyRequest,
+    _admin: User = Depends(require_admin_user),
+):
     """Aplica a atualização já baixada e agenda o reinício do processo."""
-    status = tasks_status.get(payload.task_id)
+    if is_self_update_disabled():
+        raise HTTPException(status_code=403, detail="Auto-atualização desabilitada neste ambiente.")
+
+    status = TaskStore.get_task(payload.task_id)
     if not status:
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -298,23 +390,26 @@ def apply_downloaded_update(payload: UpdateApplyRequest):
     if not source_dir.exists():
         raise HTTPException(status_code=404, detail="A pasta staged da atualização não existe mais.")
 
-    tasks_status[payload.task_id] = {
-        "status": "running",
-        "phase": "applying",
-        "message": "Aplicando atualização no sistema...",
-        "progress": 0,
-    }
+    TaskStore.set_task(
+        payload.task_id,
+        {
+            "status": "running",
+            "phase": "applying",
+            "message": "Aplicando atualização no sistema...",
+            "progress": 0,
+        },
+        kind="update_apply",
+    )
 
     try:
         _copy_tree_transactional(source_dir, PROJECT_ROOT)
-        tasks_status[payload.task_id].update(
-            {
-                "status": "completed",
-                "phase": "ready_to_restart",
-                "message": "Atualização aplicada com sucesso. Reiniciando o programa...",
-                "progress": 100,
-                "restart_required": True,
-            }
+        TaskStore.update_task(
+            payload.task_id,
+            status="completed",
+            phase="ready_to_restart",
+            message="Atualização aplicada com sucesso. Reiniciando o programa...",
+            progress=100,
+            restart_required=True,
         )
 
         thread = threading.Thread(target=_restart_self_after_delay, kwargs={"delay": 1.0}, daemon=True)
@@ -323,13 +418,17 @@ def apply_downloaded_update(payload: UpdateApplyRequest):
         return {"message": "Atualização aplicada. O sistema será reiniciado em instantes."}
     except Exception as exc:
         logger.error("Falha ao aplicar atualização: %s", exc, exc_info=True)
-        tasks_status[payload.task_id] = {
-            "status": "failed",
-            "phase": "failed",
-            "message": f"Falha ao aplicar atualização: {exc}",
-            "progress": 0,
-            "restart_required": False,
-        }
+        TaskStore.set_task(
+            payload.task_id,
+            {
+                "status": "failed",
+                "phase": "failed",
+                "message": f"Falha ao aplicar atualização: {exc}",
+                "progress": 0,
+                "restart_required": False,
+            },
+            kind="update_apply",
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -340,7 +439,7 @@ def get_system_version():
 
 
 @router.get("/system/list-folders")
-def list_folders(path: str | None = None):
+def list_folders(path: str | None = None, _admin: User = Depends(require_admin_user)):
     """Listar diretórios para navegação de pastas."""
     try:
         target_path = Path(path) if path else Path.cwd()

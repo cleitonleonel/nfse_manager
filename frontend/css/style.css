@@ -16,6 +16,7 @@
 @import './pages/dashboard.css';
 @import './pages/emission.css';
 @import './pages/auth.css';
+@import './pages/about.css';
  
 /* --- FLATPICKR CUSTOM THEME --- */
 .flatpickr-calendar {

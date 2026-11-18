@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.routers.auth import get_current_user
 from app.services.adn_service import AdnService
 
-router = APIRouter(prefix="/api/catalogs", tags=["catalogs"])
+router = APIRouter(prefix="/api/catalogs", tags=["catalogs"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/cst")

@@ -12,13 +12,15 @@ from __future__ import annotations
 import base64
 import datetime
 import json
-from pathlib import Path
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
+from sqlalchemy import func, or_, update
 from sqlalchemy.orm import Session
 
+from app.core.config import get_downloads_dir, resolve_storage_path, to_storage_relative_path
 from app.models import Client, Customer, Invoice, ServiceItem
 from app.schemas import (
     CancelarNfseRequest,
@@ -55,12 +57,81 @@ from pynfse.adn import (
 )
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-DOWNLOADS_DIR = BACKEND_DIR / "downloads"
+DOWNLOADS_DIR = get_downloads_dir()
 
 
 class AdnService:
     """Serviço unificado do nfse_manager que integra o banco local ao pacote `pynfse.adn`."""
+
+    _DPS_LOCKS: Dict[int, threading.Lock] = {}
+    _DPS_LOCKS_GUARD = threading.Lock()
+
+    @classmethod
+    def _get_dps_lock(cls, client_id: int) -> threading.Lock:
+        with cls._DPS_LOCKS_GUARD:
+            if client_id not in cls._DPS_LOCKS:
+                cls._DPS_LOCKS[client_id] = threading.Lock()
+            return cls._DPS_LOCKS[client_id]
+
+    @classmethod
+    def reservar_proximo_numero_dps(
+        cls,
+        db: Session,
+        client_id: Optional[int],
+        serie_dps: Optional[str] = None,
+        numero_informado: Optional[int] = None,
+        codigo_municipio: Optional[str] = None,
+        documento_prestador: Optional[str] = None,
+    ) -> Tuple[str, int, str]:
+        """Reserva atomicamente o próximo número da DPS para o prestador e retorna `(serie, numero, id_dps)`."""
+        if not client_id:
+            serie = (serie_dps or "900").strip() or "900"
+            numero = int(numero_informado or 1)
+            id_dps = (
+                formatar_id_dps(codigo_municipio or "3201308", documento_prestador or "", serie, numero)
+                if documento_prestador
+                else ""
+            )
+            return serie, numero, id_dps
+
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        lock = cls._get_dps_lock(int(client_id))
+        with lock:
+            if dialect == "postgresql":
+                client_row = db.query(Client).filter(Client.id == client_id).with_for_update().first()
+            else:
+                client_row = db.query(Client).filter(Client.id == client_id).first()
+
+            if not client_row:
+                raise HTTPException(status_code=404, detail=f"Cliente ID {client_id} não encontrado.")
+
+            serie = (serie_dps or client_row.serie_dps_padrao or "900").strip() or "900"
+            if numero_informado is not None:
+                numero = int(numero_informado)
+                if (client_row.ultimo_numero_dps or 0) < numero:
+                    client_row.ultimo_numero_dps = numero
+                    db.add(client_row)
+                db.commit()
+            elif dialect == "sqlite":
+                db.execute(
+                    update(Client)
+                    .where(Client.id == client_id)
+                    .values(ultimo_numero_dps=func.coalesce(Client.ultimo_numero_dps, 0) + 1)
+                )
+                db.commit()
+                db.refresh(client_row)
+                numero = int(client_row.ultimo_numero_dps or 1)
+            else:
+                numero = int(client_row.ultimo_numero_dps or 0) + 1
+                client_row.ultimo_numero_dps = numero
+                db.add(client_row)
+                db.commit()
+                db.refresh(client_row)
+
+            cod_mun = codigo_municipio or client_row.codigo_municipio or "3201308"
+            doc_prest = documento_prestador or client_row.cnpj or ""
+            id_dps = formatar_id_dps(cod_mun, doc_prest, serie, numero)
+            return serie, numero, id_dps
 
     # ==========================================================================
     # 1. Catálogos Fiscais (delegados ao pynfse.adn)
@@ -371,12 +442,8 @@ class AdnService:
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"Erro ao carregar certificado PFX enviado: {exc}") from exc
         elif client_db and client_db.cert_path:
-            cert_file = Path(client_db.cert_path)
-            if not cert_file.exists() and not cert_file.is_absolute():
-                alt_cert = BACKEND_DIR / cert_file
-                if alt_cert.exists():
-                    cert_file = alt_cert
-            if cert_file.exists():
+            cert_file = resolve_storage_path(client_db.cert_path, kind="certs")
+            if cert_file and cert_file.exists():
                 try:
                     signer = DpsSigner(pfx_path=str(cert_file), pfx_password=client_db.cert_password or "")
                 except Exception as exc:
@@ -438,26 +505,27 @@ class AdnService:
 
     @staticmethod
     def _salvar_xml_disco(conteudo_xml: str, subpasta: str, nome_arquivo: str) -> str:
-        destino_dir = DOWNLOADS_DIR / "adn" / subpasta
+        destino_dir = get_downloads_dir() / "adn" / subpasta
         destino_dir.mkdir(parents=True, exist_ok=True)
         caminho = destino_dir / nome_arquivo
         caminho.write_text(conteudo_xml, encoding="utf-8")
-        return str(caminho)
+        return to_storage_relative_path(caminho, "downloads")
 
     @staticmethod
     def _gerar_pdf_danfse(xml_path: Optional[str], nome_base: str, status: str = "NORMAL") -> Optional[str]:
-        if not xml_path or not Path(xml_path).exists():
+        resolved_xml = resolve_storage_path(xml_path, kind="downloads") if xml_path else None
+        if not resolved_xml or not resolved_xml.exists():
             return None
         try:
             from pynfse.danfse_generator import DanfseGenerator
 
-            pdf_dir = DOWNLOADS_DIR / "adn" / "pdfs"
+            pdf_dir = get_downloads_dir() / "adn" / "pdfs"
             pdf_dir.mkdir(parents=True, exist_ok=True)
             pdf_path = pdf_dir / f"{nome_base}.pdf"
-            gen = DanfseGenerator(str(xml_path), status=status)
+            gen = DanfseGenerator(str(resolved_xml), status=status)
             gen.gerar_pdf(str(pdf_path))
             if pdf_path.exists():
-                return str(pdf_path)
+                return to_storage_relative_path(pdf_path, "downloads")
         except Exception:
             pass
         return None
@@ -605,15 +673,32 @@ class AdnService:
             prestador=prestador,
         )
 
-        serie = req.serie_dps or (client_db.serie_dps_padrao if client_db and client_db.serie_dps_padrao else "900")
-        numero = req.numero_dps or ((client_db.ultimo_numero_dps or 0) + 1 if client_db else 1)
-
         tributacao_calc = cls._calcular_tributacao_se_necessario(
             prestador=prestador,
             servico=servico,
             tributacao_informada=req.tributacao,
             data_competencia=req.data_competencia,
         )
+
+        if client_db:
+            serie, numero, id_dps = cls.reservar_proximo_numero_dps(
+                db=db,
+                client_id=client_db.id,
+                serie_dps=req.serie_dps or client_db.serie_dps_padrao,
+                numero_informado=req.numero_dps,
+                codigo_municipio=prestador.get("codigo_municipio"),
+                documento_prestador=prestador.get("cnpj") or prestador.get("cpf"),
+            )
+            db.refresh(client_db)
+        else:
+            serie = req.serie_dps or "900"
+            numero = req.numero_dps or 1
+            id_dps = formatar_id_dps(
+                prestador.get("codigo_municipio", "3201308"),
+                prestador.get("cnpj") or prestador.get("cpf") or "",
+                serie,
+                numero,
+            )
 
         try:
             xml_bruto = build_dps_xml(
@@ -638,13 +723,6 @@ class AdnService:
                 status_code=422,
                 detail={"mensagem": "XML da DPS falhou na validação XSD v1.01.", "erros": validacao_pre["erros"]},
             )
-
-        id_dps = formatar_id_dps(
-            prestador.get("codigo_municipio", "3201308"),
-            prestador.get("cnpj") or prestador.get("cpf") or "",
-            serie,
-            numero,
-        )
 
         cert_pem = None
         key_pem = None
@@ -1013,15 +1091,32 @@ class AdnService:
             "xMotivo": req.motivo_descricao,
         }
 
-        serie = req.serie_dps or (client_db.serie_dps_padrao if client_db and client_db.serie_dps_padrao else "900")
-        numero = req.numero_dps or ((client_db.ultimo_numero_dps or 0) + 1 if client_db else 1)
-
         tributacao_calc = cls._calcular_tributacao_se_necessario(
             prestador=prestador,
             servico=req.servico,
             tributacao_informada=req.tributacao,
             data_competencia=req.data_competencia,
         )
+
+        if client_db:
+            serie, numero, id_dps = cls.reservar_proximo_numero_dps(
+                db=db,
+                client_id=client_db.id,
+                serie_dps=req.serie_dps or client_db.serie_dps_padrao,
+                numero_informado=req.numero_dps,
+                codigo_municipio=prestador.get("codigo_municipio"),
+                documento_prestador=prestador.get("cnpj") or prestador.get("cpf"),
+            )
+            db.refresh(client_db)
+        else:
+            serie = req.serie_dps or "900"
+            numero = req.numero_dps or 1
+            id_dps = formatar_id_dps(
+                prestador.get("codigo_municipio", "3201308"),
+                prestador.get("cnpj") or prestador.get("cpf") or "",
+                serie,
+                numero,
+            )
 
         try:
             xml_dps_bruto = build_dps_xml(
@@ -1049,13 +1144,6 @@ class AdnService:
                     "erros": validacao_dps_pre["erros"],
                 },
             )
-
-        id_dps = formatar_id_dps(
-            prestador.get("codigo_municipio", "3201308"),
-            prestador.get("cnpj") or prestador.get("cpf") or "",
-            serie,
-            numero,
-        )
 
         cert_pem = None
         key_pem = None
@@ -1232,7 +1320,8 @@ class AdnService:
         falhas = 0
 
         for inv in pendentes:
-            if not inv.xml_dps_path or not Path(inv.xml_dps_path).exists():
+            resolved_dps = resolve_storage_path(inv.xml_dps_path, kind="downloads") if inv.xml_dps_path else None
+            if not resolved_dps or not resolved_dps.exists():
                 inv.ultimo_erro_envio = "Arquivo XML da DPS não encontrado no disco."
                 falhas += 1
                 processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
@@ -1252,10 +1341,10 @@ class AdnService:
                 processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
                 continue
 
-            xml_content = Path(inv.xml_dps_path).read_text(encoding="utf-8")
+            xml_content = resolved_dps.read_text(encoding="utf-8")
             if "<Signature" not in xml_content:
                 xml_content = signer.sign_xml(xml_content, tag_to_sign="infDPS")
-                Path(inv.xml_dps_path).write_text(xml_content, encoding="utf-8")
+                resolved_dps.write_text(xml_content, encoding="utf-8")
 
             inv.tentativas_envio = (inv.tentativas_envio or 0) + 1
             try:
@@ -1314,11 +1403,13 @@ class AdnService:
 
         ensure_invoice_files(db, invoice, client_db)
 
-        if not invoice.pdf_path or not Path(invoice.pdf_path).exists():
+        resolved_pdf = resolve_storage_path(invoice.pdf_path, kind="downloads") if invoice.pdf_path else None
+        if not resolved_pdf or not resolved_pdf.exists():
             xml_cand = invoice.xml_path or invoice.xml_dps_path
-            if xml_cand and Path(xml_cand).exists():
+            resolved_xml = resolve_storage_path(xml_cand, kind="downloads") if xml_cand else None
+            if resolved_xml and resolved_xml.exists():
                 pdf_gerado = cls._gerar_pdf_danfse(
-                    xml_cand, invoice.chave or str(invoice.id), status=invoice.status or "NORMAL"
+                    str(resolved_xml), invoice.chave or str(invoice.id), status=invoice.status or "NORMAL"
                 )
                 if pdf_gerado:
                     invoice.pdf_path = pdf_gerado
@@ -1395,8 +1486,9 @@ class AdnService:
                         chave = f"ADN{client_db.id}{nsu_item}".ljust(50, "0")[:50]
 
                 xml_saved_path = cls._salvar_xml_disco(xml_descompactado, "cofre", f"{chave}.xml")
+                resolved_saved_xml = resolve_storage_path(xml_saved_path, kind="downloads")
                 try:
-                    info_xml = extrair_dados_nfse(xml_saved_path)
+                    info_xml = extrair_dados_nfse(str(resolved_saved_xml or xml_saved_path))
                 except Exception:
                     info_xml = {}
 
@@ -1443,9 +1535,22 @@ class AdnService:
             if len(lote) < 50:
                 break
 
-        if maior_nsu > (client_db.ultimo_nsu_adn or 0):
-            client_db.ultimo_nsu_adn = maior_nsu
-            db.add(client_db)
+        if maior_nsu > 0:
+            dialect = db.bind.dialect.name if db.bind is not None else ""
+            if dialect == "postgresql":
+                locked_client = db.query(Client).filter(Client.id == client_db.id).with_for_update().first()
+                if locked_client and maior_nsu > (locked_client.ultimo_nsu_adn or 0):
+                    locked_client.ultimo_nsu_adn = maior_nsu
+                    db.add(locked_client)
+            else:
+                db.execute(
+                    update(Client)
+                    .where(
+                        Client.id == client_db.id,
+                        or_(Client.ultimo_nsu_adn.is_(None), Client.ultimo_nsu_adn < maior_nsu),
+                    )
+                    .values(ultimo_nsu_adn=maior_nsu)
+                )
 
         db.commit()
         return {

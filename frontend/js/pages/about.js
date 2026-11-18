@@ -1,6 +1,7 @@
-import { api } from '../core/api.js';
+import { api, getApiBaseUrl } from '../core/api.js';
 import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, uiAlert } from '../core/ui.js';
 import { state } from '../core/state.js';
+import { loadUsers } from './users.js';
 
 let updatePollTimer = null;
 
@@ -253,6 +254,76 @@ export async function applyDownloadedUpdate() {
     }
 }
 
+function formatDbLabel(dialect) {
+    const norm = String(dialect || '').toLowerCase();
+    if (norm.includes('postgres')) return 'PostgreSQL (Multiusuário)';
+    if (norm.includes('sqlite')) return 'SQLite (Local / WAL)';
+    return dialect ? String(dialect) : '-';
+}
+
+function formatModeLabel(mode) {
+    const norm = String(mode || '').toLowerCase();
+    if (norm === 'server' || norm === 'central' || norm === 'multiuser') return 'Servidor Central';
+    if (norm === 'desktop' || norm === 'local' || norm === 'standalone') return 'Estação Local';
+    return mode ? String(mode) : '-';
+}
+
+function formatWorkerLabel(env) {
+    const mode = String(env?.scheduler_mode || env?.worker_status || '').toLowerCase();
+    if (mode === 'disabled' || env?.scheduler_active === false) return 'Desabilitado (Worker externo)';
+    if (env?.scheduler_is_leader === true || mode === 'leader') return 'Ativo (Líder)';
+    if (env?.scheduler_is_leader === false && mode === 'auto') return 'Em espera (Standby)';
+    if (mode === 'auto' || env?.scheduler_active === true) return 'Ativo (Auto)';
+    return env?.scheduler_mode || 'Ativo';
+}
+
+export async function loadSystemEnvironment() {
+    const originEl = document.getElementById('env-api-origin');
+    const customBase = getApiBaseUrl();
+    if (originEl) {
+        originEl.innerText = customBase || window.location.origin;
+    }
+
+    const dbEl = document.getElementById('env-db-type');
+    if (!dbEl) return;
+
+    try {
+        const env = await api('/system/environment');
+        const dialect = env?.db_dialect || env?.database_dialect || env?.database?.dialect || env?.db_type || '';
+        const opMode = env?.deployment_mode || env?.operation_mode || env?.mode || (env?.multiuser_ready ? 'server' : 'local');
+        const certsDir = env?.certs_dir || env?.directories?.certs_dir || env?.directories?.certs || '-';
+        const downloadsDir = env?.downloads_dir || env?.directories?.downloads_dir || env?.directories?.downloads || '-';
+        const multiuserReady = Boolean(env?.multiuser_ready ?? String(dialect).toLowerCase().includes('postgres'));
+
+        setText('env-db-type', formatDbLabel(dialect));
+        setText('env-op-mode', formatModeLabel(opMode));
+        setText('env-worker-status', formatWorkerLabel(env));
+        setText('env-certs-dir', certsDir);
+        setText('env-downloads-dir', downloadsDir);
+
+        const banner = document.getElementById('env-wts-banner');
+        const guidance = document.getElementById('env-wts-guidance');
+        if (banner && guidance) {
+            banner.classList.remove('is-ready', 'is-warn');
+            if (multiuserReady) {
+                banner.classList.add('is-ready');
+                guidance.innerText = 'Ambiente configurado para operação multiusuário simultânea (PostgreSQL + storage compartilhado). Sessões WTS e estações Desktop podem apontar para este servidor sem conflito de porta ou banco.';
+            } else {
+                banner.classList.add('is-warn');
+                guidance.innerText = 'Executando com banco local (SQLite). Para múltiplos colaboradores simultâneos em rede ou Windows Server (WTS), utilize PostgreSQL em um servidor central e configure a URL no botão "Configurar Servidor".';
+            }
+        }
+    } catch (e) {
+        setText('env-db-type', 'Indisponível');
+        setText('env-op-mode', '-');
+        setText('env-worker-status', '-');
+        const guidance = document.getElementById('env-wts-guidance');
+        if (guidance) {
+            guidance.innerText = 'Não foi possível consultar /api/system/environment neste servidor.';
+        }
+    }
+}
+
 export async function initAbout() {
     // Try to fetch installed version without triggering a GitHub check
     try {
@@ -277,6 +348,26 @@ export async function initAbout() {
     } catch (e) {
         // silently ignore
         console.warn('Could not fetch system version on init:', e);
+    }
+
+    if (document.getElementById('about-env-card')) {
+        await loadSystemEnvironment();
+    }
+
+    const adminSection = document.getElementById('admin-users-section');
+    if (adminSection) {
+        let role = null;
+        try {
+            const raw = localStorage.getItem('nfse_user');
+            role = raw ? JSON.parse(raw)?.role : null;
+        } catch (_) {}
+
+        if (role === 'admin') {
+            adminSection.style.display = 'block';
+            await loadUsers();
+        } else {
+            adminSection.style.display = 'none';
+        }
     }
 }
 

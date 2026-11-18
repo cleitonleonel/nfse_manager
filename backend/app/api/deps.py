@@ -4,13 +4,12 @@ Contém funções auxiliares utilizadas nas rotas, como a obtenção da sessão 
 e a instância do cliente NFSe (robô).
 """
 
-from pathlib import Path
 from typing import Optional
+from app.core.config import get_downloads_dir, resolve_storage_path
 from app.models import Client
 from pynfse.cliente_nfse import ClienteNfseNacional
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-DOWNLOADS_DIR = BACKEND_DIR / "downloads"
+DOWNLOADS_DIR = get_downloads_dir()
 
 
 class ClienteNfsePortalWrapper(ClienteNfseNacional):
@@ -55,13 +54,8 @@ def has_valid_certificate(client_db: Optional[Client]) -> bool:
     cert_password = (client_db.cert_password or "").strip()
     if not cert_path or not cert_password:
         return False
-    p = Path(cert_path)
-    if p.exists() and p.is_file():
-        return True
-    alt_cert = BACKEND_DIR / cert_path
-    if not p.is_absolute() and alt_cert.exists() and alt_cert.is_file():
-        return True
-    return False
+    resolved = resolve_storage_path(cert_path, kind="certs")
+    return bool(resolved and resolved.exists() and resolved.is_file())
 
 
 def get_nfse_client(client_db: Client) -> ClienteNfseNacional:
@@ -69,23 +63,22 @@ def get_nfse_client(client_db: Client) -> ClienteNfseNacional:
     Constrói e retorna uma instância do ClienteNfseNacional (Robô)
     com base nas credenciais e configurações salvas no banco de dados.
     """
-    cert_path = (client_db.cert_path or "").strip() or None
+    raw_cert_path = (client_db.cert_path or "").strip() or None
     cert_password = (client_db.cert_password or "").strip() or None
-    if cert_path and not Path(cert_path).exists() and not Path(cert_path).is_absolute():
-        alt_cert = BACKEND_DIR / cert_path
-        if alt_cert.exists():
-            cert_path = str(alt_cert)
-
-    if not cert_path or not cert_password or not Path(cert_path).exists():
-        cert_path = None
+    resolved_cert = resolve_storage_path(raw_cert_path, kind="certs") if raw_cert_path else None
+    cert_path = str(resolved_cert) if (resolved_cert and cert_password and resolved_cert.exists()) else None
+    if not cert_path:
         cert_password = None
+
+    resolved_save = resolve_storage_path(client_db.save_path, kind="downloads") if client_db.save_path else None
+    save_path_str = str(resolved_save) if resolved_save else str(get_downloads_dir())
 
     return ClienteNfsePortalWrapper(
         usuario=client_db.username or client_db.cnpj,
         senha=client_db.password,
         caminho_pfx=cert_path,
         senha_pfx=cert_password,
-        save_path=client_db.save_path or str(DOWNLOADS_DIR),
+        save_path=save_path_str,
         path_structure=client_db.path_structure,
         razao_social=client_db.razao_social,
     )

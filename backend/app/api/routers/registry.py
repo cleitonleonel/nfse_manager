@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user
 from app.core.spreadsheets import (
     build_template_response as _build_template_response,
     clean_doc as _clean_doc,
@@ -31,7 +32,7 @@ from app.services.adn_service import AdnService
 from app.services.lookup_service import LookupService
 from pynfse.adn import buscar_correlacoes_anexo_viii, clean_digits, obter_cclasstrib
 
-router = APIRouter(prefix="/api", tags=["registry", "lookup"])
+router = APIRouter(prefix="/api", tags=["registry", "lookup"], dependencies=[Depends(get_current_user)])
 
 
 # ==============================================================================

@@ -8,20 +8,33 @@ from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
-from app.models import Client, Invoice
+from app.models import Client, Invoice, User
 from app.schemas import SyncRequest, InvoiceResponse
 from app.api.deps import get_nfse_client
-from app.api.state import tasks_status
+from app.api.routers.auth import get_current_user
+from app.api.state import TaskStore
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["invoices", "sync"])
+router = APIRouter(tags=["invoices", "sync"], dependencies=[Depends(get_current_user)])
 
 
-def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: str, tipo: str):
+def background_sync(
+    sync_id: str,
+    client_id: int,
+    data_inicio: str,
+    data_fim: str,
+    tipo: str,
+    created_by: Optional[str] = None,
+):
     """Executa sincronização em background."""
     db = SessionLocal()
     try:
-        tasks_status[sync_id] = {"status": "running", "message": "Iniciando processo...", "progress": 0}
+        TaskStore.set_task(
+            sync_id,
+            {"status": "running", "message": "Iniciando processo...", "progress": 0},
+            kind="sync",
+            created_by=created_by,
+        )
 
         clients_to_sync = []
         if client_id:
@@ -32,7 +45,12 @@ def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: st
             clients_to_sync = db.query(Client).all()
 
         if not clients_to_sync:
-            tasks_status[sync_id] = {"status": "failed", "message": "Nenhum cliente encontrado.", "progress": 0}
+            TaskStore.set_task(
+                sync_id,
+                {"status": "failed", "message": "Nenhum cliente encontrado.", "progress": 0},
+                kind="sync",
+                created_by=created_by,
+            )
             return
 
         new_count_total = 0
@@ -42,20 +60,18 @@ def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: st
             client_end = int(((idx + 1) / total_clients) * 100)
             client_span = max(1, client_end - client_start)
             try:
-                tasks_status[sync_id].update(
-                    {
-                        "message": f"[{idx + 1}/{len(clients_to_sync)}] Autenticando {client_db.razao_social}...",
-                        "progress": min(client_start + 10, 95),
-                    }
+                TaskStore.update_task(
+                    sync_id,
+                    message=f"[{idx + 1}/{len(clients_to_sync)}] Autenticando {client_db.razao_social}...",
+                    progress=min(client_start + 10, 95),
                 )
                 nfse = get_nfse_client(client_db)
                 nfse.autenticar()
 
-                tasks_status[sync_id].update(
-                    {
-                        "message": f"[{idx + 1}/{len(clients_to_sync)}] Buscando notas {tipo} para {client_db.razao_social}...",
-                        "progress": min(client_start + 20, 95),
-                    }
+                TaskStore.update_task(
+                    sync_id,
+                    message=f"[{idx + 1}/{len(clients_to_sync)}] Buscando notas {tipo} para {client_db.razao_social}...",
+                    progress=min(client_start + 20, 95),
                 )
 
                 if tipo == "emitidas":
@@ -74,11 +90,10 @@ def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: st
 
                 for note_idx, nota_data in enumerate(notas):
                     note_progress = client_start + int(client_span * (0.3 + 0.65 * ((note_idx + 1) / total_notas)))
-                    tasks_status[sync_id].update(
-                        {
-                            "message": f"[{idx + 1}/{len(clients_to_sync)}] Processando nota {note_idx + 1}/{len(notas)} de {client_db.razao_social}...",
-                            "progress": min(note_progress, client_end),
-                        }
+                    TaskStore.update_task(
+                        sync_id,
+                        message=f"[{idx + 1}/{len(clients_to_sync)}] Processando nota {note_idx + 1}/{len(notas)} de {client_db.razao_social}...",
+                        progress=min(note_progress, client_end),
                     )
 
                     xml_url = nota_data.get("download_xml")
@@ -126,39 +141,58 @@ def background_sync(sync_id: str, client_id: int, data_inicio: str, data_fim: st
 
                 db.commit()
                 new_count_total += new_count
-                tasks_status[sync_id].update(
-                    {
-                        "message": f"[{idx + 1}/{len(clients_to_sync)}] Concluído para {client_db.razao_social}.",
-                        "progress": client_end,
-                    }
+                TaskStore.update_task(
+                    sync_id,
+                    message=f"[{idx + 1}/{len(clients_to_sync)}] Concluído para {client_db.razao_social}.",
+                    progress=client_end,
                 )
             except Exception as ce:
                 logger.error(f"Erro no cliente {client_db.razao_social}: {ce}")
-                tasks_status[sync_id].update(
-                    {
-                        "message": f"[{idx + 1}/{len(clients_to_sync)}] Falha ao processar {client_db.razao_social}: {ce}",
-                        "progress": max(client_start, tasks_status[sync_id].get("progress", 0)),
-                    }
+                cur_task = TaskStore.get_task(sync_id) or {}
+                TaskStore.update_task(
+                    sync_id,
+                    message=f"[{idx + 1}/{len(clients_to_sync)}] Falha ao processar {client_db.razao_social}: {ce}",
+                    progress=max(client_start, int(cur_task.get("progress", 0))),
                 )
 
-        tasks_status[sync_id] = {
-            "status": "completed",
-            "message": f"Sincronização concluída. {new_count_total} novas notas.",
-            "progress": 100,
-        }
+        TaskStore.set_task(
+            sync_id,
+            {
+                "status": "completed",
+                "message": f"Sincronização concluída. {new_count_total} novas notas.",
+                "progress": 100,
+            },
+            kind="sync",
+            created_by=created_by,
+        )
     except Exception as e:
         logger.error(f"Sync error: {e}")
-        tasks_status[sync_id] = {"status": "failed", "message": str(e), "progress": 0}
+        TaskStore.set_task(
+            sync_id,
+            {"status": "failed", "message": str(e), "progress": 0},
+            kind="sync",
+            created_by=created_by,
+        )
     finally:
         db.close()
 
 
 @router.post("/api/sync")
-def trigger_sync(request: SyncRequest, background_tasks: BackgroundTasks):
+def trigger_sync(
+    request: SyncRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
     """Iniciar sincronização de notas em background."""
     sync_id = f"sync_{request.client_id or 0}_{os.urandom(4).hex()}"
     background_tasks.add_task(
-        background_sync, sync_id, request.client_id or 0, request.data_inicio, request.data_fim, request.tipo
+        background_sync,
+        sync_id,
+        request.client_id or 0,
+        request.data_inicio,
+        request.data_fim,
+        request.tipo,
+        current_user.username,
     )
     return {"task_id": sync_id}
 
@@ -166,7 +200,7 @@ def trigger_sync(request: SyncRequest, background_tasks: BackgroundTasks):
 @router.get("/api/tasks/{task_id}")
 def get_task_status(task_id: str):
     """Obter status de uma tarefa em background."""
-    status = tasks_status.get(task_id)
+    status = TaskStore.get_task(task_id)
     if not status:
         raise HTTPException(status_code=404, detail="Task not found")
     return status

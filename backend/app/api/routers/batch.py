@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.security import verify_access_token
+from app.api.routers.auth import get_current_user
 from app.database import get_db
+from app.models import User
 from app.schemas import (
     BatchImportItemResponse,
     BatchImportItemUpdateRequest,
@@ -23,14 +24,11 @@ from app.services.batch_emission.importer import build_batch_template
 from app.services.batch_emission.processor import process_batch_items, resolve_unknown_and_retry_batch
 from app.services.batch_emission.validator import validate_all_batch_items
 
-router = APIRouter(prefix="/api/batch-emission", tags=["batch-emission"])
-
-
-def _extract_optional_username(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return None
-    payload = verify_access_token(authorization.split(" ", 1)[1].strip())
-    return str(payload["sub"]) if payload and "sub" in payload else None
+router = APIRouter(
+    prefix="/api/batch-emission",
+    tags=["batch-emission"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/template")
@@ -48,7 +46,7 @@ async def import_batch_spreadsheet(
     delimiter: Optional[str] = Form(None, description="Delimitador opcional para CSV (';' ou ',')"),
     ambiente: Optional[str] = Form(None, description="homologacao | producao (padrão do prestador se omitido)"),
     auto_validate: bool = Form(True, description="Executar validação em 3 níveis logo após importar"),
-    created_by: Optional[str] = Depends(_extract_optional_username),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Importa e normaliza planilha de notas em lote sem realizar nenhuma transmissão fiscal."""
@@ -60,7 +58,7 @@ async def import_batch_spreadsheet(
         content=content,
         delimiter=delimiter,
         ambiente=ambiente,
-        created_by=created_by,
+        created_by=current_user.username,
         auto_validate=auto_validate,
     )
     return serialize_batch(db, batch)

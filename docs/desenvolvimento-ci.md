@@ -6,7 +6,7 @@ Esta seção documenta os padrões de qualidade de código, a suíte de testes a
 
 ## 1. Suíte de Testes Automatizados (`tests/`)
 
-Os testes utilizam **Pytest** e `fastapi.testclient.TestClient` conectados ao banco **PostgreSQL** (atualmente **62 testes automatizados**):
+Os testes utilizam **Pytest** e `fastapi.testclient.TestClient` conectados ao banco **PostgreSQL** ou SQLite WAL em fallback (**74 testes automatizados**):
 
 ```bash
 poetry run pytest -v
@@ -34,6 +34,10 @@ poetry run pytest -v
   - Relatório mensal por competência (`/api/reports/competencia`) nos formatos JSON, CSV e XLSX separando notas ativas, canceladas/substituídas e pendentes na fila.
 - **`tests/test_batch_emission_v2.py`**:
   - Módulo persistente `/api/batch-emission`: leitura CSV (`;` e `,`), XLSX com zeros à esquerda, validação em 3 níveis (estrutural, cadastral e fiscal/XSD), correção inline por linha (`PATCH`), processamento sequencial tolerante a rejeições (`REJECTED`), recuperação idempotente de `UNKNOWN` via `consultar_dps`, cancelamento de pendentes e exportação CSV/XLSX.
+- **`tests/test_router_auth_guards.py`**:
+  - Proteção JWT obrigatória (`401`) em todos os routers de negócio, RBAC `admin` vs `operador` (`403`), gestão completa via `PATCH /api/auth/users/{id}`, bloqueio contra auto-rebaixamento/exclusão do último admin, `NFSE_ALLOW_PUBLIC_REGISTER=0`, `/api/system/environment`, `NFSE_DISABLE_SELF_UPDATE=1`, proteção contra Path Traversal em `/api/download/file` e envio de suporte (E-mail + Telegram).
+- **`tests/test_multiuser_wts_concurrency.py`**:
+  - Diretórios portáveis (`NFSE_DATA_DIR`, `NFSE_CERTS_DIR`, `NFSE_DOWNLOADS_DIR`), reserva concorrente de `ultimo_numero_dps` em múltiplas threads sem colisão, persistência de tarefas em `background_tasks` (`TaskStore`) e lock distribuído do `SchedulerService` (`scheduler_locks` / `NFSE_SCHEDULER_MODE=disabled`).
 
 ---
 
@@ -49,23 +53,24 @@ poetry run ruff check backend tests
 
 ## 3. Versionamento Centralizado e Releases
 
-A versão única do projeto fica em `pyproject.toml` (`[project] version = "X.Y.Z"`):
+A versão única do projeto fica em `pyproject.toml` (`[project] version = "X.Y.Z"`). Utilize o script `scripts/bump_version.py` para atualizar todos os manifestos (`pyproject.toml`, `ui/package.json`, `ui/package-lock.json`, `ui/src-tauri/Cargo.toml`, `ui/src-tauri/tauri.conf.json`, `frontend/views/about.html`) e gerar automaticamente o histórico detalhado em `changelog.txt` e `CHANGELOG.md`:
 
-1. Atualize a versão no `pyproject.toml`.
-2. Sincronize arquivos estáticos (quando aplicável):
-   ```bash
-   poetry run python scripts/sync_version.py
-   ```
-3. Para gerar a tag e a release localmente:
-   ```bash
-   ./scripts/release.sh
-   ```
+```bash
+# 1. Atualizar versão (explícita ou patch/minor/major) + gerar changelog.txt e CHANGELOG.md
+poetry run python scripts/bump_version.py 0.2.0 --notes "Resumo dos destaques"
+# ou apenas sincronizar a partir do pyproject.toml:
+poetry run python scripts/sync_version.py
+
+# 2. Commit e publicação da tag/release
+git add -A && git commit -m "chore(release): v0.2.0"
+./scripts/release.sh
+```
 
 ---
 
 ## 4. Pipelines GitHub Actions (`.github/workflows/`)
 
-O repositório conta com dois workflows automatizados:
+O repositório conta com três workflows automatizados:
 
 ### 4.1. Auto-Release (`.github/workflows/auto-release.yml`)
 - Disparado ao mesclar um Pull Request nas branches `main` ou `master` com a label `release`.
@@ -74,7 +79,15 @@ O repositório conta com dois workflows automatizados:
 - Lê a versão via `PYTHONPATH=backend poetry run python -c "from app.version import VERSION; print(VERSION)"`.
 - Cria a tag `vX.Y.Z` e publica a Release no GitHub automaticamente.
 
-### 4.2. Publicação no GitHub Pages (`.github/workflows/docs.yml`)
+### 4.2. Instaladores Desktop Multi-OS (`.github/workflows/desktop-installers.yml`)
+- Disparado manualmente (`workflow_dispatch`) ou automaticamente ao enviar uma tag `v*`.
+- Executa em matriz **`ubuntu-latest`** e **`windows-latest`**.
+- Empacota o sidecar Python via PyInstaller (`ui/build_sidecar.sh` / `ui/build_sidecar.ps1`) e compila o app Tauri.
+- Publica os artefatos e os anexa diretamente na GitHub Release:
+  - **Linux**: `.deb` e `.AppImage`
+  - **Windows**: `.msi` e `.exe` (NSIS)
+
+### 4.3. Publicação no GitHub Pages (`.github/workflows/docs.yml`)
 - Disparado automaticamente a cada `push` em `main` / `master` (ou manualmente via `workflow_dispatch`).
 - Instala o `mkdocs-material` e executa `mkdocs build --strict`.
 - Publica o site estático diretamente no **GitHub Pages** usando `actions/upload-pages-artifact` e `actions/deploy-pages`.

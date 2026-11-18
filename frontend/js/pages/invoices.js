@@ -1,12 +1,67 @@
-import { api } from '../core/api.js';
+import { api, getApiBaseUrl } from '../core/api.js';
 import { state } from '../core/state.js';
 import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceSummaryCells } from '../core/ui.js';
 
 let progressCloseTimer = null;
 
-export function triggerDownload(path) {
+function extractDownloadFilename(contentDisposition, fallbackPath) {
+    if (contentDisposition) {
+        const utf8Match = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+        if (utf8Match && utf8Match[1]) {
+            try {
+                return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ''));
+            } catch (_) {}
+        }
+        const plainMatch = contentDisposition.match(/filename\s*=\s*("?)([^";]+)\1/i);
+        if (plainMatch && plainMatch[2]) {
+            return plainMatch[2].trim();
+        }
+    }
+    const parts = String(fallbackPath || '').split(/[/\\]/).filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : 'documento';
+}
+
+export async function triggerDownload(path) {
     if (!path) return;
-    window.location.href = '/api/download/file?path=' + encodeURIComponent(path);
+    const token = localStorage.getItem('nfse_token');
+    const headers = {};
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    const url = `${getApiBaseUrl()}/api/download/file?path=${encodeURIComponent(path)}`;
+    try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+            if (res.status === 401 && window.App && window.App.logout) {
+                window.App.logout(true);
+            }
+            let msg = await res.text();
+            try {
+                const parsed = JSON.parse(msg);
+                if (parsed && parsed.detail) msg = parsed.detail;
+            } catch (_) {}
+            const finalMsg = msg || `Erro HTTP ${res.status} ao baixar o arquivo.`;
+            failTaskToast('Falha no Download', finalMsg);
+            await uiAlert({ title: 'Erro ao baixar arquivo', message: finalMsg, variant: 'error' });
+            return;
+        }
+
+        const blob = await res.blob();
+        const filename = extractDownloadFilename(res.headers.get('Content-Disposition'), path);
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+    } catch (e) {
+        const errMsg = e?.message || 'Não foi possível concluir o download do arquivo.';
+        failTaskToast('Falha no Download', errMsg);
+        await uiAlert({ title: 'Erro ao baixar arquivo', message: errMsg, variant: 'error' });
+    }
 }
 
 export async function convertHtmlToXmlAndPdf(invoiceId, htmlPath, status = 'NORMAL') {
@@ -187,7 +242,7 @@ export async function downloadBatch() {
 
     if (selected.length <= 100) {
         for (const path of paths) {
-            triggerDownload(path);
+            await triggerDownload(path);
             await new Promise(resolve => setTimeout(resolve, 180));
         }
         return;
@@ -197,7 +252,7 @@ export async function downloadBatch() {
         showTaskToast('Compactando Lote', 'Gerando arquivo ZIP com os documentos selecionados...', { autoProgress: true });
         const res = await api('/download/batch', 'POST', {arquivos: paths});
         completeTaskToast('Lote Pronto', 'Download do arquivo ZIP iniciado.', 3500);
-        triggerDownload(res.zip_path);
+        await triggerDownload(res.zip_path);
     } catch (e) {
         failTaskToast('Erro ao Gerar Lote', e.message);
         await uiAlert({ title: 'Erro ao gerar lote', message: e.message, variant: 'error' });

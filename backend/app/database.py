@@ -4,10 +4,10 @@ from pathlib import Path
 import socket
 from urllib.parse import urlparse, urlunparse
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from app.core.config import BACKEND_DIR, load_dotenv_if_present
+from app.core.config import get_sqlite_db_path, load_dotenv_if_present
 
 load_dotenv_if_present()
 
@@ -19,7 +19,7 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5434")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "nfse_db")
 
-DEFAULT_SQLITE_PATH = BACKEND_DIR / "nfse.db"
+DEFAULT_SQLITE_PATH = get_sqlite_db_path()
 DEFAULT_SQLITE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH}"
 
 
@@ -102,14 +102,16 @@ def resolve_database_url() -> str:
         url_port = chosen_port
 
     # Se estivermos fora do Docker e o PostgreSQL local/Docker não estiver rodando,
-    # permite fallback transparente para a base local SQLite (backend/nfse.db)
+    # permite fallback transparente para a base local SQLite
     in_docker = Path("/.dockerenv").exists()
     fallback_enabled = os.getenv("DB_FALLBACK_SQLITE", "1").strip().lower() not in ("0", "false", "no")
     if not in_docker and fallback_enabled and not _is_tcp_port_open(url_host, int(url_port)):
+        sqlite_path = get_sqlite_db_path()
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         logger.warning(
-            f"PostgreSQL indisponível em {url_host}:{url_port}. Utilizando base local SQLite em: {DEFAULT_SQLITE_PATH}"
+            f"PostgreSQL indisponível em {url_host}:{url_port}. Utilizando base local SQLite em: {sqlite_path}"
         )
-        return DEFAULT_SQLITE_URL
+        return f"sqlite:///{sqlite_path}"
 
     return raw_url
 
@@ -117,8 +119,28 @@ def resolve_database_url() -> str:
 DATABASE_URL = resolve_database_url()
 SQLALCHEMY_DATABASE_URL = DATABASE_URL
 
-connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
+is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+if is_sqlite and not SQLALCHEMY_DATABASE_URL.endswith(":memory:"):
+    raw_sqlite_file = SQLALCHEMY_DATABASE_URL.replace("sqlite:///", "", 1)
+    if raw_sqlite_file:
+        Path(raw_sqlite_file).parent.mkdir(parents=True, exist_ok=True)
+
+connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
 engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+
+if is_sqlite:
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

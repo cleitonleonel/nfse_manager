@@ -100,7 +100,18 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
-FRONTEND_DIR = Path("frontend") if Path("frontend").exists() else PROJECT_ROOT / "frontend"
+def _resolve_frontend_dir() -> Path:
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        frozen_frontend = Path(meipass) / "frontend"
+        if frozen_frontend.exists():
+            return frozen_frontend
+    if Path("frontend").exists():
+        return Path("frontend")
+    return PROJECT_ROOT / "frontend"
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
 if FRONTEND_DIR.exists():
     app.mount("/", NoCacheStaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
 

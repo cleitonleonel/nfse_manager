@@ -12,11 +12,12 @@ from fastapi.responses import StreamingResponse
 import openpyxl
 from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user
 from app.constants import DEFAULT_PERIOD, PERIOD_DAYS_MAP
 from app.database import get_db
 from app.models import Client, Invoice
 
-router = APIRouter(prefix="/api/reports", tags=["reports"])
+router = APIRouter(prefix="/api/reports", tags=["reports"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/export")

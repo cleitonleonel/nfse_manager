@@ -1,0 +1,342 @@
+/* --- SISTEMA / AMBIENTE MULTIUSUÁRIO & GESTÃO DE EQUIPE --- */
+
+.about-env-card,
+.users-section {
+  margin-bottom: 24px;
+}
+
+.env-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.env-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.env-header-title svg {
+  width: 19px;
+  height: 19px;
+  stroke: var(--accent);
+  fill: none;
+  stroke-width: 2;
+  flex-shrink: 0;
+}
+
+.env-header-sub {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.env-tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.env-tile {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.env-tile-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.env-tile-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.env-tile-value.is-mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.env-dirs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.env-dir-item {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.env-dir-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.env-dir-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text2);
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.env-wts-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text2);
+}
+
+.env-wts-banner svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.env-wts-banner.is-ready {
+  background: var(--green-bg);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: var(--text);
+}
+
+.env-wts-banner.is-ready svg {
+  color: var(--green);
+}
+
+.env-wts-banner.is-warn {
+  background: var(--amber-bg);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: var(--text);
+}
+
+.env-wts-banner.is-warn svg {
+  color: var(--amber);
+}
+
+/* --- GESTÃO DE EQUIPE & OPERADORES --- */
+
+.users-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.users-search-wrap {
+  position: relative;
+  min-width: 240px;
+}
+
+.users-search-wrap svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  stroke: var(--text3);
+  fill: none;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.users-search-wrap .form-input {
+  padding-left: 36px;
+  height: var(--ctrl-h-sm);
+}
+
+.user-identity-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.users-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.16);
+  color: var(--accent);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.users-avatar.is-admin {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--green);
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.user-identity-meta {
+  min-width: 0;
+}
+
+.user-display-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.user-username-sub {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text3);
+}
+
+.user-self-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg4);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+}
+
+.role-pill,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.role-pill.is-admin {
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.28);
+}
+
+.role-pill.is-operador {
+  background: var(--bg4);
+  color: var(--text2);
+  border-color: var(--border2);
+}
+
+body.theme-light .role-pill.is-admin {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.11);
+}
+
+.status-pill.is-active {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.status-pill.is-inactive {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.users-actions-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-action.is-disabled,
+.btn-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-action--neutral:hover {
+  background: var(--bg5);
+  color: var(--accent);
+}
+
+.btn-action--warn:hover {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+@media (max-width: 1100px) {
+  .env-tiles-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .env-tiles-grid,
+  .env-dirs-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .users-search-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .users-toolbar {
+    width: 100%;
+  }
+}

@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.spreadsheets import parse_date_iso
@@ -184,181 +185,201 @@ async def process_batch_items(
                 detail="Nenhum item elegível ('VALID' ou 'RETRY') selecionado para processamento.",
             )
 
-        batch.status = "PROCESSING"
+        res_upd = db.execute(
+            update(BatchImport)
+            .where(
+                BatchImport.id == batch_id,
+                BatchImport.status.notin_(["PROCESSING", "CANCELLED"]),
+            )
+            .values(status="PROCESSING")
+        )
+        if res_upd.rowcount == 0:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Este lote já está em processamento ou foi cancelado.",
+            )
         db.commit()
 
         cert_pem = signer.get_pem_certificate() if signer else None
         key_pem = signer.get_pem_private_key() if signer else None
         assinado_com_certificado = bool(cert_pem and key_pem)
 
-        for cur_item_id in target_ids:
-            # --- Transação 1: prepara XML, reserva DPS e marca PROCESSING ---
-            db.expire_all()
-            batch_cur = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
-            if not batch_cur or batch_cur.status == "CANCELLED":
-                break
+        try:
+            for cur_item_id in target_ids:
+                # --- Transação 1: prepara XML, reserva DPS e marca PROCESSING ---
+                db.expire_all()
+                batch_cur = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
+                if not batch_cur or batch_cur.status == "CANCELLED":
+                    break
 
-            item = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
-            if not item or item.status not in eligible_statuses:
-                continue
+                item = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
+                if not item or item.status not in eligible_statuses:
+                    continue
 
-            client_cur = db.query(Client).filter(Client.id == batch_cur.client_id).first()
-            payload = json.loads(item.payload_json)
-            comp_iso = parse_date_iso(payload.get("competencia")) or datetime.date.today().isoformat()
+                client_cur = db.query(Client).filter(Client.id == batch_cur.client_id).first()
+                payload = json.loads(item.payload_json)
+                comp_iso = parse_date_iso(payload.get("competencia")) or datetime.date.today().isoformat()
 
-            prestador, tomador, servico, _, _ = build_emission_context_for_item(db, client_cur, payload)
-            tributacao_calc = AdnService._calcular_tributacao_se_necessario(
-                prestador=prestador,
-                servico=servico,
-                tributacao_informada=None,
-                data_competencia=comp_iso,
-            )
+                prestador, tomador, servico, _, _ = build_emission_context_for_item(db, client_cur, payload)
+                tributacao_calc = AdnService._calcular_tributacao_se_necessario(
+                    prestador=prestador,
+                    servico=servico,
+                    tributacao_informada=None,
+                    data_competencia=comp_iso,
+                )
 
-            serie = item.serie_dps or (client_cur.serie_dps_padrao or "900")
-            if item.numero_dps:
-                numero = item.numero_dps
-            else:
-                numero = (client_cur.ultimo_numero_dps or 0) + 1
-                client_cur.ultimo_numero_dps = numero
-                db.add(client_cur)
+                if item.numero_dps:
+                    serie = item.serie_dps or (client_cur.serie_dps_padrao or "900")
+                    numero = item.numero_dps
+                    id_dps = item.id_dps or formatar_id_dps(
+                        prestador.get("codigo_municipio", "3201308"),
+                        prestador.get("cnpj") or "",
+                        serie,
+                        numero,
+                    )
+                else:
+                    serie, numero, id_dps = AdnService.reservar_proximo_numero_dps(
+                        db=db,
+                        client_id=client_cur.id,
+                        serie_dps=item.serie_dps or client_cur.serie_dps_padrao,
+                        codigo_municipio=prestador.get("codigo_municipio"),
+                        documento_prestador=prestador.get("cnpj"),
+                    )
+                    item = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
 
-            id_dps = item.id_dps or formatar_id_dps(
-                prestador.get("codigo_municipio", "3201308"),
-                prestador.get("cnpj") or "",
-                serie,
-                numero,
-            )
-            item.serie_dps = serie
-            item.numero_dps = numero
-            item.id_dps = id_dps
-            item.attempts = (item.attempts or 0) + 1
-            item.status = "PROCESSING"
-            item.processed_at = datetime.datetime.now(datetime.UTC)
-            db.add(item)
-            db.commit()  # Libera transação antes de assinar e chamar ADN
+                item.serie_dps = serie
+                item.numero_dps = numero
+                item.id_dps = id_dps
+                item.attempts = (item.attempts or 0) + 1
+                item.status = "PROCESSING"
+                item.processed_at = datetime.datetime.now(datetime.UTC)
+                db.add(item)
+                db.commit()  # Libera transação antes de assinar e chamar ADN
 
             # Monta e assina DPS fora da transação de banco
-            xml_bruto = build_dps_xml(
-                prestador=prestador,
-                tomador=tomador,
-                servico=servico,
-                tributacao=tributacao_calc,
-                serie_dps=serie,
-                numero_dps=numero,
-                data_competencia=comp_iso,
-                ambiente=ambiente,
-                incluir_ibscbs=True,
-            )
-            xml_assinado = signer.sign_xml(xml_bruto, tag_to_sign="infDPS") if signer is not None else xml_bruto
-            xsd_pos = XsdValidator.validar_dps(xml_assinado)
-            if not xsd_pos.get("valido"):
-                item_upd = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
-                item_upd.status = "REJECTED"
-                item_upd.last_error = "XML assinado falhou na validação XSD v1.01."
-                recompute_batch_counters(db, db.query(BatchImport).filter(BatchImport.id == batch_id).first())
-                db.commit()
-                continue
+                xml_bruto = build_dps_xml(
+                    prestador=prestador,
+                    tomador=tomador,
+                    servico=servico,
+                    tributacao=tributacao_calc,
+                    serie_dps=serie,
+                    numero_dps=numero,
+                    data_competencia=comp_iso,
+                    ambiente=ambiente,
+                    incluir_ibscbs=True,
+                )
+                xml_assinado = signer.sign_xml(xml_bruto, tag_to_sign="infDPS") if signer is not None else xml_bruto
+                xsd_pos = XsdValidator.validar_dps(xml_assinado)
+                if not xsd_pos.get("valido"):
+                    item_upd = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
+                    item_upd.status = "REJECTED"
+                    item_upd.last_error = "XML assinado falhou na validação XSD v1.01."
+                    recompute_batch_counters(db, db.query(BatchImport).filter(BatchImport.id == batch_id).first())
+                    db.commit()
+                    continue
 
-            xml_dps_path = AdnService._salvar_xml_disco(xml_assinado, "dps", f"{id_dps}.xml")
+                xml_dps_path = AdnService._salvar_xml_disco(xml_assinado, "dps", f"{id_dps}.xml")
 
-            # --- Chamada externa ao ADN sem transação aberta ---
-            final_status = "RETRY"
-            ultimo_erro: Optional[str] = None
-            chave_gerada = item.chave_acesso or id_dps.replace("DPS", "").ljust(50, "0")[:50]
-            xml_nfse_path: Optional[str] = None
-            inv_status = "dps_gerada"
+                # --- Chamada externa ao ADN sem transação aberta ---
+                final_status = "RETRY"
+                ultimo_erro: Optional[str] = None
+                chave_gerada = item.chave_acesso or id_dps.replace("DPS", "").ljust(50, "0")[:50]
+                xml_nfse_path: Optional[str] = None
+                inv_status = "dps_gerada"
 
-            if transmitir and assinado_com_certificado:
-                try:
-                    adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
-                    res_adn = await adn_client.emitir_dps(xml_assinado)
-                    sc = int(res_adn.get("status_code") or 0)
-                    has_transport_err = bool(res_adn.get("erro") or res_adn.get("erro_transporte"))
+                if transmitir and assinado_com_certificado:
+                    try:
+                        adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
+                        res_adn = await adn_client.emitir_dps(xml_assinado)
+                        sc = int(res_adn.get("status_code") or 0)
+                        has_transport_err = bool(res_adn.get("erro") or res_adn.get("erro_transporte"))
 
-                    if res_adn.get("sucesso"):
-                        final_status = "AUTHORIZED"
-                        inv_status = "gerada"
-                        chave_gerada = res_adn.get("chave_acesso") or chave_gerada
-                        if res_adn.get("nfse_xml"):
-                            xml_nfse_path = AdnService._salvar_xml_disco(
-                                res_adn["nfse_xml"], "nfse", f"{chave_gerada}.xml"
+                        if res_adn.get("sucesso"):
+                            final_status = "AUTHORIZED"
+                            inv_status = "gerada"
+                            chave_gerada = res_adn.get("chave_acesso") or chave_gerada
+                            if res_adn.get("nfse_xml"):
+                                xml_nfse_path = AdnService._salvar_xml_disco(
+                                    res_adn["nfse_xml"], "nfse", f"{chave_gerada}.xml"
+                                )
+                        elif 400 <= sc < 500 and not has_transport_err:
+                            final_status = "REJECTED"
+                            inv_status = "rejeitada"
+                            ultimo_erro = _extract_adn_error(res_adn)
+                        else:
+                            # Falha de transporte/timeout/5xx após envio: resultado desconhecido (exige consulta prévia)
+                            final_status = "UNKNOWN"
+                            inv_status = "fila_contingencia"
+                            ultimo_erro = (
+                                f"Resultado incerto após transmissão ({_extract_adn_error(res_adn)}). "
+                                "Consulte o ADN antes de reenviar."
                             )
-                    elif 400 <= sc < 500 and not has_transport_err:
-                        final_status = "REJECTED"
-                        inv_status = "rejeitada"
-                        ultimo_erro = _extract_adn_error(res_adn)
-                    else:
-                        # Falha de transporte/timeout/5xx após envio: resultado desconhecido (exige consulta prévia)
+                    except Exception as exc:
                         final_status = "UNKNOWN"
                         inv_status = "fila_contingencia"
-                        ultimo_erro = (
-                            f"Resultado incerto após transmissão ({_extract_adn_error(res_adn)}). "
-                            "Consulte o ADN antes de reenviar."
-                        )
-                except Exception as exc:
-                    final_status = "UNKNOWN"
+                        ultimo_erro = f"Falha de comunicação com resultado incerto: {exc}"
+                elif transmitir and not assinado_com_certificado:
+                    final_status = "RETRY"
                     inv_status = "fila_contingencia"
-                    ultimo_erro = f"Falha de comunicação com resultado incerto: {exc}"
-            elif transmitir and not assinado_com_certificado:
-                final_status = "RETRY"
-                inv_status = "fila_contingencia"
-                ultimo_erro = "Certificado A1 (.pfx) não configurado no prestador."
-            else:
-                final_status = "RETRY"
-                inv_status = "dps_gerada"
-                ultimo_erro = "DPS gerada localmente sem transmissão (transmitir=False)."
+                    ultimo_erro = "Certificado A1 (.pfx) não configurado no prestador."
+                else:
+                    final_status = "RETRY"
+                    inv_status = "dps_gerada"
+                    ultimo_erro = "DPS gerada localmente sem transmissão (transmitir=False)."
 
-            xml_principal = xml_nfse_path or xml_dps_path
-            pdf_path = AdnService._gerar_pdf_danfse(xml_principal, chave_gerada, status="NORMAL")
+                xml_principal = xml_nfse_path or xml_dps_path
+                pdf_path = AdnService._gerar_pdf_danfse(xml_principal, chave_gerada, status="NORMAL")
 
-            # --- Transação 2: persiste resultado no item e na Invoice ---
-            batch_cur = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
-            client_cur = db.query(Client).filter(Client.id == batch_cur.client_id).first()
-            item_upd = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
+                # --- Transação 2: persiste resultado no item e na Invoice ---
+                batch_cur = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
+                client_cur = db.query(Client).filter(Client.id == batch_cur.client_id).first()
+                item_upd = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
 
-            inv = _upsert_invoice_for_item(
-                db,
-                client_db=client_cur,
-                item=item_upd,
-                prestador=prestador,
-                tomador=tomador,
-                servico=servico,
-                tributacao_calc=tributacao_calc,
-                ambiente=ambiente,
-                comp_iso=comp_iso,
-                chave_gerada=chave_gerada,
-                status_nota=inv_status,
-                xml_dps_path=xml_dps_path,
-                xml_nfse_path=xml_nfse_path,
-                pdf_path=pdf_path,
-                ultimo_erro=ultimo_erro,
-            )
+                inv = _upsert_invoice_for_item(
+                    db,
+                    client_db=client_cur,
+                    item=item_upd,
+                    prestador=prestador,
+                    tomador=tomador,
+                    servico=servico,
+                    tributacao_calc=tributacao_calc,
+                    ambiente=ambiente,
+                    comp_iso=comp_iso,
+                    chave_gerada=chave_gerada,
+                    status_nota=inv_status,
+                    xml_dps_path=xml_dps_path,
+                    xml_nfse_path=xml_nfse_path,
+                    pdf_path=pdf_path,
+                    ultimo_erro=ultimo_erro,
+                )
 
-            item_upd.invoice_id = inv.id
-            item_upd.chave_acesso = chave_gerada if final_status == "AUTHORIZED" else item_upd.chave_acesso
-            item_upd.status = final_status
-            item_upd.last_error = ultimo_erro
-            item_upd.processed_at = datetime.datetime.now(datetime.UTC)
-            db.add(item_upd)
-            recompute_batch_counters(db, batch_cur)
-            db.commit()
+                item_upd.invoice_id = inv.id
+                item_upd.chave_acesso = chave_gerada if final_status == "AUTHORIZED" else item_upd.chave_acesso
+                item_upd.status = final_status
+                item_upd.last_error = ultimo_erro
+                item_upd.processed_at = datetime.datetime.now(datetime.UTC)
+                db.add(item_upd)
+                recompute_batch_counters(db, batch_cur)
+                db.commit()
 
-            if enviar_email and final_status == "AUTHORIZED" and tomador.get("email"):
-                try:
-                    EmailService.send_nfse_email(
-                        destinatario=tomador["email"],
-                        client_db=client_cur,
-                        chave_acesso=chave_gerada,
-                        xml_path=xml_principal,
-                        pdf_path=pdf_path,
-                    )
-                except Exception as exc:
-                    logger.warning("Erro ao enviar e-mail automático do item %s: %s", cur_item_id, exc)
-
-        batch_final = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
-        recompute_batch_counters(db, batch_final)
-        db.commit()
-        db.refresh(batch_final)
+                if enviar_email and final_status == "AUTHORIZED" and tomador.get("email"):
+                    try:
+                        EmailService.send_nfse_email(
+                            destinatario=tomador["email"],
+                            client_db=client_cur,
+                            chave_acesso=chave_gerada,
+                            xml_path=xml_principal,
+                            pdf_path=pdf_path,
+                        )
+                    except Exception as exc:
+                        logger.warning("Erro ao enviar e-mail automático do item %s: %s", cur_item_id, exc)
+        finally:
+            batch_final = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
+            if batch_final:
+                recompute_batch_counters(db, batch_final)
+                db.commit()
+                db.refresh(batch_final)
         return batch_final
 
 

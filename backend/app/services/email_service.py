@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+import html
 import os
 from pathlib import Path
 import smtplib
@@ -208,6 +209,22 @@ class EmailService:
                 ),
             )
 
+        cls._dispatch_smtp(smtp_cfg, msg)
+
+        return {
+            "sucesso": True,
+            "origem_smtp": smtp_cfg["origem"],
+            "remetente": msg["From"],
+            "reply_to": msg.get("Reply-To"),
+            "destinatario": email_to,
+            "assunto": msg["Subject"],
+            "anexos": anexos_incluidos,
+            "invoice_id": invoice.id,
+        }
+
+    @staticmethod
+    def _dispatch_smtp(smtp_cfg: Dict[str, Any], msg: EmailMessage) -> None:
+        """Executa o envio SMTP com suporte a SSL (porta 465) ou STARTTLS."""
         port = int(smtp_cfg["port"])
         use_tls = bool(smtp_cfg["tls"])
 
@@ -225,13 +242,54 @@ class EmailService:
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Falha ao enviar e-mail via SMTP: {exc}") from exc
 
-        return {
-            "sucesso": True,
-            "origem_smtp": smtp_cfg["origem"],
-            "remetente": msg["From"],
-            "reply_to": msg.get("Reply-To"),
-            "destinatario": email_to,
-            "assunto": msg["Subject"],
-            "anexos": anexos_incluidos,
-            "invoice_id": invoice.id,
-        }
+    @classmethod
+    def enviar_mensagem_suporte(
+        cls,
+        destinatario: str,
+        remetente_email: str,
+        whatsapp: Optional[str],
+        mensagem: str,
+        operador: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Envia mensagem de suporte/feedback via SMTP padrão do sistema."""
+        smtp_cfg = cls.obter_config_smtp(None)
+        if not smtp_cfg:
+            raise RuntimeError("SMTP padrão do sistema não configurado (DEFAULT_SMTP_HOST/USER/PASSWORD).")
+
+        msg = EmailMessage()
+        msg["Subject"] = f"[NFSe Manager Pro] Suporte / Feedback - {remetente_email}"
+        msg["From"] = f'"NFSe Manager Pro Suporte" <{smtp_cfg["from_addr"]}>'
+        msg["To"] = destinatario
+        if remetente_email:
+            msg["Reply-To"] = remetente_email.strip()
+
+        wpp_txt = whatsapp or "-"
+        op_txt = operador or "-"
+        msg.set_content(
+            "Nova mensagem de suporte/feedback recebida no NFSe Manager Pro:\n\n"
+            f"Operador: {op_txt}\n"
+            f"E-mail: {remetente_email}\n"
+            f"WhatsApp: {wpp_txt}\n\n"
+            f"Mensagem:\n{mensagem}\n"
+        )
+        msg.add_alternative(
+            f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+              <div style="background: #0f172a; color: #fff; padding: 16px 20px;">
+                <h2 style="margin: 0; font-size: 17px;">Suporte &amp; Feedback — NFSe Manager Pro</h2>
+              </div>
+              <div style="padding: 20px; background: #fff; color: #1e293b; font-size: 14px;">
+                <p><strong>Operador:</strong> {html.escape(op_txt)}</p>
+                <p><strong>E-mail:</strong> {html.escape(remetente_email)}</p>
+                <p><strong>WhatsApp:</strong> {html.escape(wpp_txt)}</p>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+                <p style="margin-bottom: 6px;"><strong>Mensagem:</strong></p>
+                <div style="background: #f8fafc; padding: 12px 14px; border-radius: 8px; white-space: pre-wrap;">{html.escape(mensagem)}</div>
+              </div>
+            </div>
+            """,
+            subtype="html",
+        )
+
+        cls._dispatch_smtp(smtp_cfg, msg)
+        return {"destinatario": destinatario, "origem_smtp": smtp_cfg["origem"]}

@@ -52,9 +52,11 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
   - **Monitoramento e Alerta de Vencimento do Certificado A1 (`.pfx`)**: extração automática da data de expiração (`cert_valid_until`) e titular (`cert_subject`) no upload, banner de aviso no Dashboard quando faltar $\le 30$ dias e coluna visual de validade na listagem de clientes (`/api/clients/certificados/alertas`).
   - Configuração de parâmetros fiscais ADN v1.01 (Inscrição Municipal, código IBGE, regime tributário `normal | simples | mei`, regime de apuração SN, série e numeração de DPS, ambiente `homologacao | producao`).
   - Personalização de diretório de saída e máscara dinâmica de pastas (`{CLIENTE}/{TIPO}/{ANO}/{MES}`).
-- **Autenticação JWT de Operadores e CLI Estilo Django (`manage.py`)**:
+- **Autenticação JWT de Operadores, Gestão de Equipe e Modo Multiusuário / WTS**:
   - Utilitário `python manage.py` com comandos `makemigrations`, `migrate`, `showmigrations` e `create_admin` (`createsuperuser`).
-  - Tela inicial obrigatória de Login e Cadastro (`#auth-screen`) com verificação síncrona de sessão (sem flash ao recarregar), bootstrap automático do primeiro administrador via `/api/auth/register`, alternância de tema e suporte aos endpoints `/api/auth/login`, `/api/auth/me`, `/api/auth/users` e `/api/auth/change-password` com hash `PBKDF2-HMAC-SHA256`.
+  - Tela inicial obrigatória de Login/Cadastro (`#auth-screen`), controle opcional de auto-cadastro (`NFSE_ALLOW_PUBLIC_REGISTER=0`), proteção JWT em todas as rotas de negócio da API e RBAC (`admin` vs `operador`).
+  - Gestão visual de **Equipe & Operadores** na aba **Sistema** (`GET/POST/PATCH/DELETE /api/auth/users`), modal **Minha Conta** no topbar para troca da própria senha, painel de diagnóstico (`/api/system/environment`) e conexão configurável com Servidor Central para uso simultâneo em **Windows Server + Área de Trabalho Remota (WTS)**.
+  - Diretórios portáveis (`NFSE_DATA_DIR`, `NFSE_CERTS_DIR`, `NFSE_DOWNLOADS_DIR`), reserva transacional de `ultimo_numero_dps` (`FOR UPDATE`), persistência de tarefas em `background_tasks` e lock distribuído no worker de contingência (`pg_try_advisory_lock` / `scheduler_locks`).
 - **Sincronização e Downloads Inteligentes**:
   - Sincronização assíncrona em background de notas `emitidas` e `recebidas` com barra de progresso em tempo real.
   - **Cofre de Notas ADN (DistDFe / NSU via mTLS)**: sincronização incremental direta com o Ambiente Nacional da NFS-e usando o Certificado A1 (`/api/adn/cofre/sincronizar`).
@@ -155,13 +157,15 @@ nfse_manager/
 │       ├── services/
 │       │   ├── adn_service.py           # Orquestração fiscal ADN / Sefin Nacional v1.01, Fila e Cofre NSU
 │       │   ├── batch_emission/          # Emissão em lote persistente (importer, validator, processor, exporters)
-│       │   ├── email_service.py         # Envio de XML + DANFSe por e-mail (SMTP por cliente + fallback global)
+│       │   ├── email_service.py         # Envio de XML + DANFSe e suporte por e-mail (SMTP por cliente + fallback global)
 │       │   ├── html_xml_service.py      # Conversão de HTML de impressão em XML SPED e PDF DANFSe
-│       │   └── lookup_service.py        # Consulta automática de CNPJ e CEP (BrasilAPI / ViaCEP / ReceitaWS)
+│       │   ├── lookup_service.py        # Consulta automática de CNPJ e CEP (BrasilAPI / ViaCEP / ReceitaWS)
+│       │   ├── scheduler_service.py     # Worker de contingência com lock distribuído (PostgreSQL/SQLite)
+│       │   └── support_service.py       # Encaminhamento de suporte/feedback via E-mail + Telegram Bot
 │       └── api/
-│           ├── deps.py                  # Factory de ClienteNfseNacional com paths do backend
-│           ├── state.py                 # Estado em memória (tasks_status) das tarefas em background
-│           └── routers/                 # 12 routers modulares por domínio
+│           ├── deps.py                  # Factory de ClienteNfseNacional com caminhos portáveis
+│           ├── state.py                 # TaskStore persistente (background_tasks + fallback em memória)
+│           └── routers/                 # 12 routers modulares por domínio (protegidos via JWT/RBAC)
 │               ├── auth.py              # Login/Cadastro JWT, /me, troca de senha e gestão de operadores
 │               ├── clients.py           # CRUD de clientes, SMTP (/smtp/padrao) e upload de certificado .pfx
 │               ├── registry.py          # CRUD de Tomadores e Serviços Recorrentes + Lookup CNPJ/CEP
@@ -180,12 +184,12 @@ nfse_manager/
 │   ├── nginx.conf                       # Configuração Nginx (SPA + proxy reverso para /api)
 │   ├── index.html                       # Layout base (login/cadastro, sidebar, topbar, modais e #task-toast)
 │   ├── css/                             # Estilos modulares (variables, base, layout, components/*, pages/{dashboard,emission,auth})
-│   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/{dashboard,clients,invoices,emission,batch,about})
+│   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/{dashboard,clients,invoices,emission,batch,users,about})
 │   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, emission, about)
-├── 🖥️ ui/                               # Shell Desktop Nativo (Tauri / Rust)
+├── 🖥️ ui/                               # Shell Desktop Nativo (Tauri / Rust) + Suporte WTS
 │   ├── dev.sh                           # Inicia servidor Python + janela Tauri em modo dev
-│   ├── build_sidecar.sh                 # Empacota o backend como binário sidecar via PyInstaller
-│   ├── release.sh                       # Gera pacotes instaláveis (.deb, .AppImage, .msi, .dmg)
+│   ├── build_sidecar.sh / .ps1          # Empacota o backend como binário sidecar via PyInstaller (Linux/Windows)
+│   ├── release.sh / .ps1                # Gera pacotes instaláveis (.deb, .AppImage, .msi, .exe)
 │   └── src-tauri/                       # Código Rust e configurações do Tauri
 ├── 📚 docs/                             # Documentação técnica e especificações (MkDocs Material)
 │   ├── index.md
@@ -193,7 +197,7 @@ nfse_manager/
 │   ├── reforma-tributaria-adn.md / api-referencia.md
 │   ├── arquitetura-e-uso.md             # Manual de arquitetura, banco, fluxos e contratos da API
 │   └── assets/                          # Imagens e logotipos da documentação
-├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 62 testes)
+├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 74 testes)
 │   ├── conftest.py
 │   ├── test_adn_emission_and_tax.py     # CRUD fiscal, catálogos, NBS combos, calculadora IBS/CBS, ADN, Fila e E-mail
 │   ├── test_analytics_and_canceled_invoices.py
@@ -203,11 +207,14 @@ nfse_manager/
 │   ├── test_full_coverage_nfse_manager.py
 │   ├── test_html_to_xml_and_pdf.py
 │   ├── test_manage_auth_worker_and_certs.py # CLI manage.py, JWT Auth/Cadastro, alertas A1, worker e CNPJ alfanumérico
+│   ├── test_multiuser_wts_concurrency.py    # Storage configurável, concorrência DPS, TaskStore e locks do worker
+│   ├── test_router_auth_guards.py           # Proteção JWT/RBAC, PATCH users, Path Traversal e Suporte E-mail+Telegram
 │   ├── test_security_and_credentials_encryption.py
-│   ├── test_versioning_and_updates.py   # Versão, healthcheck, update transacional e CI
+│   ├── test_versioning_and_updates.py   # Versão, healthcheck, update transacional, bump_version e CI
 │   └── test_xml_canonicalization_nt.py  # Canonicalização C14N, XML-DSig e ordenação XSD NT 2026/2027
 ├── 🛠️ scripts/                          # Scripts de automação e manutenção
-│   ├── sync_version.py                  # Sincroniza a versão do pyproject.toml com arquivos estáticos
+│   ├── bump_version.py                  # Atualiza versão em todos os manifestos e gera changelog.txt / CHANGELOG.md
+│   ├── sync_version.py                  # Sincroniza a versão do pyproject.toml com Tauri/Node e about.html
 │   └── release.sh                       # Criação automatizada de tags Git e GitHub Releases
 ├── 🐳 docker-compose.yml                # Compose raiz (usa `include` para unir database, backend e frontend)
 ├── ⚙️ .env.example                      # Modelo de variáveis de ambiente
@@ -242,7 +249,12 @@ cp .env.example .env
 | `FRONTEND_PORT` | `3000` | Porta HTTP exposta pelo container Nginx do Frontend |
 | `NFSE_ENCRYPTION_KEY` | Derivada automaticamente se omitida | Chave mestra (Fernet/AES) para criptografia em repouso de senhas |
 | `JWT_SECRET_KEY` | Derivada de `NFSE_ENCRYPTION_KEY` se omitida | Chave secreta para assinatura de tokens JWT (`HS256`) dos operadores |
-| `DEFAULT_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` / `FROM` / `TLS` | Vazio (`587`, `TLS=1`) | Servidor SMTP padrão no `.env` (fallback quando o Prestador não tem SMTP próprio) |
+| `DEFAULT_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` / `FROM` / `TLS` | Vazio (`587`, `TLS=1`) | Servidor SMTP padrão no `.env` (fallback quando o Prestador não tem SMTP próprio e envios de suporte) |
+| `NFSE_DATA_DIR` / `NFSE_CERTS_DIR` / `NFSE_DOWNLOADS_DIR` | `backend/` | Diretórios compartilhados para `.pfx`, XMLs e PDFs (compatível com rede/UNC no Windows Server) |
+| `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar na tela de login após existir um administrador |
+| `NFSE_SCHEDULER_MODE` | `auto` | Modo do worker de contingência (`auto`, `leader` ou `disabled`) |
+| `NFSE_DISABLE_SELF_UPDATE` | `0` (`1` em sidecar) | Bloqueia auto-atualização via GitHub pela interface em ambientes gerenciados / WTS |
+| `SUPPORT_EMAIL_TO` / `SUPPORT_TELEGRAM_BOT_TOKEN` / `SUPPORT_TELEGRAM_CHAT_ID` | `cleiton.leonel@gmail.com` / vazio / `@cleitonLC` | Encaminhamento de mensagens de Suporte & Feedback via E-mail e Telegram |
 | `AUTO_RETRY_FILA_ENABLED` | `1` (`true`) | Ativa o worker em background para reenvio automático da fila de contingência |
 | `AUTO_RETRY_FILA_INTERVAL_SECONDS` | `300` (5 min) | Intervalo em segundos entre os ciclos do worker de contingência |
 | `AUTO_RETRY_MAX_TENTATIVAS` | `10` | Limite máximo de tentativas automáticas por DPS na fila |
@@ -484,8 +496,10 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 - `GET /api/reports/competencia?competencia=YYYY-MM&format=json|csv|xlsx` — Gera relatório mensal por competência separando ativas, canceladas/substituídas e fila de contingência.
 - `GET /api/health` — Healthcheck da aplicação.
 - `GET /api/system/version` — Retorna a versão atual definida no `pyproject.toml`.
+- `GET /api/system/environment` — Diagnóstico do banco, modo servidor/local, diretórios compartilháveis e status do worker.
 - `GET /api/system/check-update` — Verifica se há nova release publicada no GitHub.
 - `POST /api/system/update/download` & `POST /api/system/update/apply` — Baixa e aplica atualização com backup transacional.
+- `POST /api/support/message` — Encaminha mensagem de suporte/feedback via E-mail e Telegram.
 
 ---
 
@@ -517,14 +531,19 @@ poetry run ruff check backend tests
 A versão oficial do sistema é centralizada no [`pyproject.toml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/pyproject.toml) (`project.version`) e lida dinamicamente por [`backend/app/version.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/version.py):
 
 ```bash
-# Sincronizar versão com arquivos estáticos (se necessário)
+# Atualizar versão em todos os manifestos e gerar changelog.txt / CHANGELOG.md
+poetry run python scripts/bump_version.py 0.2.0 --notes "Destaques da versão"
+
+# Sincronizar versão do pyproject.toml com Tauri/Node e about.html
 poetry run python scripts/sync_version.py
 
 # Criar tag vX.Y.Z e publicar release no GitHub localmente
 ./scripts/release.sh
 ```
 
-No GitHub Actions, o workflow [`.github/workflows/auto-release.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/auto-release.yml) sobe um serviço `postgres:16-alpine`, executa `ruff` e `pytest`, lê `app.version.VERSION` e publica automaticamente a tag e a release quando um Pull Request com a label `release` é mesclado.
+No GitHub Actions:
+- [`.github/workflows/auto-release.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/auto-release.yml): sobe `postgres:16-alpine`, executa `ruff` e `pytest`, lê `app.version.VERSION` e publica automaticamente a tag/release ao mesclar PR com label `release`.
+- [`.github/workflows/desktop-installers.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/desktop-installers.yml): compila em matriz **Linux (`.deb` / `.AppImage`)** e **Windows (`.msi` / `.exe`)** ao publicar tag `v*` ou sob demanda (`workflow_dispatch`).
 
 ---
 

@@ -1,11 +1,12 @@
-import { api } from './core/api.js';
+import { api, getApiBaseUrl, setApiBaseUrl } from './core/api.js';
 import { state } from './core/state.js';
-import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, initSidebarState, toggleSidebar, hideTaskToast, uiConfirm } from './core/ui.js';
+import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeModal, toggleTheme, initSidebarState, toggleSidebar, hideTaskToast, uiConfirm, uiAlert, completeTaskToast } from './core/ui.js';
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
 import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport } from './pages/invoices.js';
-import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate } from './pages/about.js';
+import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate, loadSystemEnvironment } from './pages/about.js';
+import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser } from './pages/users.js';
 import {
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,
     onSelectSavedCustomer, onSelectSavedService, onChangeCTribNac,
@@ -44,6 +45,8 @@ window.App = {
     
     // Core
     api,
+    getApiBaseUrl,
+    setApiBaseUrl,
     showPage,
     
     // UI
@@ -83,12 +86,15 @@ window.App = {
     cancelActiveBatch, exportActiveBatch,
     deleteBatch, deleteBatchItem, deleteSelectedBatchItems, deleteAllBatchItems,
     
-    // System/About
+    // System/About & Team Management
     sendSupportMessage, checkUpdates, startUpdateDownload, applyDownloadedUpdate,
-    initAbout,
+    initAbout, loadSystemEnvironment,
+    loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator,
+    toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser,
 
     // Auth (JWT Gatekeeper)
     _pollTimer: null,
+    _allowSelfRegister: true,
 
     setAuthNotice(type, message) {
         const box = document.getElementById('auth-notice');
@@ -116,7 +122,7 @@ window.App = {
     },
 
     switchAuthTab(tab) {
-        const isReg = tab === 'register';
+        const isReg = tab === 'register' && this._allowSelfRegister !== false;
         const loginForm = document.getElementById('auth-form-login');
         const regForm = document.getElementById('auth-form-register');
         const tabLogin = document.getElementById('auth-tab-login');
@@ -137,15 +143,28 @@ window.App = {
                 : 'Entre com seu usuário ou e-mail de operador para continuar.';
         }
         if (footEl) {
-            footEl.innerHTML = isReg
-                ? 'Já possui conta? <button type="button" class="auth-footer-link" onclick="App.switchAuthTab(\'login\')">Fazer login</button>'
-                : 'Ainda não tem acesso? <button type="button" class="auth-footer-link" onclick="App.switchAuthTab(\'register\')">Cadastre uma conta</button>';
+            if (this._allowSelfRegister === false) {
+                footEl.style.display = 'none';
+            } else {
+                footEl.style.display = 'block';
+                footEl.innerHTML = isReg
+                    ? 'Já possui conta? <button type="button" class="auth-footer-link" onclick="App.switchAuthTab(\'login\')">Fazer login</button>'
+                    : 'Ainda não tem acesso? <button type="button" class="auth-footer-link" onclick="App.switchAuthTab(\'register\')">Cadastre uma conta</button>';
+            }
         }
 
         this.setAuthNotice(null, '');
 
         const targetId = isReg ? 'reg-fullname' : 'login-username';
         setTimeout(() => document.getElementById(targetId)?.focus(), 20);
+    },
+
+    updateServerConfigButton() {
+        const btn = document.getElementById('auth-server-config-btn');
+        if (!btn) return;
+        const base = getApiBaseUrl();
+        btn.classList.toggle('is-configured', Boolean(base));
+        btn.title = base ? `Servidor Central: ${base}` : 'Configurar URL do Servidor Central';
     },
 
     async showAuthScreen(defaultTab = null) {
@@ -156,16 +175,28 @@ window.App = {
             this._pollTimer = null;
         }
         this.updateAuthTopbar();
+        this.updateServerConfigButton();
 
         let targetTab = defaultTab || 'login';
         let infoMsg = '';
+        let allowSelfRegister = true;
         try {
             const st = await this.api('/auth/status');
-            if (st && st.has_users === false) {
+            const hasUsers = st ? st.has_users !== false : true;
+            allowSelfRegister = !hasUsers || st?.allow_self_register !== false;
+            if (!hasUsers) {
                 targetTab = defaultTab || 'register';
                 infoMsg = 'Nenhum operador cadastrado ainda. Crie a primeira conta (Administrador) para acessar o sistema.';
+            } else if (!allowSelfRegister) {
+                targetTab = 'login';
             }
         } catch (_) {}
+
+        this._allowSelfRegister = allowSelfRegister;
+        const tabReg = document.getElementById('auth-tab-register');
+        const tabsWrap = tabReg?.closest('.auth-tabs');
+        if (tabReg) tabReg.style.display = allowSelfRegister ? 'inline-flex' : 'none';
+        if (tabsWrap) tabsWrap.style.gridTemplateColumns = allowSelfRegister ? '1fr 1fr' : '1fr';
 
         this.switchAuthTab(targetTab);
         if (infoMsg) this.setAuthNotice('info', infoMsg);
@@ -265,6 +296,7 @@ window.App = {
     updateAuthTopbar() {
         const pill = document.getElementById('auth-user-pill');
         const lbl = document.getElementById('auth-topbar-label');
+        const roleBadge = document.getElementById('auth-topbar-role');
         if (!lbl || !pill) return;
         const token = localStorage.getItem('nfse_token');
         const rawUser = localStorage.getItem('nfse_user');
@@ -272,11 +304,181 @@ window.App = {
             try {
                 const u = JSON.parse(rawUser);
                 lbl.innerText = u.full_name || u.username || 'Operador';
+                if (roleBadge) {
+                    const isAdmin = u.role === 'admin';
+                    roleBadge.innerText = isAdmin ? 'Admin' : 'Operador';
+                    roleBadge.classList.toggle('is-admin', isAdmin);
+                    roleBadge.classList.toggle('is-operador', !isAdmin);
+                }
                 pill.style.display = 'inline-flex';
                 return;
             } catch (e) {}
         }
         pill.style.display = 'none';
+    },
+
+    setModalFeedback(elId, type, message) {
+        const box = document.getElementById(elId);
+        if (!box) return;
+        box.className = 'modal-feedback-box';
+        if (!message) {
+            box.textContent = '';
+            return;
+        }
+        box.classList.add(type === 'error' ? 'is-error' : (type === 'ok' ? 'is-ok' : 'is-info'));
+        box.textContent = message;
+    },
+
+    openProfileModal() {
+        let u = null;
+        try {
+            const raw = localStorage.getItem('nfse_user');
+            u = raw ? JSON.parse(raw) : null;
+        } catch (_) {}
+
+        const displayName = u?.full_name || u?.username || 'Operador';
+        const initials = displayName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'OP';
+        const isAdmin = u?.role === 'admin';
+
+        const avatarEl = document.getElementById('profile-avatar-initials');
+        const nameEl = document.getElementById('profile-fullname');
+        const userEl = document.getElementById('profile-username');
+        const emailEl = document.getElementById('profile-email');
+        const badgeEl = document.getElementById('profile-role-badge');
+
+        if (avatarEl) avatarEl.innerText = initials;
+        if (nameEl) nameEl.innerText = displayName;
+        if (userEl) userEl.innerText = `@${u?.username || 'operador'}`;
+        if (emailEl) emailEl.innerText = u?.email || 'Sem e-mail cadastrado';
+        if (badgeEl) {
+            badgeEl.innerText = isAdmin ? 'Admin' : 'Operador';
+            badgeEl.classList.toggle('is-admin', isAdmin);
+            badgeEl.classList.toggle('is-operador', !isAdmin);
+        }
+
+        ['prof-current-pwd', 'prof-new-pwd', 'prof-confirm-pwd'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        this.setModalFeedback('prof-pwd-feedback', null, '');
+
+        openModal('modal-account-profile');
+        setTimeout(() => document.getElementById('prof-current-pwd')?.focus(), 40);
+    },
+
+    async submitChangeMyPassword() {
+        const currentPassword = document.getElementById('prof-current-pwd')?.value || '';
+        const newPassword = document.getElementById('prof-new-pwd')?.value || '';
+        const confirmPassword = document.getElementById('prof-confirm-pwd')?.value || '';
+
+        if (!currentPassword) {
+            return this.setModalFeedback('prof-pwd-feedback', 'error', 'Informe sua senha atual.');
+        }
+        if (newPassword.length < 4) {
+            return this.setModalFeedback('prof-pwd-feedback', 'error', 'A nova senha deve ter pelo menos 4 caracteres.');
+        }
+        if (newPassword !== confirmPassword) {
+            return this.setModalFeedback('prof-pwd-feedback', 'error', 'A confirmação da nova senha não confere.');
+        }
+
+        const btn = document.getElementById('btn-save-my-pwd');
+        const originalText = btn ? btn.innerText : 'Atualizar Senha';
+        if (btn) { btn.disabled = true; btn.innerText = 'Salvando...'; }
+        this.setModalFeedback('prof-pwd-feedback', null, '');
+
+        try {
+            await this.api('/auth/change-password', 'POST', {
+                current_password: currentPassword,
+                new_password: newPassword,
+            });
+            ['prof-current-pwd', 'prof-new-pwd', 'prof-confirm-pwd'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            closeModal('modal-account-profile');
+            completeTaskToast('Senha Alterada', 'Sua senha de acesso foi atualizada com sucesso.', 3500);
+        } catch (e) {
+            this.setModalFeedback('prof-pwd-feedback', 'error', e?.message || 'Não foi possível alterar a senha.');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerText = originalText; }
+        }
+    },
+
+    openServerUrlModal() {
+        const input = document.getElementById('server-url-input');
+        if (input) input.value = getApiBaseUrl();
+        this.setModalFeedback('server-url-status', null, '');
+        openModal('modal-server-url');
+        setTimeout(() => input?.focus(), 40);
+    },
+
+    async testServerUrl() {
+        const raw = (document.getElementById('server-url-input')?.value || '').trim().replace(/\/+$/, '');
+        if (raw && !/^https?:\/\//i.test(raw)) {
+            this.setModalFeedback('server-url-status', 'error', 'Informe uma URL válida iniciando com http:// ou https://.');
+            return false;
+        }
+
+        const btn = document.getElementById('btn-test-server-url');
+        const originalText = btn ? btn.innerText : 'Testar Conexão';
+        if (btn) { btn.disabled = true; btn.innerText = 'Testando...'; }
+        this.setModalFeedback('server-url-status', 'info', 'Verificando conexão com o servidor...');
+
+        try {
+            let res = await fetch(`${raw}/api/health`);
+            if (res.status === 404) {
+                res = await fetch(`${raw}/api/auth/status`);
+            }
+            if (!res.ok) {
+                throw new Error(`Servidor respondeu com HTTP ${res.status}`);
+            }
+            const data = await res.json().catch(() => ({}));
+            const ver = data?.version ? ` (v${data.version})` : '';
+            this.setModalFeedback('server-url-status', 'ok', `Conexão confirmada com ${raw || window.location.origin}${ver}.`);
+            return true;
+        } catch (e) {
+            this.setModalFeedback('server-url-status', 'error', `Falha ao conectar: ${e?.message || 'servidor inacessível'}`);
+            return false;
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerText = originalText; }
+        }
+    },
+
+    async saveServerUrl() {
+        const raw = (document.getElementById('server-url-input')?.value || '').trim().replace(/\/+$/, '');
+        if (raw && !/^https?:\/\//i.test(raw)) {
+            this.setModalFeedback('server-url-status', 'error', 'Informe uma URL válida iniciando com http:// ou https:// (ou deixe vazio para modo local).');
+            return;
+        }
+
+        const prev = getApiBaseUrl();
+        const saved = setApiBaseUrl(raw);
+        closeModal('modal-server-url');
+        this.updateServerConfigButton();
+
+        if (document.body.classList.contains('is-authenticated')) {
+            if (prev !== saved) {
+                localStorage.removeItem('nfse_token');
+                localStorage.removeItem('nfse_user');
+                window.location.reload();
+                return;
+            }
+            if (this.activePage === 'about') {
+                await loadSystemEnvironment();
+            }
+            completeTaskToast('Configuração Salva', saved ? `API apontada para ${saved}` : 'Usando servidor local atual.', 3500);
+        } else {
+            await this.showAuthScreen();
+            if (saved) {
+                this.setAuthNotice('info', `Conectado ao servidor central: ${saved}`);
+            }
+        }
+    },
+
+    async clearServerUrl() {
+        const input = document.getElementById('server-url-input');
+        if (input) input.value = '';
+        await this.saveServerUrl();
     },
 
     onGlobalClientChange() {
