@@ -327,10 +327,46 @@ body.theme-light .role-pill.is-admin {
   }
 }
 
-@media (max-width: 720px) {
-  .env-tiles-grid,
+@media (max-width: 768px) {
+  .about-env-card,
+  .users-section {
+    margin-bottom: 16px;
+  }
+  .env-header-title {
+    font-size: 14.5px !important;
+  }
+  .env-header-sub {
+    font-size: 12px;
+  }
+  .env-tiles-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
   .env-dirs-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .env-tile {
+    padding: 10px 12px;
+  }
+  .env-tile-label {
+    font-size: 10px;
+  }
+  .env-tile-value {
+    font-size: 12.5px;
+  }
+  .env-tile-value.is-mono {
+    font-size: 11.5px;
+  }
+  .env-dir-item {
+    padding: 10px 12px;
+  }
+  .env-dir-path {
+    font-size: 11px;
+  }
+  .env-wts-banner {
+    padding: 10px 12px;
+    font-size: 12px;
   }
   .users-search-wrap {
     width: 100%;
@@ -338,5 +374,28 @@ body.theme-light .role-pill.is-admin {
   }
   .users-toolbar {
     width: 100%;
+  }
+  .users-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 10.5px;
+  }
+  .user-display-name {
+    font-size: 12px;
+  }
+  .user-username-sub {
+    font-size: 10.5px;
+  }
+  .role-pill,
+  .status-pill {
+    padding: 3px 8px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 420px) {
+  .env-tiles-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

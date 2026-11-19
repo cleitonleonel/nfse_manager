@@ -113,20 +113,43 @@
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .metrics {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
   }
   .metric-card {
-    padding: 16px;
+    padding: 12px 14px;
   }
-  .metric-value {
-    font-size: 24px;
+  .metric-label {
+    font-size: 10.5px;
+    margin-bottom: 4px;
+    letter-spacing: 0.04em;
+  }
+  .metric-value,
+  .metric-value--currency {
+    font-size: 18px !important;
+    line-height: 1.2;
+  }
+  .metric-icon-box {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+  .metric-icon-box svg {
+    width: 17px;
+    height: 17px;
+  }
+  .metric-trend,
+  .metric-sub {
+    font-size: 11px;
+    margin-top: 8px !important;
   }
   #ranking-section {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
+    margin-bottom: 16px;
   }
   .about-form-2col {
     grid-template-columns: minmax(0, 1fr);
@@ -150,6 +173,7 @@
   }
   .comp-toolbar {
     width: 100%;
+    flex-wrap: wrap;
   }
   .comp-toolbar > * {
     flex: 1 1 auto;
@@ -159,6 +183,12 @@
     max-width: none !important;
   }
   .about-version-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 380px) {
+  .metrics {
     grid-template-columns: minmax(0, 1fr);
   }
 }

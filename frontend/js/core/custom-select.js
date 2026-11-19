@@ -20,18 +20,40 @@ const valueDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, '
 const indexDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
 
 let activeInstance = null;
+let lastWindowWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
 
 function closeActive() {
     if (activeInstance) activeInstance.close();
 }
 
+function isMobileOrTouchSheet() {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth <= 768 || (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
+}
+
 document.addEventListener('mousedown', (e) => {
     if (!activeInstance) return;
     if (activeInstance.panel.contains(e.target) || activeInstance.trigger.contains(e.target)) return;
+    if (performance.now() - activeInstance.openedAt < OPEN_GUARD_MS) return;
     closeActive();
 }, true);
 
-window.addEventListener('resize', closeActive);
+window.addEventListener('resize', () => {
+    if (!activeInstance) {
+        lastWindowWidth = window.innerWidth;
+        return;
+    }
+    const widthDelta = Math.abs(window.innerWidth - lastWindowWidth);
+    lastWindowWidth = window.innerWidth;
+    // No mobile (bottom sheet ou abertura do teclado virtual / barra de URL que altera apenas innerHeight),
+    // nunca fechar o select — apenas reposicionar.
+    if (activeInstance.panel.classList.contains('cs-sheet') || widthDelta < 40) {
+        activeInstance.position();
+        return;
+    }
+    closeActive();
+});
+
 document.addEventListener('scroll', (e) => {
     if (!activeInstance) return;
     if (activeInstance.panel.contains(e.target)) return;
@@ -67,6 +89,15 @@ class CustomSelect {
         select.classList.add('cs-native');
         select.tabIndex = -1;
         select.setAttribute('aria-hidden', 'true');
+
+        this.backdrop = document.createElement('div');
+        this.backdrop.className = 'cs-backdrop';
+        this.backdrop.setAttribute('aria-hidden', 'true');
+        this.backdrop.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (performance.now() - this.openedAt < OPEN_GUARD_MS) return;
+            this.close();
+        });
 
         this.panel = document.createElement('div');
         this.panel.className = 'cs-panel';
@@ -133,13 +164,67 @@ class CustomSelect {
         this.trigger.classList.toggle('cs-placeholder', !opt || opt.value === '');
     }
 
+    getFieldTitle() {
+        const explicit = this.select.getAttribute('aria-label') || this.select.dataset?.title;
+        if (explicit) return explicit.trim();
+
+        if (this.select.id) {
+            try {
+                const byFor = document.querySelector(`label[for="${CSS.escape(this.select.id)}"]`);
+                if (byFor && byFor.textContent) return byFor.textContent.trim();
+            } catch (_) {}
+        }
+
+        const groupLabel = this.select.closest('.form-group')?.querySelector('.form-label, label');
+        if (groupLabel && groupLabel.textContent) {
+            return groupLabel.textContent.trim();
+        }
+
+        const firstOpt = this.select.options[0];
+        if (firstOpt && firstOpt.value === '' && firstOpt.text) {
+            const cleaned = firstOpt.text.replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim();
+            if (cleaned) return cleaned;
+        }
+
+        return 'Selecionar opção';
+    }
+
     open() {
         if (this.select.disabled) return;
         closeActive();
         activeInstance = this;
+        lastWindowWidth = window.innerWidth;
         this.openedAt = performance.now();
 
         this.panel.innerHTML = '';
+
+        // Cabeçalho Material Design 3 para Modal Bottom Sheet (exibido via CSS em .cs-sheet)
+        const sheetHeader = document.createElement('div');
+        sheetHeader.className = 'cs-sheet-header';
+        const handle = document.createElement('div');
+        handle.className = 'cs-sheet-handle';
+        handle.setAttribute('aria-hidden', 'true');
+        const titleRow = document.createElement('div');
+        titleRow.className = 'cs-sheet-title-row';
+        const titleEl = document.createElement('span');
+        titleEl.className = 'cs-sheet-title';
+        titleEl.textContent = this.getFieldTitle();
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'cs-sheet-close';
+        closeBtn.setAttribute('aria-label', 'Fechar');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.close();
+        });
+        titleRow.appendChild(titleEl);
+        titleRow.appendChild(closeBtn);
+        sheetHeader.appendChild(handle);
+        sheetHeader.appendChild(titleRow);
+        this.panel.appendChild(sheetHeader);
+
         const total = this.select.options.length;
         if (total > SEARCH_THRESHOLD) {
             this.search = document.createElement('input');
@@ -164,12 +249,20 @@ class CustomSelect {
 
         const selected = this.list.querySelector('.cs-option.cs-selected');
         if (selected) selected.scrollIntoView({ block: 'nearest' });
-        (this.search || this.panel).focus({ preventScroll: true });
-        if (!this.search) this.panel.tabIndex = -1;
+
+        this.panel.tabIndex = -1;
+        if (this.search && !isMobileOrTouchSheet()) {
+            this.search.focus({ preventScroll: true });
+        } else {
+            this.panel.focus({ preventScroll: true });
+        }
     }
 
     close() {
         if (!this.isOpen()) return;
+        if (this.backdrop && this.backdrop.isConnected) {
+            this.backdrop.remove();
+        }
         this.panel.remove();
         this.trigger.setAttribute('aria-expanded', 'false');
         this.wrap.classList.remove('cs-open');
@@ -246,13 +339,19 @@ class CustomSelect {
         const vh = window.innerHeight;
         const margin = 8;
 
-        if (vw <= 600) {
-            // Mobile: bottom sheet de largura total
+        if (vw <= 768) {
+            // Mobile (M3 Modal Bottom Sheet de largura total)
             this.panel.classList.add('cs-sheet');
+            if (this.backdrop && !this.backdrop.isConnected) {
+                document.body.insertBefore(this.backdrop, this.panel);
+            }
             Object.assign(this.panel.style, { left: '', top: '', width: '', maxHeight: '' });
             return;
         }
         this.panel.classList.remove('cs-sheet');
+        if (this.backdrop && this.backdrop.isConnected) {
+            this.backdrop.remove();
+        }
 
         const width = Math.min(Math.max(rect.width, 340), vw - margin * 2);
         let left = rect.left;
@@ -325,3 +424,12 @@ export function enhanceSelects(root = document) {
 export function closeCustomSelects() {
     closeActive();
 }
+
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => enhanceSelects(document));
+    } else {
+        enhanceSelects(document);
+    }
+}
+

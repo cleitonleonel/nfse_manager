@@ -23,18 +23,43 @@
 .cs-trigger.cs-placeholder .cs-label { color: var(--text3); }
 .cs-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.cs-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 3999;
+  animation: csFadeIn 0.16s ease;
+}
+
 .cs-panel {
-  position: fixed; z-index: 2000; display: flex; flex-direction: column;
+  position: fixed; z-index: 4000; display: flex; flex-direction: column;
   background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden; outline: none;
   font-family: var(--sans);
 }
+
+.cs-sheet-header {
+  display: none;
+}
+
 .cs-search {
   margin: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border2);
   background: var(--bg3); color: var(--text); font-family: var(--sans); font-size: 13px; outline: none;
+  flex-shrink: 0;
 }
 .cs-search:focus { border-color: var(--accent); }
-.cs-list { overflow-y: auto; padding: 4px; flex: 1; min-height: 0; }
+
+/* Importante: flex: 0 1 auto (e NUNCA flex: 1 / flex-basis: 0%) para evitar colapso height: 0px em containers com height: auto no WebKit/Blink mobile */
+.cs-list {
+  flex: 0 1 auto;
+  max-height: 320px;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
 .cs-group + .cs-group { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 4px; }
 .cs-group-label {
   padding: 6px 10px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em;
@@ -49,9 +74,103 @@
 .cs-option.cs-disabled { opacity: 0.45; cursor: not-allowed; }
 .cs-empty { padding: 14px 10px; font-size: 12.5px; color: var(--text3); text-align: center; }
 
-/* Mobile: bottom sheet */
+/* Mobile: Material Design 3 Modal Bottom Sheet */
 .cs-panel.cs-sheet {
-  left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100% !important;
-  max-height: 70vh !important; border-radius: 14px 14px 0 0;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  max-height: 75dvh !important;
+  border-radius: 20px 20px 0 0;
+  border-bottom: none;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  animation: csSheetUp 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
-.cs-panel.cs-sheet .cs-option { padding: 12px; font-size: 14px; }
+
+.cs-panel.cs-sheet .cs-sheet-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cs-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border2);
+  margin-bottom: 10px;
+}
+
+.cs-sheet-title-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cs-sheet-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-sheet-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cs-sheet-close:active {
+  background: var(--bg4);
+}
+
+.cs-panel.cs-sheet .cs-search {
+  margin: 10px 12px 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
+.cs-panel.cs-sheet .cs-list {
+  flex: 0 1 auto;
+  max-height: calc(72dvh - 110px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 8px;
+}
+
+.cs-panel.cs-sheet .cs-option {
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  border-radius: 10px;
+  margin-bottom: 2px;
+}
+
+@keyframes csSheetUp {
+  from { transform: translateY(24px); opacity: 0.7; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes csFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
