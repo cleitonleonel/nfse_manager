@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -28,7 +29,7 @@ from app.core.config import (
     to_storage_relative_path,
 )
 from app.database import get_db
-from app.models import Client, Invoice
+from app.models import Client, Invoice, User
 from app.schemas import ClientResponse
 from app.services.email_service import EmailService
 from pynfse.adn import DpsSigner
@@ -37,6 +38,69 @@ logger = logging.getLogger(__name__)
 
 CERTIFICADOS_DIR = get_certs_dir()
 DOWNLOADS_DIR = get_downloads_dir()
+
+
+def _is_within_root(target: Path, root: Path) -> bool:
+    try:
+        target.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _validate_client_save_path(
+    raw_save_path: Optional[str],
+    current_user: User,
+    existing_save_path: Optional[str] = None,
+) -> Optional[str]:
+    """Restringe `save_path` do servidor a administradores e a subpastas válidas dentro de `NFSE_DOWNLOADS_DIR`."""
+    if raw_save_path is None:
+        return None
+    if "\x00" in raw_save_path:
+        raise HTTPException(status_code=400, detail="Caminho de salvamento inválido.")
+
+    cleaned = raw_save_path.strip()
+    existing_cleaned = (existing_save_path or "").strip()
+
+    if cleaned == existing_cleaned:
+        return cleaned
+
+    if getattr(current_user, "role", None) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas administradores podem definir ou alterar o diretório de salvamento no servidor.",
+        )
+
+    if not cleaned:
+        return ""
+
+    if ".." in Path(cleaned.replace("\\", "/")).parts:
+        raise HTTPException(status_code=400, detail="Caminho de salvamento inválido (traversal não permitido).")
+
+    downloads_root = get_downloads_dir()
+    allow_custom_outside = (os.getenv("NFSE_ALLOW_CUSTOM_CLIENT_SAVE_PATH") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    resolved = resolve_storage_path(cleaned, kind="downloads")
+    if resolved is None:
+        return ""
+
+    if _is_within_root(resolved, downloads_root):
+        return to_storage_relative_path(resolved, "downloads")
+
+    if allow_custom_outside:
+        return cleaned
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"O diretório do cliente deve estar dentro da pasta de downloads do servidor ({downloads_root}). "
+            "Para espelhar em sua máquina local, utilize a opção 'Pasta Local' em Notas Fiscais."
+        ),
+    )
 
 
 def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str]:
@@ -323,8 +387,10 @@ def create_client(
     usar_smtp_padrao: bool = Form(False),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Criar novo cliente com certificado e dados fiscais opcionais."""
+    validated_save_path = _validate_client_save_path(save_path, current_user) or ""
     cert_path = salvar_arquivo_certificado(cert_file, cnpj)
     cert_valid_until, cert_subject = extrair_metadados_certificado_pfx(cert_path, cert_password)
 
@@ -349,7 +415,7 @@ def create_client(
         cert_path=cert_path or "",
         cert_valid_until=cert_valid_until,
         cert_subject=cert_subject,
-        save_path=save_path or "",
+        save_path=validated_save_path,
         path_structure=path_structure or "",
         inscricao_municipal=inscricao_municipal,
         codigo_municipio=codigo_municipio or DEFAULT_CODIGO_MUNICIPIO,
@@ -451,11 +517,15 @@ def update_client(
     usar_smtp_padrao: bool = Form(False),
     cert_file: UploadFile = File(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Atualizar dados do cliente."""
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Client not found")
+
+    if save_path is not None:
+        save_path = _validate_client_save_path(save_path, current_user, existing_save_path=db_client.save_path)
 
     if usar_smtp_padrao:
         defaults = EmailService.obter_defaults_env()

@@ -4,7 +4,7 @@ import { maskCnpj, maskCep, formatCnpj, formatCep, maskPhone, openModal, closeMo
 import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
-import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport } from './pages/invoices.js';
+import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport, refreshLocalMirrorBar, chooseLocalMirror, clearLocalMirror, toggleAutoMirror, mirrorInvoicesNow } from './pages/invoices.js';
 import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs } from './pages/about.js';
 import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser } from './pages/users.js';
 import {
@@ -62,6 +62,7 @@ window.App = {
     // Invoices
     loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, loadCompetenciaReport, downloadCompetenciaReport,
     syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt,
+    refreshLocalMirrorBar, chooseLocalMirror, clearLocalMirror, toggleAutoMirror, mirrorInvoicesNow,
 
     // Emission & ADN
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,

@@ -49,7 +49,7 @@ def parse_next_version(current: str, target: str) -> str:
     return cleaned
 
 
-def _run_git(args: List[str], root: Path = ROOT) -> str:
+def _run_git(args: List[str], root: Path = ROOT, strip_output: bool = True) -> str:
     try:
         res = subprocess.run(
             ["git", *args],
@@ -60,12 +60,14 @@ def _run_git(args: List[str], root: Path = ROOT) -> str:
         )
         if res.returncode != 0:
             return ""
-        return res.stdout.strip()
+        return res.stdout.strip() if strip_output else res.stdout.rstrip("\r\n")
     except Exception:
         return ""
 
 
-def get_latest_git_tag(root: Path = ROOT) -> Optional[str]:
+def get_latest_git_tag(root: Path = ROOT, fetch_remote: bool = True) -> Optional[str]:
+    if fetch_remote:
+        _run_git(["fetch", "--tags", "origin", "--quiet"], root=root)
     tag = _run_git(["describe", "--tags", "--abbrev=0"], root=root)
     return tag or None
 
@@ -150,12 +152,14 @@ def collect_release_analysis(
 
     # Alterações pendentes na working tree (staged + unstaged + untracked)
     working_files: Dict[str, str] = {}
-    raw_status = _run_git(["status", "--porcelain"], root=root)
+    raw_status = _run_git(["status", "--porcelain"], root=root, strip_output=False)
     for line in raw_status.splitlines():
         if len(line) < 4:
             continue
         code = line[:2].strip() or "M"
         path_str = line[3:].strip()
+        if path_str.startswith('"') and path_str.endswith('"'):
+            path_str = path_str[1:-1]
         if " -> " in path_str:
             path_str = path_str.split(" -> ", 1)[1].strip()
         # Ignora artefatos locais de build, bancos SQLite dev e pastas temporárias
@@ -376,13 +380,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "target",
-        help="Nova versão (ex.: 0.2.0 ou 1.0.0) ou incremento semântico (patch | minor | major).",
+        nargs="?",
+        default="patch",
+        help="Nova versão (ex.: 0.2.0 ou 1.0.0) ou incremento semântico (patch | minor | major). Padrão: patch.",
     )
     parser.add_argument("--notes", default="", help="Resumo/destaques manuais para incluir na entrada do changelog.")
     parser.add_argument("--no-changelog", action="store_true", help="Não gera nem atualiza changelog.txt / CHANGELOG.md.")
+    parser.add_argument("--no-fetch", action="store_true", help="Não busca tags remotas antes de calcular o diff do changelog.")
     parser.add_argument("--dry-run", action="store_true", help="Simula a operação sem alterar arquivos no disco.")
     parser.add_argument("--commit", action="store_true", help="Cria commit git após atualizar versão e changelog.")
     parser.add_argument("--tag", action="store_true", help="Cria tag git anotada vX.Y.Z após atualizar (implica --commit se houver alterações).")
+    parser.add_argument("--push", action="store_true", help="Envia o commit (e a tag, se --tag for usado) para origin/HEAD, acionando o auto-release no GitHub Actions.")
     return parser
 
 
@@ -393,7 +401,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     pyproject_path = ROOT / "pyproject.toml"
     current_version = read_pyproject_version(pyproject_path) or "0.0.0"
     new_version = parse_next_version(current_version, args.target)
-    previous_tag = get_latest_git_tag(ROOT)
+    previous_tag = get_latest_git_tag(ROOT, fetch_remote=not args.no_fetch)
 
     print(f"Versão atual : {current_version} (última tag: {previous_tag or 'nenhuma'})")
     print(f"Nova versão  : {new_version}")
@@ -431,10 +439,16 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     for item in sorted(set(changed_files)):
         print(f" - {item}")
 
+    if args.push and not (args.commit or args.tag):
+        args.commit = True
+
     if args.commit or args.tag:
-        subprocess.run(["git", "add", "-A"], cwd=str(ROOT), check=True)
-        status_out = _run_git(["status", "--porcelain"], root=ROOT)
-        if status_out:
+        working_paths = list((analysis.get("working_files") or {}).keys())  # type: ignore[union-attr]
+        paths_to_stage = sorted(set(working_paths) | set(changed_files))
+        if paths_to_stage:
+            subprocess.run(["git", "add", "--", *paths_to_stage], cwd=str(ROOT), check=True)
+        staged_diff = _run_git(["diff", "--cached", "--name-only"], root=ROOT)
+        if staged_diff:
             subprocess.run(
                 ["git", "commit", "-m", f"chore(release): v{new_version}"],
                 cwd=str(ROOT),
@@ -442,8 +456,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             )
             print(f"Commit criado: chore(release): v{new_version}")
 
+    tag_name = f"v{new_version}"
     if args.tag:
-        tag_name = f"v{new_version}"
         subprocess.run(
             ["git", "tag", "-a", tag_name, "-m", f"Release {tag_name}"],
             cwd=str(ROOT),
@@ -451,9 +465,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         )
         print(f"Tag criada: {tag_name}")
 
+    if args.push:
+        push_cmd = ["git", "push", "origin", "HEAD"]
+        if args.tag:
+            push_cmd.append(tag_name)
+        subprocess.run(push_cmd, cwd=str(ROOT), check=True)
+        print(f"Push concluído para origin ({'commit + tag ' + tag_name if args.tag else 'commit; auto-release.yml criará tag/release e instaladores'}).")
+
     print("\nPróximos passos sugeridos para publicar no GitHub:")
     print(f"  1. Revise o changelog em: {ROOT / 'changelog.txt'}")
-    print("  2. Se ainda não criou commit/tag: ./scripts/release.sh (ou git push origin master --tags)")
+    if not args.push:
+        print("  2. Publique com: git push origin HEAD (auto-release.yml) ou python manage.py release --push")
     print(json.dumps({"previous_version": current_version, "new_version": new_version}, ensure_ascii=False))
     return 0
 

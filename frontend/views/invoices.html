@@ -49,6 +49,28 @@
       </div>
 
       <div class="card flex-card">
+        <div class="local-mirror-bar" id="local-mirror-bar">
+          <div class="local-mirror-info">
+            <span class="local-mirror-title">Espelhamento Local (Máquina do Operador)</span>
+            <span class="local-mirror-status" id="local-mirror-status">Nenhuma pasta local selecionada</span>
+          </div>
+          <div class="local-mirror-actions">
+            <label class="form-check-inline local-mirror-toggle" id="local-mirror-auto-wrap" style="display:none;">
+              <input type="checkbox" id="chk-auto-mirror" onchange="App.toggleAutoMirror(this.checked)">
+              <span>Espelhar após sincronizar</span>
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-choose-local-mirror" onclick="App.chooseLocalMirror()" title="Escolher pasta local na sua máquina para salvar cópia dos XMLs e PDFs">
+              <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Pasta Local
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-mirror-now" style="display:none;" onclick="App.mirrorInvoicesNow()" title="Copiar notas selecionadas (ou todas listadas) para a pasta local">
+              Espelhar Agora
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-local-mirror" style="display:none;" onclick="App.clearLocalMirror()" title="Remover pasta local configurada">
+              Limpar
+            </button>
+          </div>
+        </div>
         <div class="tbl-container scroll-area">
           <table class="tbl">
             <thead>

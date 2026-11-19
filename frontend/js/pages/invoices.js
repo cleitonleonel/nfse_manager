@@ -1,8 +1,16 @@
 import { api, getApiBaseUrl } from '../core/api.js';
 import { state } from '../core/state.js';
 import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceSummaryCells } from '../core/ui.js';
+import {
+    getLocalMirrorState,
+    chooseLocalMirrorDirectory,
+    clearLocalMirrorDirectory,
+    setAutoMirrorEnabled,
+    mirrorInvoicesToLocalDir,
+} from '../core/local-mirror.js';
 
 let progressCloseTimer = null;
+let loadedInvoicesCache = [];
 
 function extractDownloadFilename(contentDisposition, fallbackPath) {
     if (contentDisposition) {
@@ -107,14 +115,16 @@ export async function loadInvoices() {
     
     try {
         const invoices = await api(url);
+        loadedInvoicesCache = Array.isArray(invoices) ? invoices : [];
         const fmt = v => new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(v);
-        
-        if (invoices.length === 0) {
+        refreshLocalMirrorBar();
+
+        if (loadedInvoicesCache.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><div class="empty-state-title">Nenhuma nota encontrada</div></div></td></tr>`;
             return;
         }
         
-        tbody.innerHTML = invoices.map(i => renderInvoiceRow(i, fmt)).join('');
+        tbody.innerHTML = loadedInvoicesCache.map(i => renderInvoiceRow(i, fmt)).join('');
         initDatePickers();
         loadCompetenciaReport();
     } catch (e) {
@@ -309,7 +319,10 @@ export async function pollTask() {
             state.currentTask = null;
             completeTaskToast('Sincronização Concluída', res.message || 'Concluído com sucesso!', 5000);
             closeProgressIndicatorsAfterDelay(5000);
-            setTimeout(() => loadInvoices(), 1000);
+            setTimeout(async () => {
+                await loadInvoices();
+                await runAutoMirrorAfterSync();
+            }, 800);
         } else if (res.status === 'failed') {
             state.currentTask = null;
             failTaskToast('Falha na Tarefa', res.message || 'Erro desconhecido', 6000);
@@ -335,6 +348,7 @@ export async function syncCofreAdn() {
         });
         await loadInvoices();
         completeTaskToast('Cofre ADN Sincronizado', `${res.novas_notas} nova(s) nota(s), NSU atual: ${res.ultimo_nsu}.`, 4500);
+        await runAutoMirrorAfterSync();
     } catch (e) {
         failTaskToast('Erro no Cofre ADN', e.message);
         await uiAlert({ title: 'Erro ao sincronizar Cofre ADN', message: e.message, variant: 'error' });
@@ -510,4 +524,143 @@ export async function downloadCompetenciaReport(fmt = 'xlsx') {
     } catch (e) {
         await uiAlert({ title: 'Erro ao exportar relatório', message: e.message, variant: 'error' });
     }
+}
+
+export async function refreshLocalMirrorBar() {
+    const statusEl = document.getElementById('local-mirror-status');
+    const autoWrap = document.getElementById('local-mirror-auto-wrap');
+    const autoChk = document.getElementById('chk-auto-mirror');
+    const btnMirror = document.getElementById('btn-mirror-now');
+    const btnClear = document.getElementById('btn-clear-local-mirror');
+    const btnChoose = document.getElementById('btn-choose-local-mirror');
+    if (!statusEl) return;
+
+    const info = await getLocalMirrorState();
+    statusEl.classList.remove('is-active');
+
+    if (!info.supported) {
+        statusEl.innerText = 'Gravação direta em pasta local indisponível neste navegador (use Chrome/Edge HTTPS ou Download Lote .zip).';
+        if (autoWrap) autoWrap.style.display = 'none';
+        if (btnMirror) btnMirror.style.display = 'none';
+        if (btnClear) btnClear.style.display = 'none';
+        if (btnChoose) btnChoose.style.display = 'none';
+        return;
+    }
+
+    if (btnChoose) btnChoose.style.display = 'inline-flex';
+    if (info.configured) {
+        statusEl.classList.add('is-active');
+        const permNote = info.permission === 'granted' ? 'Pronta para espelhar' : 'Clique em "Espelhar Agora" para confirmar permissão';
+        statusEl.innerText = `Pasta ativa: ${info.folderName} (${permNote})`;
+        if (autoWrap) autoWrap.style.display = 'inline-flex';
+        if (autoChk) autoChk.checked = Boolean(info.autoMirror);
+        if (btnMirror) btnMirror.style.display = 'inline-flex';
+        if (btnClear) btnClear.style.display = 'inline-flex';
+    } else {
+        statusEl.innerText = 'Nenhuma pasta local selecionada (opcional — os arquivos continuam salvos no servidor).';
+        if (autoWrap) autoWrap.style.display = 'none';
+        if (btnMirror) btnMirror.style.display = 'none';
+        if (btnClear) btnClear.style.display = 'none';
+    }
+}
+
+export async function chooseLocalMirror() {
+    try {
+        const res = await chooseLocalMirrorDirectory();
+        await refreshLocalMirrorBar();
+        completeTaskToast('Pasta Local Configurada', `Espelhamento local definido para "${res.folderName}".`, 3500);
+    } catch (e) {
+        if (e?.name === 'AbortError') return;
+        await uiAlert({
+            title: 'Pasta Local',
+            message: e?.message || 'Não foi possível selecionar a pasta local.',
+            variant: 'warning',
+        });
+    }
+}
+
+export async function clearLocalMirror() {
+    await clearLocalMirrorDirectory();
+    await refreshLocalMirrorBar();
+}
+
+export function toggleAutoMirror(checked) {
+    setAutoMirrorEnabled(Boolean(checked));
+}
+
+function getInvoicesForMirror() {
+    const selectedIds = new Set(
+        Array.from(document.querySelectorAll('.row-check:checked')).map((el) => String(el.value))
+    );
+    if (selectedIds.size > 0) {
+        return loadedInvoicesCache.filter((inv) => selectedIds.has(String(inv.id)));
+    }
+    return loadedInvoicesCache;
+}
+
+async function runAutoMirrorAfterSync() {
+    const info = await getLocalMirrorState();
+    if (!info.supported || !info.configured || !info.autoMirror) return;
+    if (loadedInvoicesCache.length === 0) return;
+
+    const result = await mirrorInvoicesToLocalDir(loadedInvoicesCache, { interactive: false });
+    if (result?.skipped && result.reason === 'permission_required') {
+        await refreshLocalMirrorBar();
+        return;
+    }
+    if (result && !result.skipped && result.written > 0) {
+        completeTaskToast(
+            'Espelhamento Local Concluído',
+            `${result.written} novo(s) arquivo(s) salvo(s) em "${result.folderName}".`,
+            4500,
+        );
+    }
+}
+
+export async function mirrorInvoicesNow() {
+    const targetInvoices = getInvoicesForMirror();
+    if (targetInvoices.length === 0) {
+        await uiAlert({
+            title: 'Nenhuma nota disponível',
+            message: 'Sincronize ou liste notas fiscais antes de espelhar na pasta local.',
+            variant: 'info',
+        });
+        return;
+    }
+
+    showTaskToast('Espelhando na Pasta Local', 'Preparando transferência dos arquivos...', {
+        progress: 10,
+        autoProgress: false,
+    });
+
+    const result = await mirrorInvoicesToLocalDir(targetInvoices, {
+        interactive: true,
+        onProgress: ({ current, total, pct }) => {
+            setTaskProgress(pct, `Espelhando arquivo ${current} de ${total}...`, 'Espelhando na Pasta Local');
+        },
+    });
+
+    await refreshLocalMirrorBar();
+
+    if (result?.skipped) {
+        hideTaskToast();
+        if (result.reason === 'permission_required') {
+            await uiAlert({
+                title: 'Permissão necessária',
+                message: 'Autorize a gravação na pasta local selecionada quando o navegador solicitar.',
+                variant: 'warning',
+            });
+        } else if (result.reason === 'not_configured') {
+            await chooseLocalMirror();
+        }
+        return;
+    }
+
+    if (result.total === 0) {
+        completeTaskToast('Espelhamento Local', 'As notas listadas ainda não possuem XML/PDF baixados no servidor.', 4000);
+        return;
+    }
+
+    const msg = `${result.written} gravado(s), ${result.existing} já existente(s)${result.failed ? `, ${result.failed} falha(s)` : ''} em "${result.folderName}".`;
+    completeTaskToast('Espelhamento Concluído', msg, 5000);
 }

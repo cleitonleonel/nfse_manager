@@ -517,3 +517,81 @@ def test_catalogs_sync_requires_admin_role(monkeypatch, tmp_path):
         r_admin = client.post("/api/catalogs/sync", headers=admin_headers)
     assert r_admin.status_code == 200
     assert r_admin.json()["metadados"]["versao_db"] == "V0073"
+
+
+@pytest.mark.real_auth
+def test_client_save_path_restricted_to_admin_and_downloads_root(monkeypatch, tmp_path):
+    """Garante que apenas administradores alteram `save_path` e apenas dentro de `NFSE_DOWNLOADS_DIR`."""
+    _reset_users()
+    create_admin_user("admin_sp", "admin_sp@teste.com", "AdminPassword1!", "Admin SavePath")
+    admin_headers = _login_headers("admin_sp", "AdminPassword1!")
+    res_op = client.post(
+        "/api/auth/users",
+        headers=admin_headers,
+        json={
+            "username": "operador_sp",
+            "email": "op_sp@teste.com",
+            "full_name": "Operador SavePath",
+            "password": "OperPassword1!",
+            "role": "operador",
+        },
+    )
+    assert res_op.status_code == 200, res_op.text
+    op_headers = _login_headers("operador_sp", "OperPassword1!")
+
+    dl_root = tmp_path / "dl_root"
+    dl_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("NFSE_DOWNLOADS_DIR", str(dl_root))
+
+    # 1. Operador tentando definir save_path na criação -> 403
+    r_op_create = client.post(
+        "/api/clients",
+        headers=op_headers,
+        data={"cnpj": "11222333000144", "razao_social": "EMP OP LTDA", "save_path": "subpasta"},
+    )
+    assert r_op_create.status_code == 403
+
+    # 2. Operador cria cliente SEM save_path -> 200
+    r_op_ok = client.post(
+        "/api/clients",
+        headers=op_headers,
+        data={"cnpj": "11222333000145", "razao_social": "EMP OP OK LTDA"},
+    )
+    assert r_op_ok.status_code == 200, r_op_ok.text
+    cid = r_op_ok.json()["id"]
+
+    # 3. Operador tentando alterar save_path no PUT -> 403
+    r_op_put = client.put(
+        f"/api/clients/{cid}",
+        headers=op_headers,
+        data={"razao_social": "EMP OP OK LTDA", "save_path": "subpasta"},
+    )
+    assert r_op_put.status_code == 403
+
+    # 4. Admin tentando path traversal / fora de downloads -> 400
+    r_adm_bad = client.put(
+        f"/api/clients/{cid}",
+        headers=admin_headers,
+        data={"razao_social": "EMP OP OK LTDA", "save_path": "/etc"},
+    )
+    assert r_adm_bad.status_code == 400
+
+    # 5. Admin definindo subpasta válida dentro de downloads_dir -> 200 e caminho portável relativo
+    sub_dir = dl_root / "empresa_a"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    r_adm_ok = client.put(
+        f"/api/clients/{cid}",
+        headers=admin_headers,
+        data={"razao_social": "EMP OP OK LTDA", "save_path": str(sub_dir)},
+    )
+    assert r_adm_ok.status_code == 200, r_adm_ok.text
+    assert r_adm_ok.json()["save_path"] == "empresa_a"
+
+    # 6. Operador editando outro campo (sem mudar save_path) -> 200
+    r_op_keep = client.put(
+        f"/api/clients/{cid}",
+        headers=op_headers,
+        data={"razao_social": "EMP OP ATUALIZADA LTDA"},
+    )
+    assert r_op_keep.status_code == 200, r_op_keep.text
+    assert r_op_keep.json()["save_path"] == "empresa_a"

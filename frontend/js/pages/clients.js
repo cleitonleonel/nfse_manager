@@ -31,7 +31,24 @@ export async function loadClients() {
     }
 }
 
+function isCurrentUserAdmin() {
+    try {
+        const raw = localStorage.getItem('nfse_user');
+        return raw ? JSON.parse(raw)?.role === 'admin' : false;
+    } catch (_) {
+        return false;
+    }
+}
+
+export function syncClientSavePathVisibility() {
+    const group = document.getElementById('c-save-path-group');
+    if (group) {
+        group.style.display = isCurrentUserAdmin() ? 'block' : 'none';
+    }
+}
+
 export function renderClients() {
+    syncClientSavePathVisibility();
     const tbody = document.getElementById('clients-table-body');
     if (!tbody) return;
     
@@ -85,6 +102,7 @@ export function renderClients() {
 }
 
 export function editClient(id) {
+    syncClientSavePathVisibility();
     const c = state.clients.find(x => x.id === id);
     if (!c) return;
     
@@ -175,7 +193,9 @@ export async function saveClient() {
             const data = new FormData();
             data.append('razao_social', razao_social);
             data.append('description', descricao);
-            data.append('save_path', save_path);
+            if (isCurrentUserAdmin()) {
+                data.append('save_path', save_path);
+            }
             data.append('path_structure', path_structure);
             appendSmtpAndEmailFields(data, true);
             
@@ -200,7 +220,9 @@ export async function saveClient() {
             data.append('cnpj', cnpj);
             data.append('razao_social', razao_social);
             data.append('description', descricao);
-            data.append('save_path', save_path);
+            if (isCurrentUserAdmin() && save_path) {
+                data.append('save_path', save_path);
+            }
             data.append('path_structure', path_structure);
             appendSmtpAndEmailFields(data, false);
             

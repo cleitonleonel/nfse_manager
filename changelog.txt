@@ -2,6 +2,50 @@ NFSe Manager Pro — Registro Detalhado de Alterações (Changelog para Análise
 Gerado automaticamente por scripts/bump_version.py
 
 ================================================================================
+VERSAO v0.2.2  (Data: 2026-11-19 12:24:12)
+Base anterior: v0.2.1 (tag: v0.2.1)
+Commits incluidos: 0 | Arquivos pendentes no workspace: 12
+================================================================================
+
+[RESUMO / DESTAQUES DA VERSAO]
+Restricao de save_path de clientes para admin/subpastas validas, espelhamento local de downloads no navegador (File System Access API), ajuste de status na aba Sobre e comando unificado manage.py release.
+
+Resumo alteracoes locais (HEAD): 11 files changed, 497 insertions(+), 29 deletions(-)
+
+[ALTERACOES LOCAIS DETECTADAS NO WORKSPACE]
+  - [ M] backend/app/api/routers/clients.py
+  - [ M] frontend/css/pages/dashboard.css
+  - [ M] frontend/index.html
+  - [??] frontend/js/core/local-mirror.js
+  - [ M] frontend/js/main.js
+  - [ M] frontend/js/pages/about.js
+  - [ M] frontend/js/pages/clients.js
+  - [ M] frontend/js/pages/invoices.js
+  - [ M] frontend/views/invoices.html
+  - [ M] manage.py
+  - [ M] scripts/bump_version.py
+  - [ M] tests/test_router_auth_guards.py
+
+[INVENTARIO DE ARQUIVOS MODIFICADOS POR CAMADA (PARA ANALISE)]
+  [Backend (API, Serviços & Banco)] (1 arquivos)
+      M          backend/app/api/routers/clients.py
+  [Frontend SPA] (8 arquivos)
+      M          frontend/css/pages/dashboard.css
+      M          frontend/index.html
+      A (novo)   frontend/js/core/local-mirror.js
+      M          frontend/js/main.js
+      M          frontend/js/pages/about.js
+      M          frontend/js/pages/clients.js
+      M          frontend/js/pages/invoices.js
+      M          frontend/views/invoices.html
+  [Raiz & Configuração] (1 arquivos)
+      M          manage.py
+  [CI/CD & Automação] (1 arquivos)
+      M          scripts/bump_version.py
+  [Testes Automatizados] (1 arquivos)
+      M          tests/test_router_auth_guards.py
+
+================================================================================
 VERSAO v0.2.1  (Data: 2026-11-19 11:22:31)
 Base anterior: v0.2.0 (tag: v0.1.0)
 Commits incluidos: 32 | Arquivos pendentes no workspace: 0

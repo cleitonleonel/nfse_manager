@@ -269,11 +269,14 @@ function formatModeLabel(mode) {
 }
 
 function formatWorkerLabel(env) {
+    const sched = env?.scheduler || {};
     const mode = String(env?.scheduler_mode || env?.worker_status || '').toLowerCase();
-    if (mode === 'disabled' || env?.scheduler_active === false) return 'Desabilitado (Worker externo)';
-    if (env?.scheduler_is_leader === true || mode === 'leader') return 'Ativo (Líder)';
-    if (env?.scheduler_is_leader === false && mode === 'auto') return 'Em espera (Standby)';
-    if (mode === 'auto' || env?.scheduler_active === true) return 'Ativo (Auto)';
+    const enabled = sched.enabled ?? env?.scheduler_active;
+    const isLeader = sched.is_leader ?? env?.scheduler_is_leader;
+    if (mode === 'disabled' || enabled === false) return 'Desabilitado (Worker externo)';
+    if (isLeader === true || mode === 'leader') return 'Ativo (Líder)';
+    if (isLeader === false && (mode === 'auto' || enabled === true)) return 'Em espera (Standby)';
+    if (mode === 'auto' || enabled === true) return 'Ativo (Auto)';
     return env?.scheduler_mode || 'Ativo';
 }
 
@@ -291,8 +294,8 @@ export async function loadSystemEnvironment() {
         const env = await api('/system/environment');
         const dialect = env?.db_dialect || env?.database_dialect || env?.database?.dialect || env?.db_type || '';
         const opMode = env?.deployment_mode || env?.operation_mode || env?.mode || (env?.multiuser_ready ? 'server' : 'local');
-        const certsDir = env?.certs_dir || env?.directories?.certs_dir || env?.directories?.certs || '-';
-        const downloadsDir = env?.downloads_dir || env?.directories?.downloads_dir || env?.directories?.downloads || '-';
+        const certsDir = env?.paths?.certs_dir || env?.certs_dir || env?.directories?.certs_dir || env?.directories?.certs || '-';
+        const downloadsDir = env?.paths?.downloads_dir || env?.downloads_dir || env?.directories?.downloads_dir || env?.directories?.downloads || '-';
         const multiuserReady = Boolean(env?.multiuser_ready ?? String(dialect).toLowerCase().includes('postgres'));
 
         setText('env-db-type', formatDbLabel(dialect));

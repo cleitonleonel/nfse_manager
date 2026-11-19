@@ -6,6 +6,7 @@ Comandos disponíveis:
     python manage.py migrate
     python manage.py showmigrations
     python manage.py create_admin [--username USER] [--email EMAIL] [--password PASS]
+    python manage.py release [patch|minor|major|X.Y.Z] [--notes "RESUMO"] [--push]
 """
 
 from __future__ import annotations
@@ -91,6 +92,31 @@ def cmd_create_admin(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_release(args: argparse.Namespace) -> int:
+    """Atualiza versão, sincroniza manifestos/changelog e opcionalmente realiza commit/push."""
+    scripts_dir = ROOT_DIR / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import bump_version  # noqa: PLC0415
+
+    cli_args: list[str] = [args.target]
+    if args.notes:
+        cli_args.extend(["--notes", args.notes])
+    if args.no_changelog:
+        cli_args.append("--no-changelog")
+    if args.no_fetch:
+        cli_args.append("--no-fetch")
+    if args.dry_run:
+        cli_args.append("--dry-run")
+    elif not args.no_commit:
+        cli_args.append("--commit")
+    if args.tag:
+        cli_args.append("--tag")
+    if args.push:
+        cli_args.append("--push")
+    return bump_version.main(cli_args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="manage.py",
@@ -114,6 +140,25 @@ def build_parser() -> argparse.ArgumentParser:
         p_adm.add_argument("--email", help="E-mail do administrador", default=None)
         p_adm.add_argument("--password", help="Senha do administrador", default=None)
         p_adm.set_defaults(func=cmd_create_admin)
+
+    p_rel = subparsers.add_parser(
+        "release",
+        help="Incrementa a versão, gera changelog, cria commit e publica a release no GitHub.",
+    )
+    p_rel.add_argument(
+        "target",
+        nargs="?",
+        default="patch",
+        help="Versão alvo (X.Y.Z) ou incremento (patch | minor | major). Padrão: patch.",
+    )
+    p_rel.add_argument("--notes", default="", help="Resumo/destaques manuais para incluir no changelog.")
+    p_rel.add_argument("--no-changelog", action="store_true", help="Não atualiza CHANGELOG.md e changelog.txt.")
+    p_rel.add_argument("--no-fetch", action="store_true", help="Não busca tags remotas antes de calcular o diff.")
+    p_rel.add_argument("--no-commit", action="store_true", help="Apenas altera os arquivos sem criar commit git.")
+    p_rel.add_argument("--tag", action="store_true", help="Também cria tag local anotada vX.Y.Z (para release manual com --push).")
+    p_rel.add_argument("--push", action="store_true", help="Envia o commit para origin/HEAD (disparando auto-release.yml e instaladores).")
+    p_rel.add_argument("--dry-run", action="store_true", help="Simula a geração sem alterar arquivos.")
+    p_rel.set_defaults(func=cmd_release)
 
     return parser
 

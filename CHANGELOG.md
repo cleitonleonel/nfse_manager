@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.2 (2026-11-19)
+
+Comparativo a partir de `v0.2.1`.
+
+### Destaques
+
+Restricao de save_path de clientes para admin/subpastas validas, espelhamento local de downloads no navegador (File System Access API), ajuste de status na aba Sobre e comando unificado manage.py release.
+
+### Resumo por Camada
+
+- **Backend (API, Serviços & Banco)**: 1 arquivo(s)
+- **Frontend SPA**: 8 arquivo(s)
+- **Raiz & Configuração**: 1 arquivo(s)
+- **CI/CD & Automação**: 1 arquivo(s)
+- **Testes Automatizados**: 1 arquivo(s)
+
 ## v0.2.1 (2026-11-19)
 
 Comparativo a partir de `v0.1.0`.
