@@ -31,8 +31,8 @@ RUN set -eux; \
     && pip install --no-cache-dir poetry \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia manifesto de dependências da raiz
-COPY pyproject.toml poetry.lock* README.md ./
+# Copia manifesto de dependências e changelogs da raiz
+COPY pyproject.toml poetry.lock* README.md CHANGELOG.md* changelog.txt* ./
 
 # Instala dependências de produção
 RUN poetry install --only main --no-root

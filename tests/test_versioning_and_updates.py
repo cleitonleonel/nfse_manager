@@ -206,3 +206,28 @@ def test_bump_version_and_sync_all_manifests(tmp_path: Path):
     bump_version.upsert_changelog_md(md_file, "0.2.0", bump_version.format_changelog_md_entry(analysis))
     bump_version.upsert_changelog_md(md_file, "0.2.0", bump_version.format_changelog_md_entry(analysis))
     assert md_file.read_text(encoding="utf-8").count("## v0.2.0") == 1
+
+
+def test_local_changelog_returned_on_version_and_newer_installed_check_update(monkeypatch):
+    v_res = client.get("/api/system/version")
+    assert v_res.status_code == 200
+    assert v_res.json()["current_version"] == VERSION
+    assert f"v{VERSION}" in (v_res.json().get("changelog") or "")
+
+    monkeypatch.setattr(
+        system,
+        "_latest_release_data",
+        lambda: {
+            "tag_name": "v0.1.0",
+            "zipball_url": "https://example.com/release-0.1.0.zip",
+            "html_url": "https://example.com/release/0.1.0",
+            "body": "Initial Release antigo v0.1.0",
+        },
+    )
+    cu_res = client.get("/api/system/check-update")
+    assert cu_res.status_code == 200
+    payload = cu_res.json()
+    assert payload["update_available"] is False
+    assert payload["latest_version"] == "0.1.0"
+    assert f"v{VERSION}" in (payload.get("changelog") or "")
+    assert "Initial Release antigo" not in (payload.get("changelog") or "")

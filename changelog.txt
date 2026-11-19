@@ -1,0 +1,273 @@
+NFSe Manager Pro — Registro Detalhado de Alterações (Changelog para Análise)
+Gerado automaticamente por scripts/bump_version.py
+
+================================================================================
+VERSAO v0.2.0  (Data: 2026-11-18 12:26:50)
+Base anterior: v0.1.0 (tag: v0.1.0)
+Commits incluidos: 23 | Arquivos pendentes no workspace: 58
+================================================================================
+
+[RESUMO / DESTAQUES DA VERSAO]
+Suporte multiusuário com gestão de operadores (Admin/Operador), banco centralizado PostgreSQL, locks transacionais de DPS/Lote/Scheduler, compatibilidade Windows Server/WTS no Desktop Tauri, envio de suporte por E-mail+Telegram e scripts/CI para instaladores Windows (.exe/.msi) e Linux (.deb/.AppImage).
+
+Resumo git (v0.1.0..HEAD): 145 files changed, 28457 insertions(+), 2854 deletions(-)
+Resumo alteracoes locais (HEAD): 49 files changed, 3132 insertions(+), 574 deletions(-)
+
+[ALTERACOES POR CATEGORIA (COMMITS)]
+  * Novas Funcionalidades (5):
+      - [f8ffca4] (2026-11-17) feat: adiciona relatório por competência e aprimora ações de notas fiscais — cleiton
+      - [7f3c7c3] (2026-11-16) feat: adiciona autenticação JWT, migrações e ações ADN para notas fiscais — cleiton
+      - [61f73be] (2026-11-11) feat: adiciona criptografia de credenciais e conversão de HTML em XML/PDF — cleiton
+      - [081ea47] (2026-11-10) feat: adiciona fluxos de trabalho do GitHub Actions para lançamento automatizado e implantação de documentação — cleiton
+      - [8a8aaba] (2026-07-20) feat: geração local de PDF a partir de XML para notas fiscais e ajustes no download — cleiton
+  * Refatoração e Performance (3):
+      - [1a7c5b8] (2026-07-20) refactor: ajuste nas propriedades de grid para o portal de autenticação — cleiton
+      - [6c04c35] (2026-07-20) refactor: simplificação do download de arquivos e melhorias gerais — cleiton
+      - [b370a93] (2026-06-01) refactor: alteração de "Notes" para "Invoices" — cleiton
+  * Infraestrutura, Build e CI/CD (8):
+      - [fd45c03] (2026-11-17) chore: aprimora responsividade do frontend e adiciona menu lateral expansível — cleiton
+      - [ccffc1f] (2026-11-17) chore: ajusta layout de campos da emissão e adiciona demo ao README — cleiton
+      - [17a1a91] (2026-11-17) chore: adiciona dependências ARM no Docker do backend e documenta Raspberry Pi — cleiton
+      - [2600cbe] (2026-11-17) chore: adiciona dependências ARM no Docker do backend e documenta Raspberry Pi — cleiton
+      - [fc208f9] (2026-11-17) chore: ajusta diretórios de migrações no Docker do backend — cleiton
+      - [84ce95f] (2026-11-17) chore: atualiza cópia de assets no Dockerfile do frontend — cleiton
+      - [90d1992] (2026-11-10) chore: adiciona Docker para backend e ajusta máscara de CPF/CNPJ — cleiton
+      - [c5a7054] (2026-11-10) chore: adição de scripts para sincronização de versão e release — cleiton
+  * Testes e Qualidade (1):
+      - [2d77110] (2026-11-11) test: adiciona cobertura para conversão de notas, credenciais e exclusão de clientes — cleiton
+  * Documentação (4):
+      - [e63ed3f] (2026-11-16) docs: corrige diagramas Mermaid e contagem de routers REST — cleiton
+      - [f77ba52] (2026-11-10) docs: corrige descrição do site no MkDocs — cleiton
+      - [b4d4c3d] (2026-11-10) docs: atualização da arquitetura para PostgreSQL, Docker e backend app — cleiton
+      - [8d92f88] (2026-06-01) docs: atualização do README com imagens e descrição aprimorada — cleiton
+  * Melhorias Gerais (2):
+      - [c2dfd5e] (2026-11-17) chore: ajusta responsividade da topbar e abas da emissão — cleiton
+      - [5820d96] (2026-11-17) chore: aprimora responsividade de tabelas, dashboard e emissão — cleiton
+
+[ALTERACOES LOCAIS DETECTADAS NO WORKSPACE]
+  - [??] .github/workflows/desktop-installers.yml
+  - [ M] backend/app/api/deps.py
+  - [ M] backend/app/api/routers/analytics.py
+  - [ M] backend/app/api/routers/auth.py
+  - [ M] backend/app/api/routers/batch.py
+  - [ M] backend/app/api/routers/catalogs.py
+  - [ M] backend/app/api/routers/clients.py
+  - [ M] backend/app/api/routers/downloads.py
+  - [ M] backend/app/api/routers/emission.py
+  - [ M] backend/app/api/routers/invoices.py
+  - [ M] backend/app/api/routers/registry.py
+  - [ M] backend/app/api/routers/reports.py
+  - [ M] backend/app/api/routers/system.py
+  - [ M] backend/app/api/routers/tax.py
+  - [ M] backend/app/api/state.py
+  - [ M] backend/app/core/config.py
+  - [ M] backend/app/database.py
+  - [ M] backend/app/main.py
+  - [ M] backend/app/models.py
+  - [ M] backend/app/schemas.py
+  - [ M] backend/app/services/adn_service.py
+  - [ M] backend/app/services/batch_emission/processor.py
+  - [ M] backend/app/services/email_service.py
+  - [ M] backend/app/services/html_xml_service.py
+  - [ M] backend/app/services/scheduler_service.py
+  - [ A] backend/app/services/support_service.py
+  - [ M] backend/app/version.py
+  - [ M] backend/docker-compose.yml
+  - [ M] env.example
+  - [ M] frontend/css/components/modals.css
+  - [??] frontend/css/pages/about.css
+  - [ M] frontend/css/pages/auth.css
+  - [ M] frontend/css/style.css
+  - [ M] frontend/index.html
+  - [ M] frontend/js/core/api.js
+  - [ M] frontend/js/main.js
+  - [ M] frontend/js/pages/about.js
+  - [ M] frontend/js/pages/invoices.js
+  - [??] frontend/js/pages/users.js
+  - [ M] frontend/views/about.html
+  - [??] scripts/bump_version.py
+  - [ M] scripts/release.sh
+  - [ M] scripts/sync_version.py
+  - [ M] server.py
+  - [ M] tests/conftest.py
+  - [ M] tests/test_adn_emission_and_tax.py
+  - [ M] tests/test_client_deletion_and_certs.py
+  - [ M] tests/test_html_to_xml_and_pdf.py
+  - [ M] tests/test_manage_auth_worker_and_certs.py
+  - [??] tests/test_multiuser_wts_concurrency.py
+  - [??] tests/test_router_auth_guards.py
+  - [ M] tests/test_versioning_and_updates.py
+  - [ M] ui/README.md
+  - [??] ui/build_sidecar.ps1
+  - [ M] ui/build_sidecar.sh
+  - [ M] ui/dev.sh
+  - [??] ui/release.ps1
+  - [??] ui/src-tauri/
+
+[INVENTARIO DE ARQUIVOS MODIFICADOS POR CAMADA (PARA ANALISE)]
+  [Raiz & Configuração] (14 arquivos)
+      A          .dockerignore
+      A          .env.example
+      M          .gitignore
+      M          README.md
+      A          database/Dockerfile
+      A          database/docker-compose.yml
+      A          docker-compose.yml
+      M          env.example
+      A          manage.py
+      A          mkdocs.yml
+      M          poetry.lock
+      M          pyproject.toml
+      M          run_web.sh
+      M+M        server.py
+  [CI/CD & Automação] (6 arquivos)
+      A          .github/workflows/auto-release.yml
+      A (novo)   .github/workflows/desktop-installers.yml
+      A          .github/workflows/docs.yml
+      A (novo)   scripts/bump_version.py
+      A+M        scripts/release.sh
+      A+M        scripts/sync_version.py
+  [Backend (API, Serviços & Banco)] (56 arquivos)
+      A          backend/Dockerfile
+      D          backend/__init__.py
+      R097       backend/api/__init__.py	backend/app/api/__init__.py
+      D          backend/api/deps.py
+      R098       backend/api/routers/__init__.py	backend/app/api/routers/__init__.py
+      D          backend/api/routers/analytics.py
+      D          backend/api/routers/clients.py
+      D          backend/api/routers/downloads.py
+      R061       backend/api/routers/notes.py	backend/app/api/routers/invoices.py
+      D          backend/api/routers/reports.py
+      D          backend/api/routers/system.py
+      R100       backend/api/state.py	backend/app/api/state.py
+      A          backend/app/__init__.py
+      A+M        backend/app/api/deps.py
+      A+M        backend/app/api/routers/analytics.py
+      A+M        backend/app/api/routers/auth.py
+      A+M        backend/app/api/routers/batch.py
+      A+M        backend/app/api/routers/catalogs.py
+      A+M        backend/app/api/routers/clients.py
+      A+M        backend/app/api/routers/downloads.py
+      A+M        backend/app/api/routers/emission.py
+      M          backend/app/api/routers/invoices.py
+      A+M        backend/app/api/routers/registry.py
+      A+M        backend/app/api/routers/reports.py
+      A+M        backend/app/api/routers/system.py
+      A+M        backend/app/api/routers/tax.py
+      M          backend/app/api/state.py
+      A          backend/app/constants.py
+      A          backend/app/core/__init__.py
+      A+M        backend/app/core/config.py
+      A          backend/app/core/migrations.py
+      A          backend/app/core/security.py
+      A          backend/app/core/spreadsheets.py
+      A+M        backend/app/database.py
+      A+M        backend/app/main.py
+      A+M        backend/app/models.py
+      A+M        backend/app/schemas.py
+      A          backend/app/services/__init__.py
+      A+M        backend/app/services/adn_service.py
+      A          backend/app/services/batch_emission/__init__.py
+      A          backend/app/services/batch_emission/exporters.py
+      A          backend/app/services/batch_emission/importer.py
+      A+M        backend/app/services/batch_emission/processor.py
+      A          backend/app/services/batch_emission/service.py
+      A          backend/app/services/batch_emission/validator.py
+      A+M        backend/app/services/email_service.py
+      A+M        backend/app/services/html_xml_service.py
+      A          backend/app/services/lookup_service.py
+      A+M        backend/app/services/scheduler_service.py
+      A          backend/app/services/support_service.py
+      A+M        backend/app/version.py
+      D          backend/database.py
+      A+M        backend/docker-compose.yml
+      D          backend/main.py
+      D          backend/models.py
+      D          backend/schemas.py
+  [Documentação] (21 arquivos)
+      A          docs/api-referencia.md
+      M          docs/arquitetura-e-uso.md
+      A          docs/arquitetura.md
+      A          docs/assets/1.jpeg
+      A          docs/assets/2.jpeg
+      A          docs/assets/3.jpeg
+      A          docs/assets/4.jpeg
+      A          docs/assets/5.jpeg
+      A          docs/assets/6.jpeg
+      A          docs/assets/7.jpeg
+      A          docs/assets/logo-nfs-e-horizontal.png
+      A          docs/assets/logo-nfs-e-vertical.png
+      A          docs/assets/nfse_manager.png
+      A          docs/banco-de-dados.md
+      A          docs/desenvolvimento-ci.md
+      A          docs/desktop-tauri.md
+      A          docs/index.md
+      A          docs/instalacao.md
+      A          docs/nt008.pdf
+      A          docs/nt008.txt
+      A          docs/reforma-tributaria-adn.md
+  [Frontend SPA] (42 arquivos)
+      A          frontend/Dockerfile
+      M          frontend/css/base.css
+      M          frontend/css/components/buttons.css
+      M          frontend/css/components/cards.css
+      A          frontend/css/components/custom-select.css
+      M          frontend/css/components/dropdowns.css
+      M          frontend/css/components/forms.css
+      M+M        frontend/css/components/modals.css
+      M          frontend/css/components/tables.css
+      M          frontend/css/components/utils.css
+      M          frontend/css/layout.css
+      A (novo)   frontend/css/pages/about.css
+      A+M        frontend/css/pages/auth.css
+      M          frontend/css/pages/dashboard.css
+      A          frontend/css/pages/emission.css
+      M+M        frontend/css/style.css
+      M          frontend/css/variables.css
+      A          frontend/docker-compose.yml
+      M          frontend/favicon.ico
+      A          frontend/favicon.svg
+      M+M        frontend/index.html
+      M+M        frontend/js/core/api.js
+      A          frontend/js/core/custom-select.js
+      M          frontend/js/core/router.js
+      M          frontend/js/core/state.js
+      M          frontend/js/core/ui.js
+      M+M        frontend/js/main.js
+      M+M        frontend/js/pages/about.js
+      A          frontend/js/pages/batch.js
+      M          frontend/js/pages/clients.js
+      M          frontend/js/pages/dashboard.js
+      A          frontend/js/pages/emission.js
+      A+M        frontend/js/pages/invoices.js
+      D          frontend/js/pages/notes.js
+      A (novo)   frontend/js/pages/users.js
+      A          frontend/nginx.conf
+      M+M        frontend/views/about.html
+      M          frontend/views/clients.html
+      M          frontend/views/dashboard.html
+      A          frontend/views/emission.html
+      A          frontend/views/invoices.html
+      D          frontend/views/notes.html
+  [Testes Automatizados] (14 arquivos)
+      A+M        tests/conftest.py
+      A+M        tests/test_adn_emission_and_tax.py
+      A          tests/test_analytics_and_canceled_invoices.py
+      A          tests/test_batch_emission_v2.py
+      A          tests/test_batch_import_and_competencia.py
+      A+M        tests/test_client_deletion_and_certs.py
+      A          tests/test_full_coverage_nfse_manager.py
+      A+M        tests/test_html_to_xml_and_pdf.py
+      A+M        tests/test_manage_auth_worker_and_certs.py
+      A (novo)   tests/test_multiuser_wts_concurrency.py
+      A (novo)   tests/test_router_auth_guards.py
+      A          tests/test_security_and_credentials_encryption.py
+      A+M        tests/test_versioning_and_updates.py
+      A          tests/test_xml_canonicalization_nt.py
+  [Desktop Tauri & Empacotamento] (6 arquivos)
+      M+M        ui/README.md
+      A (novo)   ui/build_sidecar.ps1
+      M+M        ui/build_sidecar.sh
+      M          ui/dev.sh
+      A (novo)   ui/release.ps1
+      A (novo)   ui/src-tauri/

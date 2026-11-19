@@ -81,9 +81,7 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
   white-space: nowrap;
 }
 .tbl-cell-chip--value {

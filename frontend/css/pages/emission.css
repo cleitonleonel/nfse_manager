@@ -37,8 +37,8 @@
 /* ---------- Grid principal: formulário + prévia ---------- */
 .emission-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 20px;
   align-items: start;
 }
 .emission-form-column {
@@ -72,7 +72,7 @@
 }
 
 .emission-card-title {
-  font-size: 15px;
+  font-size: var(--fs-card-title);
   font-weight: 700;
   margin: 0;
   color: var(--text);
@@ -93,19 +93,20 @@
 }
 .emission-quick-toolbar .cs-wrap,
 .emission-quick-toolbar select.form-input {
-  width: 300px;
+  width: 280px;
   max-width: 100%;
 }
 .emission-quick-toolbar .form-input {
-  font-size: 13px;
-  height: 36px;
+  font-size: 12px;
+  height: var(--ctrl-h-sm);
   padding-top: 0;
   padding-bottom: 0;
 }
 .emission-quick-toolbar .btn {
-  height: 36px;
-  padding: 0 14px;
-  font-size: 12.5px;
+  height: var(--ctrl-h-sm);
+  min-height: var(--ctrl-h-sm);
+  padding: 0 12px;
+  font-size: 11.5px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -258,12 +259,16 @@
 }
 .emission-preview-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 10px;
-  align-items: stretch;
+  align-items: center;
   flex-wrap: wrap;
 }
-.emission-preview-actions .btn { flex: 1 1 140px; }
-.emission-preview-actions .btn-primary { flex-grow: 2; }
+.emission-preview-actions .btn {
+  flex: 0 0 auto;
+  min-width: 124px;
+  width: auto;
+}
 
 /* ---------- Abas Fila / Cadastros ---------- */
 .cadastros-recorrentes-grid {
@@ -277,8 +282,8 @@
  * RESPONSIVIDADE (container queries)
  * ========================================================= */
 
-/* Página: prévia desce para baixo do formulário */
-@container emission (max-width: 1080px) {
+/* Página: prévia desce para baixo do formulário somente quando o container realmente fica estreito */
+@container emission (max-width: 860px) {
   .emission-grid { grid-template-columns: minmax(0, 1fr); }
   .emission-preview-card { position: static; }
 }
@@ -420,7 +425,7 @@
   margin-bottom: 12px;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 920px) {
   .emission-grid { grid-template-columns: minmax(0, 1fr); }
   .emission-preview-card { position: static; }
 }
@@ -480,4 +485,6 @@
 @media (max-width: 480px) {
   .form-row-financeiro-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
   .form-row-financeiro-inputs > :first-child { grid-column: 1 / -1; }
+  .emission-preview-actions { justify-content: stretch; }
+  .emission-preview-actions .btn { flex: 1 1 calc(50% - 6px); min-width: 0; }
 }

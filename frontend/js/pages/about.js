@@ -332,6 +332,11 @@ export async function initAbout() {
             const installedVersion = document.getElementById('installed-version-tag');
             if (installedVersion) installedVersion.innerText = res.current_version;
 
+            const changelogPreview = document.getElementById('update-changelog-preview');
+            if (changelogPreview && res.changelog) {
+                changelogPreview.innerText = res.changelog;
+            }
+
             // update any badge that shows version (either explicit text or data-version attribute)
             // 1) elements explicitly marked with data-version
             const dataBadges = document.querySelectorAll('[data-version]');
@@ -403,13 +408,13 @@ function renderCatalogsStatus(status) {
         if (rem?.erro) {
             banner.classList.add('is-warn');
             guidance.innerText = `Base local ativa (${versaoDb}). Não foi possível consultar as fontes oficiais agora: ${rem.erro}`;
-        } else if (rem?.precisa_atualizar) {
+        } else if (rem?.atualizacao_disponivel ?? rem?.precisa_atualizar) {
             banner.classList.add('is-warn');
-            const novas = rem?.alteracoes?.join(', ') || rem?.remoto?.versao_db || 'nova versão disponível';
+            const novas = rem?.versao_remota || rem?.alteracoes?.join(', ') || rem?.remoto?.versao_db || 'nova versão disponível';
             guidance.innerText = `Atualização oficial disponível (${novas}). Administradores podem clicar em "Sincronizar Oficiais" para atualizar sem reinstalar o app.`;
         } else if (rem) {
             banner.classList.add('is-ready');
-            guidance.innerText = `Catálogos oficiais sincronizados com a Receita Federal (${versaoDb}) e Portal Nacional NFS-e.`;
+            guidance.innerText = `Catálogos oficiais sincronizados com a Receita Federal (${rem.versao_remota || versaoDb}) e Portal Nacional NFS-e.`;
         } else {
             banner.classList.add('is-ready');
             guidance.innerText = `Catálogos carregados (${versaoDb}). Clique em "Verificar Tabelas" para checar novidades na Receita Federal e gov.br/nfse.`;
@@ -421,33 +426,67 @@ export async function loadCatalogsStatus(checkRemote = false) {
     const card = document.getElementById('about-catalogs-card');
     if (!card) return;
     const btnCheck = document.getElementById('btn-check-catalogs');
-    if (btnCheck && checkRemote) btnCheck.disabled = true;
+    const originalCheckHtml = btnCheck ? btnCheck.innerHTML : '';
+    if (btnCheck && checkRemote) {
+        btnCheck.disabled = true;
+        btnCheck.innerText = 'Verificando...';
+    }
     try {
         const qs = checkRemote ? '?check_remote=true' : '';
         const res = await api(`/catalogs/status${qs}`);
         renderCatalogsStatus(res);
+        if (checkRemote && res?.remoto) {
+            const hasNew = Boolean(res.remoto.atualizacao_disponivel ?? res.remoto.precisa_atualizar);
+            if (res.remoto.erro) {
+                failTaskToast('Verificação de Catálogos', res.remoto.erro, 4500);
+            } else if (hasNew) {
+                completeTaskToast('Nova Versão Oficial', `Disponível na RFB: ${res.remoto.versao_remota || 'atualização encontrada'}.`, 5000);
+            } else {
+                completeTaskToast('Tabelas Atualizadas', `Base local já está na última versão RFB (${res.versao_db || 'OK'}).`, 3500);
+            }
+        }
     } catch (e) {
         setText('cat-sync-guidance', `Erro ao consultar catálogos: ${e.message}`);
+        if (checkRemote) {
+            failTaskToast('Erro ao Verificar Tabelas', e.message || 'Falha na consulta oficial.');
+        }
     } finally {
-        if (btnCheck) btnCheck.disabled = false;
+        if (btnCheck) {
+            btnCheck.disabled = false;
+            if (checkRemote) btnCheck.innerHTML = originalCheckHtml;
+        }
     }
 }
 
 export async function syncOfficialCatalogs() {
     const btn = document.getElementById('btn-sync-catalogs');
-    if (btn) btn.disabled = true;
-    const taskId = `cat-sync-${Date.now()}`;
-    showTaskToast(taskId, 'Sincronizando tabelas oficiais (RFB / gov.br)...');
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Sincronizando...';
+    }
+    showTaskToast(
+        'Catálogos Oficiais',
+        'Consultando API da Receita Federal e Portal Nacional NFS-e...',
+        { progress: 25, autoProgress: true },
+    );
     try {
-        setTaskProgress(taskId, 35, 'Baixando CST, cClassTrib, 920 NBS e Anexos VII/VIII...');
-        const res = await api('/catalogs/sync?force=true', { method: 'POST' });
+        setTaskProgress(45, 'Baixando CST, cClassTrib, 920 NBS e Anexos VII/VIII...', 'Catálogos Oficiais');
+        const res = await api('/catalogs/sync?force=true', 'POST');
         const meta = res?.metadados || {};
         renderCatalogsStatus(meta);
-        completeTaskToast(taskId, `Tabelas oficiais atualizadas (${meta.versao_db || 'OK'}).`);
+        completeTaskToast(
+            'Catálogos Sincronizados',
+            `Tabelas oficiais atualizadas (${meta.versao_db || 'OK'}).`,
+            4500,
+        );
     } catch (e) {
-        failTaskToast(taskId, `Falha ao sincronizar catálogos: ${e.message}`);
+        failTaskToast('Falha na Sincronização', e.message || 'Erro ao sincronizar catálogos.');
     } finally {
-        if (btn) btn.disabled = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
     }
 }
 

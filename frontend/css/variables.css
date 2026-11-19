@@ -22,9 +22,15 @@
   --sans:     'Outfit', sans-serif;
   --mono:     'JetBrains Mono', monospace;
   --r:        10px;
-  --r2:       16px;
-  --ctrl-h:   40px;
-  --ctrl-h-sm: 34px;
+  --r2:       14px;
+  --ctrl-h:   36px;
+  --ctrl-h-sm: 30px;
+  --fs-page-title:    17px;
+  --fs-card-title:    14.5px;
+  --fs-section-title: 12.5px;
+  --fs-body:          13px;
+  --fs-label:         11.5px;
+  --fs-caption:       11px;
   --shadow:   0 10px 30px -10px rgba(0,0,0,0.5);
 }
 

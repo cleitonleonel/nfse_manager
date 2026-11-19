@@ -1,6 +1,6 @@
 <div class="page-content" id="page-about">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-shrink: 0;">
-        <h2 style="font-size:24px; font-weight:700;">Sistema &amp; Administração</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-shrink: 0;">
+        <h2 style="font-size:var(--fs-page-title); font-weight:700;">Sistema &amp; Administração</h2>
     </div>
 
     <!-- AMBIENTE MULTIUSUÁRIO & INFRAESTRUTURA -->
@@ -170,25 +170,25 @@
     </div>
 
     <div class="card glass">
-        <div style="display:flex; align-items:center; gap:24px; margin-bottom:40px; flex-wrap:wrap;">
-            <div style="width:72px; height:72px; background:linear-gradient(135deg, var(--accent), #1d4ed8); border-radius:18px; display:flex; align-items:center; justify-content:center; box-shadow:0 12px 30px rgba(59,130,246,0.4);">
-                <svg viewBox="0 0 24 24" style="width:36px; height:36px; fill:#fff;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <div style="display:flex; align-items:center; gap:18px; margin-bottom:24px; flex-wrap:wrap;">
+            <div style="width:56px; height:56px; background:linear-gradient(135deg, var(--accent), #1d4ed8); border-radius:14px; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(59,130,246,0.35); flex-shrink:0;">
+                <svg viewBox="0 0 24 24" style="width:28px; height:28px; fill:#fff;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             </div>
             <div>
-                <h3 style="font-size:24px; font-weight:700; color:var(--text); margin-bottom:6px;">NFSe Manager Pro</h3>
-                <div style="font-size:15px; color:var(--text3); display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
+                <h3 style="font-size:var(--fs-page-title); font-weight:700; color:var(--text); margin-bottom:4px;">NFSe Manager Pro</h3>
+                <div style="font-size:var(--fs-body); color:var(--text3); display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
                     <span class="badge" data-version style="background: var(--bg4); color: var(--text2); border: 1px solid var(--border);">v-</span>
                     <span>Sistema Inteligente de Gestão Fiscal e Automação</span>
                 </div>
             </div>
         </div>
 
-        <div style="margin-bottom:40px; line-height: 1.6; color: var(--text2);">
-            <p style="margin-bottom: 16px; font-size: 16px;">
+        <div style="margin-bottom:28px; line-height: 1.55; color: var(--text2);">
+            <p style="margin-bottom: 12px; font-size: var(--fs-body);">
                 O <strong>NFSe Manager Pro</strong> é uma solução robusta desenvolvida para centralizar e automatizar a gestão de Notas Fiscais de Serviço Eletrônicas. 
                 Nossa plataforma elimina a necessidade de processos manuais de download e conferência, integrando-se diretamente aos portais nacionais e municipais.
             </p>
-            <p style="font-size: 16px;">
+            <p style="font-size: var(--fs-body);">
                 Focado em eficiência operacional e inteligência de dados, o sistema não apenas armazena seus documentos fiscais, mas os transforma em indicadores financeiros estratégicos para a tomada de decisão.
             </p>
         </div>
@@ -270,9 +270,11 @@
                         <textarea id="sup-msg" class="form-input" style="height:100px; resize:none; padding:12px;" placeholder="Dúvidas, sugestões ou críticas..."></textarea>
                     </label>
                 </div>
-                <button class="btn btn-primary" onclick="App.sendSupportMessage()" id="btn-send-sup" style="width:100%;">
-                    Enviar Mensagem
-                </button>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn btn-primary" onclick="App.sendSupportMessage()" id="btn-send-sup" style="min-width:160px;">
+                        Enviar Mensagem
+                    </button>
+                </div>
             </div>
 
             <!-- UPDATE CARD -->
@@ -308,15 +310,17 @@
                         <div style="font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Novidades desta release</div>
                         <div id="update-changelog-preview" style="font-size:12px; color:var(--text2); line-height:1.5; max-height:120px; overflow:auto; white-space:pre-line;">-</div>
                     </div>
-                    <button class="btn btn-secondary" onclick="App.checkUpdates()" id="btn-check-update" style="width: 100%;">
-                        Verificar nova versão
-                    </button>
-                    <button class="btn btn-primary" onclick="App.startUpdateDownload()" id="btn-download-update" style="width: 100%; display:none;">
-                        Baixar atualização
-                    </button>
-                    <button class="btn btn-primary" onclick="App.applyDownloadedUpdate()" id="btn-apply-update" style="width: 100%; display:none;">
-                        Reiniciar e aplicar
-                    </button>
+                    <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; width:100%;">
+                        <button class="btn btn-secondary" onclick="App.checkUpdates()" id="btn-check-update" style="min-width:170px;">
+                            Verificar nova versão
+                        </button>
+                        <button class="btn btn-primary" onclick="App.startUpdateDownload()" id="btn-download-update" style="min-width:170px; display:none;">
+                            Baixar atualização
+                        </button>
+                        <button class="btn btn-primary" onclick="App.applyDownloadedUpdate()" id="btn-apply-update" style="min-width:170px; display:none;">
+                            Reiniciar e aplicar
+                        </button>
+                    </div>
                 </div>
 
             </div>

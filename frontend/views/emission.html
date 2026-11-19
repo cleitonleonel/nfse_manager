@@ -2,8 +2,8 @@
   <!-- HEADER & TABS -->
   <div class="card glass emission-header-bar">
     <div>
-      <h2 style="font-size:19px; font-weight:700; margin:0;">Emissor ADN Nacional v1.01 &amp; Reforma Tributária (IBS/CBS)</h2>
-      <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Emissão em 1 clique com validação XSD oficial, assinatura digital A1, contingência offline e matriz do Anexo VIII</div>
+      <h2 style="font-size:var(--fs-page-title); font-weight:700; margin:0;">Emissor ADN Nacional v1.01 &amp; Reforma Tributária (IBS/CBS)</h2>
+      <div style="font-size:12px; color:var(--text3); margin-top:3px;">Emissão em 1 clique com validação XSD oficial, assinatura digital A1, contingência offline e matriz do Anexo VIII</div>
     </div>
     <div class="emission-tabs-group">
       <button class="btn btn-primary btn-sm" id="tab-btn-emitir" onclick="App.switchEmissionTab('emitir')">Nova Emissão (DPS)</button>
@@ -114,7 +114,7 @@
           <div class="form-group" style="margin-bottom:0;">
             <div class="field-label-row">
               <label class="form-label" title="Classificação NBS (Anexo VIII - 9 dígitos)">Classificação NBS (Anexo VIII - 9 dígitos)</label>
-              <button type="button" id="btn-show-all-nbs" class="field-action-link" onclick="App.loadAllNbsOptions()" title="Carregar todas as 676 nomenclaturas NBS do catálogo oficial">Ver todas as NBS</button>
+              <button type="button" id="btn-show-all-nbs" class="field-action-link" onclick="App.loadAllNbsOptions()" title="Carregar todas as 920 nomenclaturas NBS do catálogo oficial">Ver todas as NBS</button>
             </div>
             <select class="form-input" id="em-cnbs-select" onchange="App.onSelectNbsOption(this.value)">
               <option value="115021000">115021000 — Programas não customizados</option>
@@ -229,8 +229,8 @@
 
     <!-- COLUNA DIREITA: CARD DE CONFERÊNCIA PRÉVIA -->
     <div class="card emission-preview-card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h3 style="font-size:16px; font-weight:700; margin:0;">Conferência Prévia da Nota</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+        <h3 style="font-size:var(--fs-card-title); font-weight:700; margin:0;">Conferência Prévia da Nota</h3>
         <span id="em-xsd-badge" class="badge" style="background:rgba(34,197,94,0.15); color:var(--green); font-weight:600;">XSD v1.01 OK</span>
       </div>
 
@@ -265,8 +265,8 @@
         </div>
 
         <div style="border-top:1px solid var(--border); margin-top:10px; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-size:14px; font-weight:700;">Valor Líquido a Receber:</span>
-          <span id="prev-valor-liquido" style="font-size:18px; font-weight:700; color:var(--green); font-family:var(--mono);">R$ 1.500,00</span>
+          <span style="font-size:13px; font-weight:700;">Valor Líquido a Receber:</span>
+          <span id="prev-valor-liquido" style="font-size:15.5px; font-weight:700; color:var(--green); font-family:var(--mono);">R$ 1.500,00</span>
         </div>
       </div>
 
@@ -302,8 +302,8 @@
       <div class="card batch-section-card">
         <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:12px;">
           <div>
-            <h3 style="font-size:16px; font-weight:700; margin:0;">Importar Planilha de Notas (CSV / XLSX)</h3>
-            <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Importe as notas para revisão e validação em 3 níveis (Estrutural, Cadastral e Fiscal/XSD) antes de transmitir ao ADN.</div>
+            <h3 style="font-size:var(--fs-card-title); font-weight:700; margin:0;">Importar Planilha de Notas (CSV / XLSX)</h3>
+            <div style="font-size:12px; color:var(--text3); margin-top:3px;">Importe as notas para revisão e validação em 3 níveis (Estrutural, Cadastral e Fiscal/XSD) antes de transmitir ao ADN.</div>
           </div>
           <div class="batch-toolbar-group">
             <select class="form-input form-input-sm" id="batch-csv-delimiter" style="width:auto; min-width:140px;">
@@ -453,8 +453,8 @@
       <div class="card batch-section-card">
         <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
           <div>
-            <h3 style="font-size:16px; font-weight:700; margin:0;">Emissão Rápida em Lote por Cadastros Recorrentes</h3>
-            <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Selecione os tomadores cadastrados e um serviço padrão para gerar, assinar e transmitir múltiplas notas rapidamente.</div>
+            <h3 style="font-size:var(--fs-card-title); font-weight:700; margin:0;">Emissão Rápida em Lote por Cadastros Recorrentes</h3>
+            <div style="font-size:12px; color:var(--text3); margin-top:3px;">Selecione os tomadores cadastrados e um serviço padrão para gerar, assinar e transmitir múltiplas notas rapidamente.</div>
           </div>
           <button class="btn btn-primary" id="btn-emitir-lote" onclick="App.submitEmitirLote()">Emitir Lote Selecionado</button>
         </div>
@@ -512,8 +512,8 @@
     <div class="card" style="padding:22px;">
       <div class="card-header-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
         <div>
-          <h3 style="font-size:16px; font-weight:700; margin:0;">Fila de Contingência &amp; DPS Pendentes</h3>
-          <div style="font-size:12.5px; color:var(--text3); margin-top:3px;">Notas geradas offline ou durante instabilidade da Sefin prontas para retransmissão automática ou manual em lote.</div>
+          <h3 style="font-size:var(--fs-card-title); font-weight:700; margin:0;">Fila de Contingência &amp; DPS Pendentes</h3>
+          <div style="font-size:12px; color:var(--text3); margin-top:3px;">Notas geradas offline ou durante instabilidade da Sefin prontas para retransmissão automática ou manual em lote.</div>
         </div>
         <button class="btn btn-primary" onclick="App.reenviarFilaContingencia()">Reenviar Todas as Pendentes</button>
       </div>

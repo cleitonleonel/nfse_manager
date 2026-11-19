@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import re
 import shutil
 import shlex
 import subprocess
@@ -63,6 +64,40 @@ def _version_tuple(version: str) -> tuple[int, ...]:
         except ValueError:
             break
     return tuple(parts) if parts else (0,)
+
+
+def _read_local_changelog(version: str | None = None) -> str | None:
+    """Lê as notas da versão atual a partir de `CHANGELOG.md` ou `changelog.txt` locais."""
+    clean_ver = (version or CURRENT_VERSION or "").strip().removeprefix("v")
+    md_path = PROJECT_ROOT / "CHANGELOG.md"
+    if md_path.exists():
+        try:
+            content = md_path.read_text(encoding="utf-8", errors="ignore").strip()
+            if content:
+                if clean_ver:
+                    pattern = re.compile(
+                        rf"(^##\s+v?{re.escape(clean_ver)}\b.*?)(?=^##\s+v?\d|\Z)",
+                        re.MULTILINE | re.DOTALL,
+                    )
+                    match = pattern.search(content)
+                    if match:
+                        return match.group(1).strip()
+                first_section = re.search(r"(^##\s+.+?)(?=^##\s+|\Z)", content, re.MULTILINE | re.DOTALL)
+                if first_section:
+                    return first_section.group(1).strip()
+                return content[:4000]
+        except Exception:
+            pass
+
+    txt_path = PROJECT_ROOT / "changelog.txt"
+    if txt_path.exists():
+        try:
+            content = txt_path.read_text(encoding="utf-8", errors="ignore").strip()
+            if content:
+                return content[:4000]
+        except Exception:
+            pass
+    return None
 
 
 def _latest_release_data() -> dict:
@@ -275,10 +310,24 @@ async def send_support_message(
 @router.get("/system/check-update")
 async def check_system_update():
     """Verificar atualizações do sistema."""
+    local_changelog = _read_local_changelog(CURRENT_VERSION)
     try:
         data = _latest_release_data()
         latest_tag = (data.get("tag_name") or "").removeprefix("v")
-        update_available = _version_tuple(latest_tag) > _version_tuple(CURRENT_VERSION)
+        current_tuple = _version_tuple(CURRENT_VERSION)
+        latest_tuple = _version_tuple(latest_tag)
+        update_available = latest_tuple > current_tuple
+
+        if update_available:
+            changelog = data.get("body") or local_changelog
+            msg = "Nova versão disponível!"
+        else:
+            changelog = local_changelog or data.get("body")
+            msg = (
+                "Você já está em uma versão mais recente que a última release publicada no GitHub."
+                if current_tuple > latest_tuple and latest_tag
+                else "Você está na versão mais recente."
+            )
 
         return {
             "current_version": CURRENT_VERSION,
@@ -286,21 +335,22 @@ async def check_system_update():
             "update_available": update_available,
             "download_url": data.get("html_url"),
             "zipball_url": data.get("zipball_url"),
-            "changelog": data.get("body"),
-            "msg": "Nova versão disponível!" if update_available else "Você está na versão mais recente.",
+            "changelog": changelog,
+            "msg": msg,
         }
     except HTTPException as exc:
         if exc.status_code == 502:
             return {
                 "current_version": CURRENT_VERSION,
                 "update_available": False,
+                "changelog": local_changelog,
                 "error": exc.detail,
                 "msg": "Não foi possível consultar o GitHub agora.",
             }
         raise
     except Exception as e:
         logger.error("Erro ao verificar atualização: %s", e, exc_info=True)
-        return {"current_version": CURRENT_VERSION, "error": str(e)}
+        return {"current_version": CURRENT_VERSION, "changelog": local_changelog, "error": str(e)}
 
 
 def _is_dir_writable(path: Path) -> bool:
@@ -434,8 +484,11 @@ def apply_downloaded_update(
 
 @router.get("/system/version")
 def get_system_version():
-    """Retorna a versão embutida lida do pyproject.toml sem consultar o GitHub."""
-    return {"current_version": CURRENT_VERSION}
+    """Retorna a versão embutida lida do pyproject.toml e o changelog local sem consultar o GitHub."""
+    return {
+        "current_version": CURRENT_VERSION,
+        "changelog": _read_local_changelog(CURRENT_VERSION),
+    }
 
 
 @router.get("/system/list-folders")

@@ -1,6 +1,11 @@
-name: Auto Release on label
+name: Auto Release
 
 on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
   pull_request:
     types: [closed]
     branches:
@@ -12,9 +17,46 @@ permissions:
   pull-requests: read
 
 jobs:
-  release:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release')
+  check:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release'))
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      should_release: ${{ steps.meta.outputs.should_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version vs git tags
+        id: meta
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+          TAG="v${VERSION}"
+          git fetch --tags origin
+          SHOULD_RELEASE="false"
+          if [[ "$VERSION" != *"-"* && "$VERSION" != *"+"* ]]; then
+            if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+              SHOULD_RELEASE="true"
+            fi
+          fi
+          echo "Detected version=${VERSION}, tag=${TAG}, should_release=${SHOULD_RELEASE}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: v${{ steps.version.outputs.version }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -58,14 +100,27 @@ jobs:
           VERSION=$(PYTHONPATH=backend poetry run python -c "from app.version import VERSION; print(VERSION)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Skip pre-releases
+      - name: Extract changelog for release
+        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Detected version: $VERSION"
-          if [[ "$VERSION" == *"-"* || "$VERSION" == *"+"* ]]; then
-            echo "Pre-release detected. Release will not be created automatically."
-            exit 0
-          fi
+          python3 - <<'PY'
+          import os, pathlib, re
+
+          version = os.environ["VERSION"]
+          out = pathlib.Path("/tmp/release_notes.md")
+          notes = ""
+          md = pathlib.Path("CHANGELOG.md")
+          if md.exists():
+              txt = md.read_text(encoding="utf-8", errors="ignore").strip()
+              m = re.search(rf"(^##\s+v?{re.escape(version)}\b.*?)(?=^##\s+v?\d|\Z)", txt, re.MULTILINE | re.DOTALL)
+              if m:
+                  notes = m.group(1).strip()
+          if not notes and pathlib.Path("changelog.txt").exists():
+              notes = pathlib.Path("changelog.txt").read_text(encoding="utf-8", errors="ignore").strip()[:8000]
+          out.write_text(notes or f"Release v{version}", encoding="utf-8")
+          PY
 
       - name: Create tag
         env:
@@ -86,7 +141,15 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
+          body_path: /tmp/release_notes.md
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  desktop-installers:
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-installers.yml
+    with:
+      tag_name: ${{ needs.release.outputs.tag_name }}
