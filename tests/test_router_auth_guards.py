@@ -595,3 +595,94 @@ def test_client_save_path_restricted_to_admin_and_downloads_root(monkeypatch, tm
     )
     assert r_op_keep.status_code == 200, r_op_keep.text
     assert r_op_keep.json()["save_path"] == "empresa_a"
+
+
+@pytest.mark.real_auth
+def test_clear_local_invoices_admin_only_and_unlinks_batch_items():
+    """Garante que apenas admin limpa notas da base local e que FKs de batch_import_items são desvinculadas."""
+    from app.models import BatchImport, BatchImportItem, Client, Invoice
+
+    _reset_users()
+    create_admin_user("admin_clr", "admin_clr@teste.com", "AdminPassword1!", "Admin Limpeza")
+    admin_headers = _login_headers("admin_clr", "AdminPassword1!")
+    res_op = client.post(
+        "/api/auth/users",
+        headers=admin_headers,
+        json={
+            "username": "operador_clr",
+            "email": "op_clr@teste.com",
+            "full_name": "Operador Limpeza",
+            "password": "OperPassword1!",
+            "role": "operador",
+        },
+    )
+    assert res_op.status_code == 200, res_op.text
+    op_headers = _login_headers("operador_clr", "OperPassword1!")
+
+    db = SessionLocal()
+    try:
+        cli = Client(cnpj="99888777000166", razao_social="Empresa Limpar Notas LTDA")
+        db.add(cli)
+        db.commit()
+        db.refresh(cli)
+
+        inv1 = Invoice(client_id=cli.id, numero="101", chave="1" * 49 + "1", tipo="emitidas", status="gerada")
+        inv2 = Invoice(client_id=cli.id, numero="102", chave="1" * 49 + "2", tipo="emitidas", status="gerada")
+        inv3 = Invoice(client_id=cli.id, numero="103", chave="1" * 49 + "3", tipo="recebidas", status="gerada")
+        db.add_all([inv1, inv2, inv3])
+        db.commit()
+        db.refresh(inv1)
+        db.refresh(inv2)
+        db.refresh(inv3)
+
+        batch = BatchImport(client_id=cli.id, filename="lote.csv", file_hash="abc123", total_items=1)
+        db.add(batch)
+        db.commit()
+        db.refresh(batch)
+
+        b_item = BatchImportItem(batch_id=batch.id, row_number=1, payload_json="{}", invoice_id=inv1.id)
+        db.add(b_item)
+        db.commit()
+        db.refresh(b_item)
+
+        cli_id, inv1_id, inv3_id, b_item_id = cli.id, inv1.id, inv3.id, b_item.id
+    finally:
+        db.close()
+
+    # Operador não pode limpar nem deletar nota local
+    r_op_clear = client.post("/api/invoices/limpar-local", headers=op_headers, json={"invoice_ids": [inv1_id]})
+    assert r_op_clear.status_code == 403
+    r_op_del = client.delete(f"/api/invoices/{inv1_id}", headers=op_headers)
+    assert r_op_del.status_code == 403
+
+    # Admin sem filtros nem IDs -> 400
+    r_bad = client.post("/api/invoices/limpar-local", headers=admin_headers, json={})
+    assert r_bad.status_code == 400
+
+    # Admin remove inv1 (com BatchImportItem apontando para ela) via endpoint em lote
+    r_ok = client.post("/api/invoices/limpar-local", headers=admin_headers, json={"invoice_ids": [inv1_id]})
+    assert r_ok.status_code == 200, r_ok.text
+    assert r_ok.json()["removidas"] == 1
+
+    # Admin remove inv2 por filtro (client_id + tipo="emitidas") e inv3 via DELETE unitário
+    r_filter = client.post(
+        "/api/invoices/limpar-local",
+        headers=admin_headers,
+        json={"client_id": cli_id, "tipo": "emitidas"},
+    )
+    assert r_filter.status_code == 200, r_filter.text
+    assert r_filter.json()["removidas"] == 1
+
+    r_single = client.delete(f"/api/invoices/{inv3_id}", headers=admin_headers)
+    assert r_single.status_code == 200, r_single.text
+    assert r_single.json()["removidas"] == 1
+
+    db_check = SessionLocal()
+    try:
+        remaining = db_check.query(Invoice).filter(Invoice.client_id == cli_id).count()
+        assert remaining == 0
+        refreshed_item = db_check.query(BatchImportItem).filter(BatchImportItem.id == b_item_id).first()
+        assert refreshed_item is not None
+        assert refreshed_item.invoice_id is None
+    finally:
+        db_check.close()

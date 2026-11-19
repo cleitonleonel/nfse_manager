@@ -76,9 +76,74 @@
   flex-shrink: 0;
 }
 
-.comp-toolbar #comp-month {
+.comp-toolbar .month-picker-wrap {
+  position: relative;
   width: 168px;
   flex: 0 0 168px;
+}
+
+.month-picker-trigger {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.month-picker-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 236px;
+  max-width: calc(100vw - 32px);
+  z-index: 250;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  padding: 10px;
+}
+
+.month-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.month-picker-cell {
+  padding: 7px 6px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.month-picker-cell:hover {
+  background: var(--bg4);
+  color: var(--text);
+}
+
+.month-picker-cell.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 @media (max-width: 960px) {
@@ -230,7 +295,7 @@
   .comp-toolbar > * {
     flex: 1 1 auto;
   }
-  .comp-toolbar #comp-month {
+  .comp-toolbar .month-picker-wrap {
     flex: 1 1 100%;
     max-width: none !important;
   }

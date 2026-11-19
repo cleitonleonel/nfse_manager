@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.3 (2026-11-19)
+
+Comparativo a partir de `v0.2.2`.
+
+### Destaques
+
+Fallback de paths legados, erros reais de download, limpeza local de notas e seletor de competencia no Tauri
+
+### Documentação
+
+- `9e52d30` docs: documenta comando unificado manage.py release (cleiton)
+
+### Resumo por Camada
+
+- **Raiz & Configuração**: 1 arquivo(s)
+- **Backend (API, Serviços & Banco)**: 4 arquivo(s)
+- **Documentação**: 1 arquivo(s)
+- **Frontend SPA**: 5 arquivo(s)
+- **Testes Automatizados**: 3 arquivo(s)
+
 ## v0.2.2 (2026-11-19)
 
 Comparativo a partir de `v0.2.1`.

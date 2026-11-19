@@ -422,6 +422,42 @@ def test_downloads_batch_zip_and_background_download(api_client: TestClient, tmp
         downloads.background_download("dl_ok", [inv_id], cli_id, "emitidas")
         assert tasks_status["dl_ok"]["status"] == "completed"
 
+    # background_download falhando na autenticação -> status failed (não mascarar como sucesso)
+    db = SessionLocal()
+    inv_fail_id = None
+    try:
+        inv_fail = Invoice(
+            client_id=cli_id,
+            numero="991",
+            chave="7" * 50,
+            status="gerada",
+            tipo="emitidas",
+            download_url_xml="https://example.com/991.xml",
+            download_url_pdf="https://example.com/991.pdf",
+        )
+        db.add(inv_fail)
+        db.commit()
+        db.refresh(inv_fail)
+        inv_fail_id = inv_fail.id
+    finally:
+        db.close()
+
+    mock_nfse_err = MagicMock()
+    mock_nfse_err.autenticar.side_effect = RuntimeError("Falha de autenticação simulada")
+    try:
+        with patch("app.api.routers.downloads.get_nfse_client", return_value=mock_nfse_err):
+            downloads.background_download("dl_fail_auth", [inv_fail_id], cli_id, "emitidas")
+            assert tasks_status["dl_fail_auth"]["status"] == "failed"
+            assert "Falha de autenticação simulada" in tasks_status["dl_fail_auth"]["message"]
+    finally:
+        if inv_fail_id is not None:
+            db_clean = SessionLocal()
+            try:
+                db_clean.query(Invoice).filter(Invoice.id == inv_fail_id).delete()
+                db_clean.commit()
+            finally:
+                db_clean.close()
+
 
 # ==============================================================================
 # 6. SYSTEM ROUTER (support, list-folders, download/apply update) & EMAIL SSL/ERRORS

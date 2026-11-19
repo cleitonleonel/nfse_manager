@@ -28,7 +28,9 @@ def load_dotenv_if_present(
         custom_env = (os.getenv("NFSE_ENV_FILE") or "").strip()
         if custom_env:
             candidates.append(Path(custom_env).expanduser())
-        candidates.extend([PROJECT_ROOT / ".env", BACKEND_DIR / ".env"])
+        for cand in (PROJECT_ROOT / ".env", BACKEND_DIR / ".env", get_data_dir() / ".env"):
+            if cand not in candidates:
+                candidates.append(cand)
 
     loaded: Dict[str, str] = {}
     for candidate in candidates:
@@ -208,6 +210,7 @@ def resolve_storage_path(stored_path: Optional[Union[str, Path]], kind: Optional
     if k in {"", "downloads", "download"}:
         anchor_checks.append(("downloads", get_downloads_dir()))
 
+    is_foreign_path = _is_windows_or_unc_path(norm_raw) if os.name != "nt" else False
     for anchor, target_base in anchor_checks:
         if anchor in parts:
             idx = len(parts) - 1 - parts[::-1].index(anchor)
@@ -216,6 +219,10 @@ def resolve_storage_path(stored_path: Optional[Union[str, Path]], kind: Optional
                 cand = target_base.joinpath(*rel_parts)
                 if cand.exists():
                     return cand
+                if is_foreign_path or not p.parent.exists():
+                    return cand
+            elif is_foreign_path or not p.parent.exists():
+                return target_base
 
     return p
 

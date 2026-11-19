@@ -530,6 +530,10 @@ def background_download(
             )
             return
 
+        success_count = 0
+        failed_count = 0
+        last_error = ""
+
         for idx, invoice in enumerate(invoices):
             try:
                 actual_client_id = invoice.client_id
@@ -541,6 +545,8 @@ def background_download(
                     client_db = db.query(Client).filter(Client.id == actual_client_id).first()
                     if not client_db:
                         logger.warning(f"Cliente {actual_client_id} não encontrado para a nota {invoice.id}")
+                        failed_count += 1
+                        last_error = f"Cliente {actual_client_id} não encontrado."
                         continue
 
                     TaskStore.update_task(task_id, message=f"Autenticando {client_db.razao_social}...")
@@ -602,21 +608,59 @@ def background_download(
 
                 db.add(invoice)
                 db.commit()
-                TaskStore.update_task(
-                    task_id,
-                    progress=invoice_end,
-                    message=f"Nota {invoice.numero} concluída ({idx + 1}/{total}).",
-                )
+
+                has_xml = bool(invoice.xml_path and _resolve_existing_path(invoice.xml_path))
+                has_pdf = bool(invoice.pdf_path and _resolve_existing_path(invoice.pdf_path))
+                if has_xml or has_pdf:
+                    success_count += 1
+                    TaskStore.update_task(
+                        task_id,
+                        progress=invoice_end,
+                        message=f"Nota {invoice.numero} concluída ({idx + 1}/{total}).",
+                    )
+                else:
+                    failed_count += 1
+                    last_error = f"Não foi possível obter XML/PDF para a nota {invoice.numero}."
+                    TaskStore.update_task(
+                        task_id,
+                        progress=invoice_end,
+                        message=f"Nota {invoice.numero} sem arquivos ({idx + 1}/{total}).",
+                    )
             except Exception as ne:
                 logger.error(f"Erro na nota {invoice.id}: {ne}")
+                failed_count += 1
+                last_error = str(ne)
                 continue
 
-        TaskStore.set_task(
-            task_id,
-            {"status": "completed", "message": "Downloads concluídos com sucesso.", "progress": 100},
-            kind="download",
-            created_by=created_by,
-        )
+        if success_count == 0 and failed_count > 0:
+            TaskStore.set_task(
+                task_id,
+                {
+                    "status": "failed",
+                    "message": f"Falha nos downloads ({failed_count} erro(s)): {last_error}",
+                    "progress": 0,
+                },
+                kind="download",
+                created_by=created_by,
+            )
+        elif failed_count > 0:
+            TaskStore.set_task(
+                task_id,
+                {
+                    "status": "completed",
+                    "message": f"Downloads parciais: {success_count} concluído(s), {failed_count} falha(s). Último erro: {last_error}",
+                    "progress": 100,
+                },
+                kind="download",
+                created_by=created_by,
+            )
+        else:
+            TaskStore.set_task(
+                task_id,
+                {"status": "completed", "message": "Downloads concluídos com sucesso.", "progress": 100},
+                kind="download",
+                created_by=created_by,
+            )
     except Exception as e:
         logger.error(f"Download error: {e}")
         TaskStore.set_task(

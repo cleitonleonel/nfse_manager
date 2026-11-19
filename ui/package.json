@@ -1,6 +1,6 @@
 {
   "name": "nfse-manager",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "NFSe Manager Pro — Sistema Multiusuário de Gestão e Emissão de NFS-e Nacional (ADN v1.01)",
   "scripts": {
     "tauri": "tauri",

@@ -81,6 +81,14 @@ def test_configurable_storage_dirs_and_portable_paths(tmp_path: Path, monkeypatc
     legacy_windows_dl = r"C:\NFSeManager\downloads\adn\dps\DPS_1.xml"
     assert resolve_storage_path(legacy_windows_dl, kind="downloads") == dl_file
 
+    # Caminho legado de container/SO que aponta exatamente para a raiz /downloads inexistente no host
+    assert resolve_storage_path("/workspace_inexistente/backend/downloads", kind="downloads") == downloads_override
+    assert (
+        resolve_storage_path("/workspace_inexistente/backend/downloads/empresa_a", kind="downloads")
+        == downloads_override / "empresa_a"
+    )
+    assert resolve_storage_path(r"C:\ProgramData\NFSeManager\downloads", kind="downloads") == downloads_override
+
 
 def test_reservar_proximo_numero_dps_multithread_concurrency():
     """Garante que reservas concorrentes em múltiplas threads geram sequência única de DPS sem colisão."""

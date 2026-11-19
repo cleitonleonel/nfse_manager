@@ -5,10 +5,11 @@ import logging
 import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
-from app.models import Client, Invoice, User
+from app.models import BatchImportItem, Client, Invoice, User
 from app.schemas import SyncRequest, InvoiceResponse
 from app.api.deps import get_nfse_client
 from app.api.routers.auth import get_current_user
@@ -206,16 +207,21 @@ def get_task_status(task_id: str):
     return status
 
 
-@router.get("/api/invoices", response_model=List[InvoiceResponse])
-def list_invoices(
+class ClearLocalInvoicesRequest(BaseModel):
+    invoice_ids: Optional[List[int]] = None
+    client_id: Optional[int] = None
+    tipo: Optional[str] = None
+    data_inicio: Optional[str] = None
+    data_fim: Optional[str] = None
+
+
+def _apply_invoice_filters(
+    query,
     client_id: Optional[int] = None,
     tipo: Optional[str] = None,
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
-    db: Session = Depends(get_db),
 ):
-    """Listar notas com filtros opcionais."""
-    query = db.query(Invoice)
     if client_id:
         query = query.filter(Invoice.client_id == client_id)
     if tipo:
@@ -229,4 +235,97 @@ def list_invoices(
         except Exception as e:
             logger.warning(f"Erro ao filtrar datas: {e}")
 
+    return query
+
+
+def _delete_invoices_by_ids(db: Session, invoice_ids: List[int]) -> int:
+    if not invoice_ids:
+        return 0
+    db.query(BatchImportItem).filter(BatchImportItem.invoice_id.in_(invoice_ids)).update(
+        {BatchImportItem.invoice_id: None},
+        synchronize_session=False,
+    )
+    deleted_count = (
+        db.query(Invoice)
+        .filter(Invoice.id.in_(invoice_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted_count or 0)
+
+
+@router.get("/api/invoices", response_model=List[InvoiceResponse])
+def list_invoices(
+    client_id: Optional[int] = None,
+    tipo: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Listar notas com filtros opcionais."""
+    query = _apply_invoice_filters(
+        db.query(Invoice),
+        client_id=client_id,
+        tipo=tipo,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+    )
     return query.order_by(Invoice.data_emissao.desc()).all()
+
+
+@router.post("/api/invoices/limpar-local")
+def clear_local_invoices(
+    payload: ClearLocalInvoicesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove registros de notas apenas da base local (sem cancelar na Sefin/ADN) para permitir resincronização limpa."""
+    if getattr(current_user, "role", None) != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem limpar notas da base local.")
+
+    ids = [int(i) for i in (payload.invoice_ids or []) if i]
+    if ids:
+        target_rows = db.query(Invoice.id).filter(Invoice.id.in_(ids)).all()
+    else:
+        has_filter = any([payload.client_id, payload.tipo, payload.data_inicio and payload.data_fim])
+        if not has_filter:
+            raise HTTPException(
+                status_code=400,
+                detail="Informe `invoice_ids` ou pelo menos um filtro (`client_id`, `tipo` ou período) para limpar.",
+            )
+        query = _apply_invoice_filters(
+            db.query(Invoice.id),
+            client_id=payload.client_id,
+            tipo=payload.tipo,
+            data_inicio=payload.data_inicio,
+            data_fim=payload.data_fim,
+        )
+        target_rows = query.all()
+
+    target_ids = [row[0] for row in target_rows]
+    removed = _delete_invoices_by_ids(db, target_ids)
+    return {
+        "removidas": removed,
+        "message": f"{removed} nota(s) removida(s) da base local.",
+    }
+
+
+@router.delete("/api/invoices/{invoice_id}")
+def delete_local_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove uma nota específica apenas da base local (sem cancelar na Sefin/ADN)."""
+    if getattr(current_user, "role", None) != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem remover notas da base local.")
+
+    exists = db.query(Invoice.id).filter(Invoice.id == invoice_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Nota não encontrada.")
+
+    removed = _delete_invoices_by_ids(db, [invoice_id])
+    return {
+        "removidas": removed,
+        "message": "Nota removida da base local.",
+    }

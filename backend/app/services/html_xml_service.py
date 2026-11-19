@@ -240,11 +240,13 @@ def montar_caminho_destino_nfse(
 
     caminho_relativo = estrutura
     for tag, val in tags.items():
-        caminho_relativo = caminho_relativo.replace(tag, val)
+        caminho_relativo = caminho_relativo.replace(tag, str(val).strip())
 
     caminho_final = Path(save_path)
-    for part in [p for p in caminho_relativo.replace("\\", "/").split("/") if p.strip()]:
-        caminho_final = caminho_final / part
+    for part in caminho_relativo.replace("\\", "/").split("/"):
+        clean_part = part.strip()
+        if clean_part:
+            caminho_final = caminho_final / clean_part
 
     caminho_final.mkdir(parents=True, exist_ok=True)
     return caminho_final / nome_arquivo

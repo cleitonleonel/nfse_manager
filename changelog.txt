@@ -2,6 +2,57 @@ NFSe Manager Pro — Registro Detalhado de Alterações (Changelog para Análise
 Gerado automaticamente por scripts/bump_version.py
 
 ================================================================================
+VERSAO v0.2.3  (Data: 2026-11-19 14:30:31)
+Base anterior: v0.2.2 (tag: v0.2.2)
+Commits incluidos: 1 | Arquivos pendentes no workspace: 12
+================================================================================
+
+[RESUMO / DESTAQUES DA VERSAO]
+Fallback de paths legados, erros reais de download, limpeza local de notas e seletor de competencia no Tauri
+
+Resumo git (v0.2.2..HEAD): 2 files changed, 51 insertions(+), 10 deletions(-)
+Resumo alteracoes locais (HEAD): 12 files changed, 553 insertions(+), 29 deletions(-)
+
+[ALTERACOES POR CATEGORIA (COMMITS)]
+  * Documentação (1):
+      - [9e52d30] (2026-11-19) docs: documenta comando unificado manage.py release — cleiton
+
+[ALTERACOES LOCAIS DETECTADAS NO WORKSPACE]
+  - [ M] backend/app/api/routers/downloads.py
+  - [ M] backend/app/api/routers/invoices.py
+  - [ M] backend/app/core/config.py
+  - [ M] backend/app/services/html_xml_service.py
+  - [ M] frontend/css/pages/dashboard.css
+  - [ M] frontend/index.html
+  - [ M] frontend/js/main.js
+  - [ M] frontend/js/pages/invoices.js
+  - [ M] frontend/views/invoices.html
+  - [ M] tests/test_full_coverage_nfse_manager.py
+  - [ M] tests/test_multiuser_wts_concurrency.py
+  - [ M] tests/test_router_auth_guards.py
+
+[INVENTARIO DE ARQUIVOS MODIFICADOS POR CAMADA (PARA ANALISE)]
+  [Raiz & Configuração] (1 arquivos)
+      M          README.md
+  [Backend (API, Serviços & Banco)] (4 arquivos)
+      M          backend/app/api/routers/downloads.py
+      M          backend/app/api/routers/invoices.py
+      M          backend/app/core/config.py
+      M          backend/app/services/html_xml_service.py
+  [Documentação] (1 arquivos)
+      M          docs/desenvolvimento-ci.md
+  [Frontend SPA] (5 arquivos)
+      M          frontend/css/pages/dashboard.css
+      M          frontend/index.html
+      M          frontend/js/main.js
+      M          frontend/js/pages/invoices.js
+      M          frontend/views/invoices.html
+  [Testes Automatizados] (3 arquivos)
+      M          tests/test_full_coverage_nfse_manager.py
+      M          tests/test_multiuser_wts_concurrency.py
+      M          tests/test_router_auth_guards.py
+
+================================================================================
 VERSAO v0.2.2  (Data: 2026-11-19 12:24:12)
 Base anterior: v0.2.1 (tag: v0.2.1)
 Commits incluidos: 0 | Arquivos pendentes no workspace: 12

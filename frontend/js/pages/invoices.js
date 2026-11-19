@@ -1,6 +1,6 @@
 import { api, getApiBaseUrl } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceSummaryCells } from '../core/ui.js';
+import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, hideTaskToast, uiAlert, uiConfirm, uiPrompt, escapeAttr, renderInvoiceFileButtons, renderInvoiceSummaryCells } from '../core/ui.js';
 import {
     getLocalMirrorState,
     chooseLocalMirrorDirectory,
@@ -11,6 +11,88 @@ import {
 
 let progressCloseTimer = null;
 let loadedInvoicesCache = [];
+let compPickerYear = new Date().getFullYear();
+let compPickerOutsideBound = false;
+
+const MONTH_SHORT_NAMES = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+const MONTH_GRID_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+function formatCompetenciaLabel(ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(ym || '').trim());
+    if (!m) return 'Selecionar mês';
+    const year = m[1];
+    const idx = parseInt(m[2], 10) - 1;
+    const label = MONTH_SHORT_NAMES[idx] || m[2];
+    return `${label} de ${year}`;
+}
+
+function syncCompMonthLabel() {
+    const monthInput = document.getElementById('comp-month');
+    const labelEl = document.getElementById('comp-month-label');
+    if (!monthInput || !labelEl) return;
+    if (!monthInput.value) {
+        monthInput.value = new Date().toISOString().slice(0, 7);
+    }
+    labelEl.textContent = formatCompetenciaLabel(monthInput.value);
+}
+
+function renderCompMonthGrid() {
+    const yearEl = document.getElementById('comp-picker-year');
+    const gridEl = document.getElementById('comp-picker-grid');
+    const monthInput = document.getElementById('comp-month');
+    if (!yearEl || !gridEl) return;
+
+    yearEl.textContent = String(compPickerYear);
+    const activeVal = monthInput?.value || '';
+    gridEl.innerHTML = MONTH_GRID_NAMES.map((name, idx) => {
+        const mm = String(idx + 1).padStart(2, '0');
+        const ym = `${compPickerYear}-${mm}`;
+        const isActive = ym === activeVal;
+        return `<button type="button" class="month-picker-cell${isActive ? ' is-active' : ''}" onclick="App.selectCompMonth('${mm}')">${name}</button>`;
+    }).join('');
+}
+
+export function toggleCompMonthPicker(event) {
+    if (event) event.stopPropagation();
+    const popover = document.getElementById('comp-month-popover');
+    if (!popover) return;
+    if (!compPickerOutsideBound) {
+        compPickerOutsideBound = true;
+        document.addEventListener('click', (evt) => {
+            const wrap = document.getElementById('comp-month-wrap');
+            const pop = document.getElementById('comp-month-popover');
+            if (pop && wrap && !wrap.contains(evt.target)) {
+                pop.style.display = 'none';
+            }
+        });
+    }
+    const isOpen = popover.style.display === 'block';
+    if (isOpen) {
+        popover.style.display = 'none';
+        return;
+    }
+    const curVal = document.getElementById('comp-month')?.value || '';
+    const match = /^(\d{4})-(\d{2})$/.exec(curVal);
+    if (match) compPickerYear = parseInt(match[1], 10);
+    renderCompMonthGrid();
+    popover.style.display = 'block';
+}
+
+export function shiftCompPickerYear(delta) {
+    compPickerYear += Number(delta) || 0;
+    renderCompMonthGrid();
+}
+
+export function selectCompMonth(mm) {
+    const monthInput = document.getElementById('comp-month');
+    const popover = document.getElementById('comp-month-popover');
+    if (monthInput) {
+        monthInput.value = `${compPickerYear}-${mm}`;
+        syncCompMonthLabel();
+    }
+    if (popover) popover.style.display = 'none';
+    loadCompetenciaReport();
+}
 
 function extractDownloadFilename(contentDisposition, fallbackPath) {
     if (contentDisposition) {
@@ -99,9 +181,23 @@ export async function convertHtmlToXmlAndPdf(invoiceId, htmlPath, status = 'NORM
     }
 }
 
+function syncClearInvoicesVisibility() {
+    const btn = document.getElementById('btn-clear-invoices');
+    if (!btn) return;
+    let isAdmin = false;
+    try {
+        const raw = localStorage.getItem('nfse_user');
+        const user = raw ? JSON.parse(raw) : null;
+        isAdmin = user?.role === 'admin';
+    } catch (_) {}
+    btn.style.display = isAdmin ? 'inline-flex' : 'none';
+}
+
 export async function loadInvoices() {
     const tbody = document.getElementById('invoices-table-body');
     if (!tbody) return;
+    syncClearInvoicesVisibility();
+    syncCompMonthLabel();
     
     const typeEl = document.getElementById('filter-type');
     const type = typeEl ? typeEl.value : 'emitidas';
@@ -462,6 +558,7 @@ export async function loadCompetenciaReport() {
     if (monthInput && !monthInput.value) {
         monthInput.value = new Date().toISOString().slice(0, 7);
     }
+    syncCompMonthLabel();
     const competencia = monthInput?.value || new Date().toISOString().slice(0, 7);
     const clientId = state.getGlobalClientId();
     const qs = new URLSearchParams({ competencia, format: 'json' });
@@ -510,7 +607,7 @@ export async function downloadCompetenciaReport(fmt = 'xlsx') {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
-        const res = await fetch(`/api/reports/competencia?${qs.toString()}`, { headers });
+        const res = await fetch(`${getApiBaseUrl()}/api/reports/competencia?${qs.toString()}`, { headers });
         if (!res.ok) throw new Error(await res.text());
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -663,4 +760,60 @@ export async function mirrorInvoicesNow() {
 
     const msg = `${result.written} gravado(s), ${result.existing} já existente(s)${result.failed ? `, ${result.failed} falha(s)` : ''} em "${result.folderName}".`;
     completeTaskToast('Espelhamento Concluído', msg, 5000);
+}
+
+export async function clearLocalInvoices() {
+    const selectedIds = Array.from(document.querySelectorAll('.row-check:checked'))
+        .map((chk) => parseInt(chk.value, 10))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (selectedIds.length === 0 && loadedInvoicesCache.length === 0) {
+        await uiAlert({
+            title: 'Lista vazia',
+            message: 'Não há notas listadas para remover da base local.',
+            variant: 'info',
+        });
+        return;
+    }
+
+    const scopeLabel =
+        selectedIds.length > 0
+            ? `${selectedIds.length} nota(s) selecionada(s)`
+            : `todas as ${loadedInvoicesCache.length} nota(s) listadas neste filtro`;
+
+    const confirmed = await uiConfirm({
+        title: 'Limpar Notas da Base Local',
+        message: `Deseja remover ${scopeLabel} da base de dados local?\n\nEsta ação NÃO cancela nenhuma nota na Sefin/ADN — apenas limpa o registro local para você poder sincronizar novamente.`,
+        confirmText: 'Limpar Base Local',
+        cancelText: 'Voltar',
+        variant: 'danger',
+        icon: 'trash',
+    });
+    if (!confirmed) return;
+
+    const clientIdRaw = state.getGlobalClientId();
+    const payload =
+        selectedIds.length > 0
+            ? { invoice_ids: selectedIds }
+            : {
+                  client_id: clientIdRaw ? parseInt(clientIdRaw, 10) : null,
+                  tipo: document.getElementById('filter-type')?.value || null,
+                  data_inicio: document.getElementById('filter-start')?.value || null,
+                  data_fim: document.getElementById('filter-end')?.value || null,
+              };
+
+    try {
+        const res = await api('/invoices/limpar-local', 'POST', payload);
+        const checkAll = document.getElementById('check-all');
+        if (checkAll) checkAll.checked = false;
+        await loadInvoices();
+        await loadCompetenciaReport();
+        completeTaskToast('Lista Limpa', res?.message || 'Notas removidas da base local.', 4000);
+    } catch (e) {
+        await uiAlert({
+            title: 'Erro ao limpar lista',
+            message: e?.message || 'Não foi possível limpar os registros locais.',
+            variant: 'error',
+        });
+    }
 }
