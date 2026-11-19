@@ -776,9 +776,20 @@ def test_downloads_and_system_internal_helpers(api_client: TestClient, tmp_path:
 
     # Downloads: _clear_stale_reference, _gerar_pdf_local, _download_invoice_file, _sincronizar_arquivos_nota_certificado
     db = SessionLocal()
+    created_cli = False
+    inv_dl = None
+    cli_dl = None
     try:
+        cli_dl = db.query(Client).first()
+        if not cli_dl:
+            cli_dl = Client(cnpj="98765432000188", razao_social="CLIENTE HELPERS TESTE")
+            db.add(cli_dl)
+            db.commit()
+            db.refresh(cli_dl)
+            created_cli = True
+
         inv_dl = Invoice(
-            client_id=1,
+            client_id=cli_dl.id,
             numero="999",
             chave="9" * 50,
             status="gerada",
@@ -822,8 +833,11 @@ def test_downloads_and_system_internal_helpers(api_client: TestClient, tmp_path:
         inv_orphan = Invoice(client_id=888888, numero="0", chave="8" * 50)
         assert downloads._download_invoice_file(db, inv_orphan, "x.xml") is None
         assert downloads._download_invoice_file(db, inv_dl, "arquivo_sem_extensao") is None
-
-        db.delete(inv_dl)
-        db.commit()
     finally:
+        if inv_dl is not None:
+            db.delete(inv_dl)
+            db.commit()
+        if created_cli and cli_dl is not None:
+            db.delete(cli_dl)
+            db.commit()
         db.close()

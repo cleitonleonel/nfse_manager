@@ -262,19 +262,25 @@ def test_scheduler_disabled_mode_and_distributed_lock_contention(monkeypatch):
         acquired_b_after, conn_b_after = SchedulerService._acquire_distributed_lock(db_b, 120)
         assert acquired_b_after is True
 
-        # Simula lease expirado de Worker B -> Worker C assume o lock automaticamente
-        lock_row = db_b.query(SchedulerLock).filter(SchedulerLock.lock_name == SchedulerService._LOCK_NAME).first()
-        assert lock_row is not None
-        lock_row.locked_until = datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(seconds=30)
-        db_b.commit()
+        # Worker B assume e depois simula queda / expiração -> Worker C assume automaticamente
+        if SchedulerService.get_lock_backend() == "pg_advisory_lock":
+            assert conn_b_after is not None
+            conn_b_after.close()
+            conn_b_after = None
+        else:
+            lock_row = db_b.query(SchedulerLock).filter(SchedulerLock.lock_name == SchedulerService._LOCK_NAME).first()
+            assert lock_row is not None
+            lock_row.locked_until = datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(seconds=30)
+            db_b.commit()
 
         SchedulerService._owner_id = "hostC:3003:cccc"
         acquired_c, conn_c = SchedulerService._acquire_distributed_lock(db_c, 120)
         assert acquired_c is True
         SchedulerService._release_distributed_lock(db_c, conn_c)
         conn_c = None
-        SchedulerService._release_distributed_lock(db_b, conn_b_after)
-        conn_b_after = None
+        if conn_b_after is not None:
+            SchedulerService._release_distributed_lock(db_b, conn_b_after)
+            conn_b_after = None
     finally:
         SchedulerService._owner_id = orig_owner
         for session, conn in ((db_a, conn_a), (db_b, conn_b_after), (db_c, conn_c)):
