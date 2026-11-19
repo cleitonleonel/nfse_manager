@@ -149,12 +149,16 @@ class SchedulerService:
         dialect = db.bind.dialect.name if db.bind is not None else engine.dialect.name
         if dialect == "postgresql":
             if lock_conn is not None:
+                unlocked = False
                 try:
                     lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": cls._PG_LOCK_KEY})
+                    unlocked = True
                 except Exception as exc:
                     logger.debug("Erro ao liberar pg_advisory_unlock: %s", exc)
                 finally:
                     try:
+                        if not unlocked:
+                            lock_conn.invalidate()
                         lock_conn.close()
                     except Exception:
                         pass

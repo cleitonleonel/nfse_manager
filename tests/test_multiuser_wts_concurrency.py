@@ -265,7 +265,8 @@ def test_scheduler_disabled_mode_and_distributed_lock_contention(monkeypatch):
         # Worker B assume e depois simula queda / expiração -> Worker C assume automaticamente
         if SchedulerService.get_lock_backend() == "pg_advisory_lock":
             assert conn_b_after is not None
-            conn_b_after.close()
+            # invalidate() encerra o socket físico no pool (Close apenas devolveria ao pool com o advisory lock preso)
+            conn_b_after.invalidate()
             conn_b_after = None
         else:
             lock_row = db_b.query(SchedulerLock).filter(SchedulerLock.lock_name == SchedulerService._LOCK_NAME).first()
@@ -285,10 +286,7 @@ def test_scheduler_disabled_mode_and_distributed_lock_contention(monkeypatch):
         SchedulerService._owner_id = orig_owner
         for session, conn in ((db_a, conn_a), (db_b, conn_b_after), (db_c, conn_c)):
             if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+                SchedulerService._release_distributed_lock(session, conn)
             session.close()
         db_clean = SessionLocal()
         try:
