@@ -53,7 +53,7 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
   - Configuração de parâmetros fiscais ADN v1.01 (Inscrição Municipal, código IBGE, regime tributário `normal | simples | mei`, regime de apuração SN, série e numeração de DPS, ambiente `homologacao | producao`).
   - Personalização de diretório de saída e máscara dinâmica de pastas (`{CLIENTE}/{TIPO}/{ANO}/{MES}`).
 - **Autenticação JWT de Operadores, Gestão de Equipe e Modo Multiusuário / WTS**:
-  - Utilitário `python manage.py` com comandos `makemigrations`, `migrate`, `showmigrations` e `create_admin` (`createsuperuser`).
+  - Utilitário `python manage.py` com comandos `makemigrations`, `migrate`, `showmigrations`, `create_admin` (`createsuperuser`) e `release`.
   - Tela inicial obrigatória de Login/Cadastro (`#auth-screen`), controle opcional de auto-cadastro (`NFSE_ALLOW_PUBLIC_REGISTER=0`), proteção JWT em todas as rotas de negócio da API e RBAC (`admin` vs `operador`).
   - Gestão visual de **Equipe & Operadores** na aba **Sistema** (`GET/POST/PATCH/DELETE /api/auth/users`), modal **Minha Conta** no topbar para troca da própria senha, painel de diagnóstico (`/api/system/environment`) e conexão configurável com Servidor Central para uso simultâneo em **Windows Server + Área de Trabalho Remota (WTS)**.
   - Diretórios portáveis (`NFSE_DATA_DIR`, `NFSE_CERTS_DIR`, `NFSE_DOWNLOADS_DIR`), reserva transacional de `ultimo_numero_dps` (`FOR UPDATE`), persistência de tarefas em `background_tasks` e lock distribuído no worker de contingência (`pg_try_advisory_lock` / `scheduler_locks`).
@@ -279,6 +279,9 @@ poetry run python manage.py migrate
 poetry run python manage.py create_admin
 # ou de forma não-interativa:
 poetry run python manage.py create_admin --username admin --email admin@empresa.com.br --password MinhaSenhaForte
+
+# 5. Gerar nova versão (patch por padrão), atualizar changelog, commitar e publicar release
+poetry run python manage.py release --notes "Resumo das melhorias" --push
 ```
 
 Quando estiver executando a aplicação via Docker Compose (`nfse_backend` ativo), os mesmos comandos podem ser rodados diretamente dentro do container:
@@ -532,10 +535,31 @@ poetry run ruff check backend tests
 
 ### Versionamento e Releases
 
-A versão oficial do sistema é centralizada no [`pyproject.toml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/pyproject.toml) (`project.version`) e lida dinamicamente por [`backend/app/version.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/version.py):
+A versão oficial do sistema é centralizada no [`pyproject.toml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/pyproject.toml) (`project.version`) e lida dinamicamente por [`backend/app/version.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/version.py).
+
+#### Comando simplificado (`manage.py release`)
+
+O subcomando `release` em [`manage.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/manage.py) reutiliza [`scripts/bump_version.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/scripts/bump_version.py) para buscar tags remotas antes de calcular o diff, atualizar todos os manifestos (`pyproject.toml`, `ui/package.json`, `ui/package-lock.json`, `ui/src-tauri/Cargo.toml`, `ui/src-tauri/tauri.conf.json`, `frontend/views/about.html`), gerar `CHANGELOG.md` / `changelog.txt` e criar o commit sem incluir arquivos locais ignoráveis (como `*.db` ou `skills/`):
 
 ```bash
-# Atualizar versão em todos os manifestos e gerar changelog.txt / CHANGELOG.md
+# Release completa de correção (patch, ex.: 0.2.2 -> 0.2.3) com commit e push
+python manage.py release --notes "Resumo das melhorias" --push
+
+# Release de funcionalidade (minor) ou versão explícita
+python manage.py release minor --notes "Novos recursos" --push
+python manage.py release 0.3.0 --push
+
+# Apenas simular ou preparar localmente sem enviar ao GitHub
+python manage.py release --dry-run
+python manage.py release --no-commit
+```
+
+> **Dica:** se o `git push` exigir autenticação interativa de credencial/SSH no terminal, rode `python manage.py release --notes "..."` sem `--push` e execute apenas `git push origin master` no seu terminal.
+
+#### Scripts auxiliares (uso direto)
+
+```bash
+# Atualizar versão manualmente sem usar o manage.py
 poetry run python scripts/bump_version.py 0.2.0 --notes "Destaques da versão"
 
 # Sincronizar versão do pyproject.toml com Tauri/Node e about.html
@@ -546,7 +570,7 @@ poetry run python scripts/sync_version.py
 ```
 
 No GitHub Actions:
-- [`.github/workflows/auto-release.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/auto-release.yml): sobe `postgres:16-alpine`, executa `ruff` e `pytest`, lê `app.version.VERSION` e publica automaticamente a tag/release ao mesclar PR com label `release`.
+- [`.github/workflows/auto-release.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/auto-release.yml): executa em `push` para `main`/`master` (ou PR com label `release` / `workflow_dispatch`), sobe `postgres:16-alpine`, executa `ruff` e `pytest`, lê `app.version.VERSION` e, caso a tag `vX.Y.Z` ainda não exista, cria a tag/release e aciona os instaladores desktop automaticamente.
 - [`.github/workflows/desktop-installers.yml`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/.github/workflows/desktop-installers.yml): compila em matriz **Linux (`.deb` / `.AppImage`)** e **Windows (`.msi` / `.exe`)** ao publicar tag `v*` ou sob demanda (`workflow_dispatch`).
 
 ---

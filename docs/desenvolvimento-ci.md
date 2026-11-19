@@ -53,16 +53,33 @@ poetry run ruff check backend tests
 
 ## 3. Versionamento Centralizado e Releases
 
-A versão única do projeto fica em `pyproject.toml` (`[project] version = "X.Y.Z"`). Utilize o script `scripts/bump_version.py` para atualizar todos os manifestos (`pyproject.toml`, `ui/package.json`, `ui/package-lock.json`, `ui/src-tauri/Cargo.toml`, `ui/src-tauri/tauri.conf.json`, `frontend/views/about.html`) e gerar automaticamente o histórico detalhado em `changelog.txt` e `CHANGELOG.md`:
+A versão única do projeto fica em `pyproject.toml` (`[project] version = "X.Y.Z"`). O comando unificado `manage.py release` (que reutiliza `scripts/bump_version.py`) busca tags remotas antes de calcular o diff, atualiza todos os manifestos (`pyproject.toml`, `ui/package.json`, `ui/package-lock.json`, `ui/src-tauri/Cargo.toml`, `ui/src-tauri/tauri.conf.json`, `frontend/views/about.html`), gera `CHANGELOG.md` / `changelog.txt` e cria o commit sem incluir arquivos locais ignoráveis (`*.db`, `skills/`):
 
 ```bash
-# 1. Atualizar versão (explícita ou patch/minor/major) + gerar changelog.txt e CHANGELOG.md
+# Release completa de correção (patch, ex.: 0.2.2 -> 0.2.3) com commit e push
+python manage.py release --notes "Resumo das melhorias" --push
+
+# Release de funcionalidade (minor) ou versão explícita
+python manage.py release minor --notes "Novos recursos" --push
+python manage.py release 0.3.0 --push
+
+# Apenas simular ou preparar localmente sem enviar ao GitHub
+python manage.py release --dry-run
+python manage.py release --no-commit
+```
+
+!!! tip "Autenticação interativa no push"
+    Se o `git push` exigir autenticação interativa de credencial/SSH no terminal, rode `python manage.py release --notes "..."` sem `--push` e execute apenas `git push origin master` diretamente no seu terminal.
+
+Para uso direto dos scripts subjacentes:
+
+```bash
+# Atualizar versão manualmente (explícita ou patch/minor/major) + changelog
 poetry run python scripts/bump_version.py 0.2.0 --notes "Resumo dos destaques"
 # ou apenas sincronizar a partir do pyproject.toml:
 poetry run python scripts/sync_version.py
 
-# 2. Commit e publicação da tag/release
-git add -A && git commit -m "chore(release): v0.2.0"
+# Criar tag e release localmente (quando aplicável)
 ./scripts/release.sh
 ```
 
@@ -73,11 +90,11 @@ git add -A && git commit -m "chore(release): v0.2.0"
 O repositório conta com três workflows automatizados:
 
 ### 4.1. Auto-Release (`.github/workflows/auto-release.yml`)
-- Disparado ao mesclar um Pull Request nas branches `main` ou `master` com a label `release`.
+- Disparado automaticamente em `push` para `main`/`master`, `workflow_dispatch` ou ao mesclar Pull Request com a label `release`.
 - Sobe um container de serviço `postgres:16-alpine`.
 - Instala dependências com Poetry e executa `ruff check` + `pytest -v`.
 - Lê a versão via `PYTHONPATH=backend poetry run python -c "from app.version import VERSION; print(VERSION)"`.
-- Cria a tag `vX.Y.Z` e publica a Release no GitHub automaticamente.
+- Se a tag `vX.Y.Z` ainda não existir no remoto, cria a tag, publica a Release no GitHub com as notas extraídas do `CHANGELOG.md` e aciona o workflow `desktop-installers.yml`.
 
 ### 4.2. Instaladores Desktop Multi-OS (`.github/workflows/desktop-installers.yml`)
 - Disparado manualmente (`workflow_dispatch`) ou automaticamente ao enviar uma tag `v*`.
