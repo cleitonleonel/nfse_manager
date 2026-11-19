@@ -231,3 +231,30 @@ def test_local_changelog_returned_on_version_and_newer_installed_check_update(mo
     assert payload["latest_version"] == "0.1.0"
     assert f"v{VERSION}" in (payload.get("changelog") or "")
     assert "Initial Release antigo" not in (payload.get("changelog") or "")
+
+
+def test_build_release_commit_message_gitmoji_patterns():
+    import sys
+
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    import bump_version
+
+    assert (
+        bump_version.build_release_commit_message("minor", "0.3.0", notes="Novos recursos")
+        == ":sparkles: feat: publica release v0.3.0 — Novos recursos"
+    )
+    assert (
+        bump_version.build_release_commit_message("major", "1.0.0", notes="Mudanca estrutural")
+        == ":boom: feat!: publica release v1.0.0 — Mudanca estrutural"
+    )
+    assert (
+        bump_version.build_release_commit_message("patch", "0.2.4")
+        == ":bookmark: chore: publica release v0.2.4 e atualiza manifestos e changelog"
+    )
+    assert (
+        bump_version.build_release_commit_message("patch", "0.2.4", custom_message=":art: chore: msg custom")
+        == ":art: chore: msg custom"
+    )

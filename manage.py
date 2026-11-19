@@ -102,6 +102,8 @@ def cmd_release(args: argparse.Namespace) -> int:
     cli_args: list[str] = [args.target]
     if args.notes:
         cli_args.extend(["--notes", args.notes])
+    if args.message:
+        cli_args.extend(["--message", args.message])
     if args.no_changelog:
         cli_args.append("--no-changelog")
     if args.no_fetch:
@@ -152,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Versão alvo (X.Y.Z) ou incremento (patch | minor | major). Padrão: patch.",
     )
     p_rel.add_argument("--notes", default="", help="Resumo/destaques manuais para incluir no changelog.")
+    p_rel.add_argument("-m", "--message", default="", help="Mensagem personalizada para o commit git da release.")
     p_rel.add_argument("--no-changelog", action="store_true", help="Não atualiza CHANGELOG.md e changelog.txt.")
     p_rel.add_argument("--no-fetch", action="store_true", help="Não busca tags remotas antes de calcular o diff.")
     p_rel.add_argument("--no-commit", action="store_true", help="Apenas altera os arquivos sem criar commit git.")

@@ -2,6 +2,37 @@ NFSe Manager Pro — Registro Detalhado de Alterações (Changelog para Análise
 Gerado automaticamente por scripts/bump_version.py
 
 ================================================================================
+VERSAO v0.2.4  (Data: 2026-11-19 15:17:54)
+Base anterior: v0.2.3 (tag: v0.2.3)
+Commits incluidos: 0 | Arquivos pendentes no workspace: 6
+================================================================================
+
+[RESUMO / DESTAQUES DA VERSAO]
+Melhora diagnostico SMTP e padrao de commits na release
+
+Resumo alteracoes locais (HEAD): 5 files changed, 135 insertions(+), 13 deletions(-)
+
+[ALTERACOES LOCAIS DETECTADAS NO WORKSPACE]
+  - [??] AGENTS.md
+  - [ M] backend/app/services/email_service.py
+  - [ M] manage.py
+  - [ M] scripts/bump_version.py
+  - [ M] tests/test_full_coverage_nfse_manager.py
+  - [ M] tests/test_versioning_and_updates.py
+
+[INVENTARIO DE ARQUIVOS MODIFICADOS POR CAMADA (PARA ANALISE)]
+  [Raiz & Configuração] (2 arquivos)
+      A (novo)   AGENTS.md
+      M          manage.py
+  [Backend (API, Serviços & Banco)] (1 arquivos)
+      M          backend/app/services/email_service.py
+  [CI/CD & Automação] (1 arquivos)
+      M          scripts/bump_version.py
+  [Testes Automatizados] (2 arquivos)
+      M          tests/test_full_coverage_nfse_manager.py
+      M          tests/test_versioning_and_updates.py
+
+================================================================================
 VERSAO v0.2.3  (Data: 2026-11-19 14:30:31)
 Base anterior: v0.2.2 (tag: v0.2.2)
 Commits incluidos: 1 | Arquivos pendentes no workspace: 12

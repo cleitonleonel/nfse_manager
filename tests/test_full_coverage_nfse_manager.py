@@ -571,6 +571,36 @@ def test_email_service_ssl_465_and_error_branches(tmp_path: Path):
         EmailService.enviar_nfse_por_email(cli, inv_sem_anexos)
     assert exc_att.value.status_code == 422
 
+    # Erro amigável quando servidor SMTP desconecta durante login (ex.: usuário/Senha de App trocados)
+    import smtplib
+
+    with patch("app.services.email_service.smtplib.SMTP") as mock_smtp:
+        mock_srv = mock_smtp.return_value.__enter__.return_value
+        mock_srv.login.side_effect = smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+        cli_tls = Client(
+            id=3,
+            cnpj="999",
+            razao_social="EMPRESA TLS",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+            smtp_user="user@gmail.com",
+            smtp_password="bad",
+            smtp_tls=1,
+        )
+        with pytest.raises(HTTPException) as exc_disc:
+            EmailService.enviar_nfse_por_email(cli_tls, inv)
+        assert exc_disc.value.status_code == 502
+        assert "durante a autenticação" in exc_disc.value.detail
+        assert "Senha de App" in exc_disc.value.detail
+
+    with patch("app.services.email_service.smtplib.SMTP") as mock_smtp:
+        mock_srv = mock_smtp.return_value.__enter__.return_value
+        mock_srv.login.side_effect = smtplib.SMTPAuthenticationError(535, b"Username and Password not accepted")
+        with pytest.raises(HTTPException) as exc_auth:
+            EmailService.enviar_nfse_por_email(cli_tls, inv)
+        assert exc_auth.value.status_code == 502
+        assert "autenticação SMTP" in exc_auth.value.detail
+
 
 def test_deps_and_version_edge_cases(tmp_path: Path):
     assert has_valid_certificate(None) is False

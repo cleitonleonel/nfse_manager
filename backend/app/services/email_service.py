@@ -224,23 +224,51 @@ class EmailService:
 
     @staticmethod
     def _dispatch_smtp(smtp_cfg: Dict[str, Any], msg: EmailMessage) -> None:
-        """Executa o envio SMTP com suporte a SSL (porta 465) ou STARTTLS."""
+        """Executa o envio SMTP com suporte a SSL (porta 465) ou STARTTLS e mensagens de diagnóstico claras."""
+        host = smtp_cfg["host"]
         port = int(smtp_cfg["port"])
+        user = smtp_cfg["user"]
         use_tls = bool(smtp_cfg["tls"])
 
+        smtp_cls = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
+        in_auth = False
+
         try:
-            if port == 465:
-                with smtplib.SMTP_SSL(smtp_cfg["host"], port, timeout=15) as server:
-                    server.login(smtp_cfg["user"], smtp_cfg["password"])
-                    server.send_message(msg)
+            with smtp_cls(host, port, timeout=15) as server:
+                if port != 465 and use_tls:
+                    server.starttls()
+                in_auth = True
+                server.login(user, smtp_cfg["password"])
+                in_auth = False
+                server.send_message(msg)
+        except smtplib.SMTPAuthenticationError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Falha de autenticação SMTP ({user}): usuário ou Senha de App rejeitados pelo servidor ({exc.smtp_code}). "
+                    "Verifique no cadastro do cliente se o Usuário SMTP corresponde à conta da senha configurada."
+                ),
+            ) from exc
+        except smtplib.SMTPServerDisconnected as exc:
+            if in_auth:
+                detail = (
+                    f"O servidor SMTP ({host}:{port}) encerrou a conexão durante a autenticação de '{user}'. "
+                    "Isso geralmente ocorre quando usuário e Senha de App não conferem ou a combinação porta/TLS está incorreta "
+                    "(ex.: Gmail usa 587 com STARTTLS ou 465 com SSL)."
+                )
             else:
-                with smtplib.SMTP(smtp_cfg["host"], port, timeout=15) as server:
-                    if use_tls:
-                        server.starttls()
-                    server.login(smtp_cfg["user"], smtp_cfg["password"])
-                    server.send_message(msg)
+                detail = (
+                    f"O servidor SMTP ({host}:{port}) encerrou a conexão inesperadamente antes de concluir o envio. "
+                    f"Verifique se a porta ({port}) e a opção TLS/SSL estão compatíveis com o provedor."
+                )
+            raise HTTPException(status_code=502, detail=detail) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Tempo esgotado ao conectar ao servidor SMTP ({host}:{port}). Verifique rede, firewall e porta.",
+            ) from exc
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Falha ao enviar e-mail via SMTP: {exc}") from exc
+            raise HTTPException(status_code=502, detail=f"Falha ao enviar e-mail via SMTP ({host}:{port}): {exc}") from exc
 
     @classmethod
     def enviar_mensagem_suporte(

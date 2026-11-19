@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.4 (2026-11-19)
+
+Comparativo a partir de `v0.2.3`.
+
+### Destaques
+
+Melhora diagnostico SMTP e padrao de commits na release
+
+### Resumo por Camada
+
+- **Raiz & Configuração**: 2 arquivo(s)
+- **Backend (API, Serviços & Banco)**: 1 arquivo(s)
+- **CI/CD & Automação**: 1 arquivo(s)
+- **Testes Automatizados**: 2 arquivo(s)
+
 ## v0.2.3 (2026-11-19)
 
 Comparativo a partir de `v0.2.2`.

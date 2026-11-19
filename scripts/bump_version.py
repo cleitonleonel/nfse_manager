@@ -374,6 +374,33 @@ def update_pyproject_version(pyproject_path: Path, new_version: str) -> bool:
     return False
 
 
+def build_release_commit_message(
+    target: str,
+    new_version: str,
+    notes: str = "",
+    custom_message: str = "",
+) -> str:
+    """Monta a mensagem de commit da release seguindo o padrão `:emoji: <tipo>: <mensagem clara>`."""
+    explicit = " ".join((custom_message or "").splitlines()).strip()
+    if explicit:
+        return explicit
+
+    normalized_target = (target or "patch").strip().lower()
+    if normalized_target == "minor":
+        prefix = f":sparkles: feat: publica release v{new_version}"
+    elif normalized_target == "major":
+        prefix = f":boom: feat!: publica release v{new_version}"
+    else:
+        prefix = f":bookmark: chore: publica release v{new_version}"
+
+    clean_notes = " ".join((notes or "").splitlines()).strip()
+    if clean_notes:
+        if len(clean_notes) > 72:
+            clean_notes = clean_notes[:69].rstrip() + "..."
+        return f"{prefix} — {clean_notes}"
+    return f"{prefix} e atualiza manifestos e changelog"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Altera a versão do projeto em todos os arquivos e gera changelog.txt / CHANGELOG.md detalhados."
@@ -385,6 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nova versão (ex.: 0.2.0 ou 1.0.0) ou incremento semântico (patch | minor | major). Padrão: patch.",
     )
     parser.add_argument("--notes", default="", help="Resumo/destaques manuais para incluir na entrada do changelog.")
+    parser.add_argument("-m", "--message", default="", help="Mensagem personalizada para o commit git da release.")
     parser.add_argument("--no-changelog", action="store_true", help="Não gera nem atualiza changelog.txt / CHANGELOG.md.")
     parser.add_argument("--no-fetch", action="store_true", help="Não busca tags remotas antes de calcular o diff do changelog.")
     parser.add_argument("--dry-run", action="store_true", help="Simula a operação sem alterar arquivos no disco.")
@@ -443,6 +471,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         args.commit = True
 
     if args.commit or args.tag:
+        commit_message = build_release_commit_message(
+            target=args.target,
+            new_version=new_version,
+            notes=args.notes,
+            custom_message=args.message,
+        )
         working_paths = list((analysis.get("working_files") or {}).keys())  # type: ignore[union-attr]
         paths_to_stage = sorted(set(working_paths) | set(changed_files))
         if paths_to_stage:
@@ -450,11 +484,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         staged_diff = _run_git(["diff", "--cached", "--name-only"], root=ROOT)
         if staged_diff:
             subprocess.run(
-                ["git", "commit", "-m", f"chore(release): v{new_version}"],
+                ["git", "commit", "-m", commit_message],
                 cwd=str(ROOT),
                 check=True,
             )
-            print(f"Commit criado: chore(release): v{new_version}")
+            print(f"Commit criado: {commit_message}")
 
     tag_name = f"v{new_version}"
     if args.tag:
