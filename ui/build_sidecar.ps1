@@ -46,6 +46,16 @@ foreach ($DirName in @("dist", "build")) {
     if (Test-Path $Target) { Remove-Item -Recurse -Force $Target }
 }
 
+$ExtraDataArgs = @()
+if (Test-Path (Join-Path $ProjectRoot "backend\migrations")) {
+    $ExtraDataArgs += @("--add-data", "backend\migrations;backend\migrations")
+}
+foreach ($ChangelogFile in @("CHANGELOG.md", "changelog.txt")) {
+    if (Test-Path (Join-Path $ProjectRoot $ChangelogFile)) {
+        $ExtraDataArgs += @("--add-data", "$ChangelogFile;.")
+    }
+}
+
 Write-Host "Empacotando servidor Python (PyInstaller)..." -ForegroundColor Cyan
 & $PythonCmd -m PyInstaller `
     --noconfirm `
@@ -82,7 +92,7 @@ Write-Host "Empacotando servidor Python (PyInstaller)..." -ForegroundColor Cyan
     --hidden-import requests_pkcs12 `
     --add-data "frontend;frontend" `
     --add-data "pyproject.toml;." `
-    --add-data "backend\migrations;backend\migrations" `
+    @ExtraDataArgs `
     server.py
 
 if ($LASTEXITCODE -ne 0) {

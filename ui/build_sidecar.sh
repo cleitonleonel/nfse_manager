@@ -52,6 +52,16 @@ echo ""
 echo "🧹 Limpando builds anteriores..."
 rm -rf "$PROJECT_ROOT/dist" "$PROJECT_ROOT/build" "$PROJECT_ROOT/__pycache__"
 
+EXTRA_DATA_ARGS=()
+if [[ -d "$PROJECT_ROOT/backend/migrations" ]]; then
+    EXTRA_DATA_ARGS+=(--add-data "backend/migrations:backend/migrations")
+fi
+for changelog_file in CHANGELOG.md changelog.txt; do
+    if [[ -f "$PROJECT_ROOT/$changelog_file" ]]; then
+        EXTRA_DATA_ARGS+=(--add-data "$changelog_file:.")
+    fi
+done
+
 # Rodar PyInstaller
 echo ""
 echo "🏗️  Empacotando servidor Python..."
@@ -90,7 +100,7 @@ cd "$PROJECT_ROOT"
     --hidden-import requests_pkcs12 \
     --add-data "frontend:frontend" \
     --add-data "pyproject.toml:." \
-    --add-data "backend/migrations:backend/migrations" \
+    "${EXTRA_DATA_ARGS[@]}" \
     server.py
 
 # Criar diretório de binários do Tauri
