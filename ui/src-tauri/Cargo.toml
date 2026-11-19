@@ -1,8 +1,8 @@
 [package]
 name = "nfse-manager"
 version = "0.2.0"
-description = "NFSe Manager Pro Desktop App"
-authors = ["Cleiton Leonel"]
+description = "Sistema multiusuário para gestão, emissão ADN v1.01 (IBS/CBS) e sincronização de NFS-e Nacional"
+authors = ["Cleiton Leonel <cleiton.leonel@gmail.com>"]
 license = ""
 repository = ""
 edition = "2021"

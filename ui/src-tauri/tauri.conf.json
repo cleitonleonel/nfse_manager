@@ -49,6 +49,24 @@
       "active": true,
       "targets": "all",
       "identifier": "br.com.nfse.manager",
+      "publisher": "Cleiton Leonel",
+      "copyright": "Copyright (c) 2026 Cleiton Leonel",
+      "category": "Productivity",
+      "shortDescription": "Gestão, emissão ADN v1.01 e sincronização de NFS-e Nacional",
+      "longDescription": "Sistema multiusuário para escritórios contábeis e empresas realizarem a gestão centralizada de NFS-e Nacional (Sefin Nacional / ADN v1.01 e Reforma Tributária IBS/CBS). Inclui emissão em 1 clique e em lote por planilhas (CSV/XLSX), consulta por certificado digital A1 (NSU), geração offline de DANFSe em PDF, catálogos fiscais oficiais atualizáveis (RFB e Portal Nacional) e relatórios financeiros por competência.",
+      "deb": {
+        "section": "utils",
+        "priority": "optional"
+      },
+      "windows": {
+        "wix": {
+          "language": "pt-BR"
+        },
+        "nsis": {
+          "languages": ["PortugueseBR"],
+          "installMode": "both"
+        }
+      },
       "externalBin": [
         "binaries/server"
       ],

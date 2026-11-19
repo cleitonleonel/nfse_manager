@@ -378,6 +378,12 @@
   gap: 8px;
 }
 
+.batch-toolbar-group .cs-wrap {
+  width: auto;
+  min-width: 165px;
+  flex: 0 0 auto;
+}
+
 .batch-selection-info {
   font-size: 12px;
   font-weight: 600;
