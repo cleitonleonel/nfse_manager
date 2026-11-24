@@ -31,6 +31,7 @@ ui/src-tauri/binaries/
 # Dados locais e certificados
 *.log
 *.env
+.agents/
 backend/certificados/
 backend/downloads/
 backend/migrations/

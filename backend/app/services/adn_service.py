@@ -18,7 +18,7 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, update
+from sqlalchemy import false as sa_false, func, or_, update
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -27,7 +27,7 @@ from app.core.config import (
     resolve_storage_path,
     to_storage_relative_path,
 )
-from app.models import Client, Customer, Invoice, ServiceItem
+from app.models import Client, Customer, Invoice, ServiceItem, User
 from app.schemas import (
     CancelarNfseRequest,
     EmitirDpsLoteRequest,
@@ -583,6 +583,18 @@ class AdnService:
         return client_db, prestador, signer, ambiente
 
     @staticmethod
+    def _resolve_audit_user(db: Session, current_user: Optional[User]) -> Tuple[Optional[int], Optional[str]]:
+        if not current_user:
+            return None, None
+        uname = getattr(current_user, "username", None)
+        uid = getattr(current_user, "id", None)
+        if uid is not None:
+            exists = db.query(User.id).filter(User.id == int(uid)).first()
+            if exists:
+                return int(uid), uname
+        return None, uname
+
+    @staticmethod
     def _calcular_tributacao_se_necessario(
         prestador: Dict[str, Any],
         servico: Dict[str, Any],
@@ -783,7 +795,12 @@ class AdnService:
         }
 
     @classmethod
-    async def emitir_dps(cls, db: Session, req: EmitirDpsRequest) -> Dict[str, Any]:
+    async def emitir_dps(
+        cls,
+        db: Session,
+        req: EmitirDpsRequest,
+        current_user: Optional[User] = None,
+    ) -> Dict[str, Any]:
         client_db, prestador, signer, ambiente = cls._resolver_prestador_e_certificado(
             db=db,
             client_id=req.client_id,
@@ -952,6 +969,7 @@ class AdnService:
             ensure_ascii=False,
         )
 
+        audit_uid, audit_uname = cls._resolve_audit_user(db, current_user)
         if not existing_inv:
             nova_nota = Invoice(
                 client_id=client_db.id if client_db else None,
@@ -982,6 +1000,9 @@ class AdnService:
                 tentativas_envio=tentativas_envio,
                 ultimo_erro_envio=ultimo_erro_envio,
                 payload_dps_json=payload_resumo,
+                created_by_user_id=audit_uid,
+                created_by_username=audit_uname,
+                ambiente=ambiente,
             )
             db.add(nova_nota)
             db.commit()
@@ -995,6 +1016,12 @@ class AdnService:
                 existing_inv.pdf_path = pdf_gerado_path
             existing_inv.tentativas_envio = (existing_inv.tentativas_envio or 0) + tentativas_envio
             existing_inv.ultimo_erro_envio = ultimo_erro_envio
+            if not existing_inv.ambiente:
+                existing_inv.ambiente = ambiente
+            if audit_uid and not existing_inv.created_by_user_id:
+                existing_inv.created_by_user_id = audit_uid
+            if audit_uname and not existing_inv.created_by_username:
+                existing_inv.created_by_username = audit_uname
             db.commit()
             db.refresh(existing_inv)
             invoice_obj = existing_inv
@@ -1028,7 +1055,12 @@ class AdnService:
         }
 
     @classmethod
-    async def emitir_dps_lote(cls, db: Session, req: EmitirDpsLoteRequest) -> Dict[str, Any]:
+    async def emitir_dps_lote(
+        cls,
+        db: Session,
+        req: EmitirDpsLoteRequest,
+        current_user: Optional[User] = None,
+    ) -> Dict[str, Any]:
         """Emite múltiplas DPS sequencialmente para o mesmo prestador, consolidando o resultado."""
         resultados: List[Dict[str, Any]] = []
         autorizadas = 0
@@ -1054,7 +1086,7 @@ class AdnService:
                 email_destinatario=item.email_destinatario,
             )
             try:
-                res = await cls.emitir_dps(db=db, req=item_req)
+                res = await cls.emitir_dps(db=db, req=item_req, current_user=current_user)
                 status_nota = res.get("status_nota", "dps_gerada")
                 if status_nota == "gerada":
                     autorizadas += 1
@@ -1204,7 +1236,12 @@ class AdnService:
         }
 
     @classmethod
-    async def substituir_nfse(cls, db: Session, req: SubstituirNfseRequest) -> Dict[str, Any]:
+    async def substituir_nfse(
+        cls,
+        db: Session,
+        req: SubstituirNfseRequest,
+        current_user: Optional[User] = None,
+    ) -> Dict[str, Any]:
         invoice_orig: Optional[Invoice] = None
         if req.invoice_id_substituida:
             invoice_orig = db.query(Invoice).filter(Invoice.id == req.invoice_id_substituida).first()
@@ -1353,6 +1390,7 @@ class AdnService:
         reforma = tributacao_calc.get("reforma_tributaria") or {}
         iss_info = tributacao_calc.get("iss") or {}
         nova_nota = db.query(Invoice).filter(Invoice.chave == chave_substituta).first()
+        audit_uid, audit_uname = cls._resolve_audit_user(db, current_user)
         if not nova_nota:
             nova_nota = Invoice(
                 client_id=client_db.id if client_db else None,
@@ -1376,6 +1414,9 @@ class AdnService:
                 c_nbs=clean_digits(req.servico.get("cNBS") or ""),
                 c_class_trib=str(reforma.get("cClassTrib") or "000001"),
                 cst_ibscbs=str(reforma.get("cst") or "000"),
+                created_by_user_id=audit_uid,
+                created_by_username=audit_uname,
+                ambiente=ambiente,
             )
             db.add(nova_nota)
 
@@ -1407,10 +1448,19 @@ class AdnService:
     # ==========================================================================
 
     @staticmethod
-    def listar_fila_contingencia(db: Session, client_id: Optional[int] = None) -> List[Invoice]:
+    def listar_fila_contingencia(
+        db: Session,
+        client_id: Optional[int] = None,
+        allowed_client_ids: Optional[List[int]] = None,
+    ) -> List[Invoice]:
         query = db.query(Invoice).filter(Invoice.status.in_(["dps_gerada", "fila_contingencia"]))
         if client_id is not None:
             query = query.filter(Invoice.client_id == client_id)
+        elif allowed_client_ids is not None:
+            if not allowed_client_ids:
+                query = query.filter(sa_false())
+            else:
+                query = query.filter(Invoice.client_id.in_(allowed_client_ids))
         return query.order_by(Invoice.data_emissao.desc()).all()
 
     @staticmethod
@@ -1451,10 +1501,20 @@ class AdnService:
         }
 
     @classmethod
-    async def reenviar_fila_contingencia(cls, db: Session, req: ReenviarFilaRequest) -> Dict[str, Any]:
+    async def reenviar_fila_contingencia(
+        cls,
+        db: Session,
+        req: ReenviarFilaRequest,
+        allowed_client_ids: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
         query = db.query(Invoice).filter(Invoice.status.in_(["dps_gerada", "fila_contingencia"]))
         if req.client_id is not None:
             query = query.filter(Invoice.client_id == req.client_id)
+        elif allowed_client_ids is not None:
+            if not allowed_client_ids:
+                query = query.filter(sa_false())
+            else:
+                query = query.filter(Invoice.client_id.in_(allowed_client_ids))
         if req.invoice_ids:
             query = query.filter(Invoice.id.in_(req.invoice_ids))
 
@@ -1664,6 +1724,7 @@ class AdnService:
                         data_emissao=info_xml.get("data_emissao") or datetime.datetime.now(datetime.UTC),
                         xml_path=xml_saved_path,
                         pdf_path=pdf_saved,
+                        ambiente=ambiente,
                     )
                     db.add(nova)
                     novas_notas += 1

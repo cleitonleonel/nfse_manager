@@ -1,6 +1,6 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { openModal, closeModal, uiAlert, uiConfirm, completeTaskToast } from '../core/ui.js';
+import { openModal, closeModal, uiAlert, uiConfirm, completeTaskToast, escapeAttr } from '../core/ui.js';
 
 export async function loadClients() {
     state.clients = await api('/clients');
@@ -53,14 +53,19 @@ export function renderClients() {
     if (!tbody) return;
     
     if (state.clients.length === 0) {
+        const isAdmin = isCurrentUserAdmin();
+        const emptyTitle = isAdmin ? 'Nenhum cliente cadastrado' : 'Nenhuma empresa vinculada';
+        const emptyDesc = isAdmin
+            ? 'Adicione o primeiro cliente para começar a sincronizar as notas fiscais.'
+            : 'Cadastre sua empresa ou solicite ao administrador o vínculo de acesso às empresas desejadas.';
         tbody.innerHTML = `
             <tr>
                 <td colspan="4">
                     <div class="empty-state">
                         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-                        <div class="empty-state-title">Nenhum cliente cadastrado</div>
-                        <div class="empty-state-desc">Adicione o primeiro cliente para começar a sincronizar as notas fiscais.</div>
-                        <button class="btn btn-primary" onclick="App.openModal('modal-client')">Novo Cliente</button>
+                        <div class="empty-state-title">${emptyTitle}</div>
+                        <div class="empty-state-desc">${emptyDesc}</div>
+                        <button type="button" class="btn btn-primary" onclick="App.openModal('modal-client')">Novo Cliente</button>
                     </div>
                 </td>
             </tr>
@@ -71,29 +76,29 @@ export function renderClients() {
     tbody.innerHTML = state.clients.map(c => {
         let certBadge = '';
         if (c.status_certificado === 'vencido') {
-            certBadge = `<span class="badge" style="background:rgba(239,68,68,0.15); color:var(--red);">❌ A1 Vencido</span>`;
+            certBadge = `<span class="badge" style="background:var(--red-bg); color:var(--red-text);">A1 Vencido</span>`;
         } else if (c.status_certificado === 'expirando') {
-            certBadge = `<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b;">⚠️ A1 (${c.dias_para_vencer}d)</span>`;
+            certBadge = `<span class="badge" style="background:var(--amber-bg); color:var(--amber-text);">A1 (${Number(c.dias_para_vencer)}d)</span>`;
         } else if (c.status_certificado === 'valido') {
-            certBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:var(--green);">✓ A1 (${c.dias_para_vencer}d)</span>`;
+            certBadge = `<span class="badge" style="background:var(--green-bg); color:var(--green-text);">A1 (${Number(c.dias_para_vencer)}d)</span>`;
         }
         const smtpBadge = c.smtp_configurado
-            ? `<span class="badge" style="background:rgba(59,130,246,0.15); color:var(--accent);">SMTP ✓</span>`
+            ? `<span class="badge" style="background:rgba(59,130,246,0.14); color:var(--accent-text);">SMTP</span>`
             : '';
         return `
         <tr>
-            <td style="font-family:var(--mono); white-space:nowrap;">${c.cnpj}</td>
+            <td style="font-family:var(--mono); white-space:nowrap;">${escapeAttr(c.cnpj)}</td>
             <td style="font-weight:500;">
                 <div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
-                    <span>${c.razao_social}</span>
+                    <span>${escapeAttr(c.razao_social)}</span>
                     ${certBadge}${smtpBadge}
                 </div>
             </td>
-            <td style="color:var(--text3);">${c.description || '-'}</td>
+            <td style="color:var(--text2);">${escapeAttr(c.description || '-')}</td>
             <td>
                 <div style="display:flex; gap:8px;">
-                    <button class="btn-action" onclick="App.editClient(${c.id})" title="Editar"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                    <button class="btn-action" onclick="App.deleteClient(${c.id})" title="Excluir"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    <button type="button" class="btn-action" onclick="App.editClient(${Number(c.id)})" title="Editar empresa" aria-label="Editar empresa ${escapeAttr(c.razao_social)}"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                    <button type="button" class="btn-action" onclick="App.deleteClient(${Number(c.id)})" title="Excluir empresa" aria-label="Excluir empresa ${escapeAttr(c.razao_social)}"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 </div>
             </td>
         </tr>
@@ -140,10 +145,10 @@ export function editClient(id) {
     if (autoEl) autoEl.checked = Boolean(c.enviar_email_automatico);
     const smtpBadge = document.getElementById('c-smtp-status-badge');
     if (smtpBadge) {
-        smtpBadge.style.display = c.smtp_configurado ? 'inline-block' : 'none';
-        smtpBadge.style.background = 'rgba(16,185,129,0.15)';
-        smtpBadge.style.color = 'var(--green)';
-        smtpBadge.textContent = 'SMTP Configurado ✓';
+        smtpBadge.style.display = c.smtp_configurado ? 'inline-flex' : 'none';
+        smtpBadge.style.background = 'var(--green-bg)';
+        smtpBadge.style.color = 'var(--green-text)';
+        smtpBadge.textContent = 'SMTP Configurado';
     }
     
     // Update modal title
@@ -398,7 +403,7 @@ export async function browseFolders(path = null) {
         });
 
     } catch (e) {
-        list.innerHTML = `<div style="padding:10px; font-size:11px; color:var(--red);">Erro ao carregar.</div>`;
+        list.innerHTML = `<div style="padding:10px; font-size:11px; color:var(--red-text);">Erro ao carregar.</div>`;
     }
 }
 
@@ -447,10 +452,10 @@ export async function usarSmtpPadrao() {
 
         const badge = document.getElementById('c-smtp-status-badge');
         if (badge) {
-            badge.style.display = 'inline-block';
-            badge.style.background = res.configured ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)';
-            badge.style.color = res.configured ? 'var(--green)' : 'var(--amber)';
-            badge.textContent = res.configured ? 'Padrão .env carregado ✓' : 'Parcial (.env sem senha)';
+            badge.style.display = 'inline-flex';
+            badge.style.background = res.configured ? 'var(--green-bg)' : 'var(--amber-bg)';
+            badge.style.color = res.configured ? 'var(--green-text)' : 'var(--amber-text)';
+            badge.textContent = res.configured ? 'Padrão .env carregado' : 'Parcial (.env sem senha)';
         }
     } catch (e) {
         await uiAlert({ title: 'Erro ao carregar SMTP padrão', message: e.message, variant: 'error' });

@@ -50,11 +50,31 @@ export async function loadView(pageId) {
 }
 
 export async function showPage(pageId) {
+    if (pageId === 'users') {
+        try {
+            const raw = localStorage.getItem('nfse_user');
+            const u = raw ? JSON.parse(raw) : null;
+            if (!u || u.role !== 'admin') {
+                pageId = 'dashboard';
+            }
+        } catch (_) {
+            pageId = 'dashboard';
+        }
+    }
+
     document.querySelectorAll('.nav-item').forEach(p => p.classList.remove('active'));
     const navItem = document.getElementById(`nav-${pageId}`);
     if (navItem) navItem.classList.add('active');
     
-    const titles = {dashboard: 'Dashboard', clients: 'Clientes', invoices: 'Notas Fiscais', emission: 'Emissor NFS-e Nacional (ADN)', about: 'Sobre o Sistema'};
+    const titles = {
+        dashboard: 'Dashboard',
+        clients: 'Clientes',
+        invoices: 'Notas Fiscais',
+        emission: 'Emissor NFS-e Nacional (ADN)',
+        users: 'Gestão de Equipe',
+        help: 'Ajuda & Suporte',
+        about: 'Sobre o Sistema',
+    };
     const titleEl = document.getElementById('page-title');
     if (titleEl) titleEl.innerText = titles[pageId] || 'Dashboard';
     
@@ -73,6 +93,12 @@ export async function showPage(pageId) {
              if (window.App.loadDashboardStats) window.App.loadDashboardStats();
              if (window.App.loadDashboardChart) window.App.loadDashboardChart(window.App.chartPeriod);
              if (window.App.loadRanking) window.App.loadRanking();
+         }
+         if (pageId === 'users') {
+             if (window.App.loadUsers) window.App.loadUsers();
+         }
+         if (pageId === 'help') {
+             if (window.App.initHelpPage) window.App.initHelpPage();
          }
          if (pageId === 'about') {
              if (window.App.initAbout) window.App.initAbout();

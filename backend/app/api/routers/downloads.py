@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import or_
 
 from app.api.deps import get_nfse_client, has_valid_certificate
+from app.api.permissions import assert_client_access, assert_invoice_access, get_allowed_client_ids, is_admin_user
 from app.api.routers.auth import get_current_user
 from app.api.state import TaskStore
 from app.core.config import BACKEND_DIR, get_certs_dir, get_data_dir, get_downloads_dir, resolve_storage_path
@@ -90,8 +91,14 @@ def _is_within_root(target: Path, root: Path) -> bool:
         return False
 
 
-def _is_path_allowed_for_download(db, requested_path: str, resolved_path: Optional[str] = None) -> bool:
-    """Valida contra Path Traversal permitindo apenas storage de downloads, `save_path` de clientes ou rotas em `Invoice`."""
+def _is_path_allowed_for_download(
+    db,
+    requested_path: str,
+    resolved_path: Optional[str] = None,
+    *,
+    user: Optional[User] = None,
+) -> bool:
+    """Valida contra Path Traversal e isolamento por usuário permitindo apenas rotas de `Invoice` ou `save_path` autorizados."""
     raw = (requested_path or "").strip()
     if not raw or "\x00" in raw:
         return False
@@ -99,31 +106,38 @@ def _is_path_allowed_for_download(db, requested_path: str, resolved_path: Option
     if resolved_path and "\x00" in resolved_path:
         return False
 
+    allowed_ids = get_allowed_client_ids(db, user) if user is not None else None
+    if allowed_ids is not None and not allowed_ids:
+        return False
+
     cands = _path_candidates(raw)
     if resolved_path:
         cands.extend([resolved_path, str(Path(resolved_path).resolve())])
     cands = [c for c in dict.fromkeys(cands) if c]
 
-    # 1. Verifica se está explicitamente registrado em alguma Invoice
+    # 1. Verifica se está explicitamente registrado em alguma Invoice permitida
     if cands:
-        inv_match = (
-            db.query(Invoice.id)
-            .filter(
-                or_(
-                    Invoice.xml_path.in_(cands),
-                    Invoice.pdf_path.in_(cands),
-                    Invoice.xml_dps_path.in_(cands),
-                    Invoice.xml_evento_path.in_(cands),
-                )
+        inv_q = db.query(Invoice.id).filter(
+            or_(
+                Invoice.xml_path.in_(cands),
+                Invoice.pdf_path.in_(cands),
+                Invoice.xml_dps_path.in_(cands),
+                Invoice.xml_evento_path.in_(cands),
             )
-            .first()
         )
-        if inv_match is not None:
+        if allowed_ids is not None:
+            inv_q = inv_q.filter(Invoice.client_id.in_(allowed_ids))
+        if inv_q.first() is not None:
             return True
 
-    # 2. Monta raízes permitidas: get_downloads_dir() e save_path de clientes cadastrados
-    allowed_roots: List[Path] = [get_downloads_dir()]
-    for (sp_raw,) in db.query(Client.save_path).filter(Client.save_path.is_not(None), Client.save_path != "").all():
+    # 2. Monta raízes permitidas: get_downloads_dir() (apenas admin), pasta temp do usuário e save_path de clientes autorizados
+    allowed_roots: List[Path] = [get_downloads_dir()] if allowed_ids is None else []
+    if user is not None and getattr(user, "id", None) and allowed_ids is not None:
+        allowed_roots.append(get_downloads_dir() / "temp" / f"u_{int(user.id)}")
+    client_sp_q = db.query(Client.save_path).filter(Client.save_path.is_not(None), Client.save_path != "")
+    if allowed_ids is not None:
+        client_sp_q = client_sp_q.filter(Client.id.in_(allowed_ids))
+    for (sp_raw,) in client_sp_q.all():
         sp_resolved = resolve_storage_path(sp_raw, kind="downloads")
         if sp_resolved:
             allowed_roots.append(sp_resolved)
@@ -680,6 +694,17 @@ def sync_portal_download(
     current_user: User = Depends(get_current_user),
 ):
     """Dispara download de notas do portal para o disco em background."""
+    db = SessionLocal()
+    try:
+        if payload.client_id:
+            assert_client_access(db, current_user, payload.client_id, allow_none_for_admin=False)
+        if payload.invoice_ids:
+            invs = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids)).all()
+            for inv in invs:
+                assert_invoice_access(db, current_user, inv)
+    finally:
+        db.close()
+
     task_id = f"dl_{payload.client_id}_{os.urandom(4).hex()}"
     background_tasks.add_task(
         background_download,
@@ -693,17 +718,17 @@ def sync_portal_download(
 
 
 @router.get("/file")
-def download_file(path: str, _current_user: User = Depends(get_current_user)):
+def download_file(path: str, current_user: User = Depends(get_current_user)):
     """Servir arquivo do disco para o navegador com validação contra Path Traversal."""
     if not path or "\x00" in path:
         raise HTTPException(status_code=403, detail="Caminho de arquivo inválido.")
 
     db = SessionLocal()
     try:
-        if not _is_path_allowed_for_download(db, path):
+        if not _is_path_allowed_for_download(db, path, user=current_user):
             raise HTTPException(status_code=403, detail="Acesso negado ao caminho solicitado.")
         resolved_path = _ensure_file_available(db, path)
-        if resolved_path and not _is_path_allowed_for_download(db, path, resolved_path):
+        if resolved_path and not _is_path_allowed_for_download(db, path, resolved_path, user=current_user):
             raise HTTPException(status_code=403, detail="Acesso negado ao arquivo resolvido.")
     finally:
         db.close()
@@ -718,7 +743,7 @@ def download_file(path: str, _current_user: User = Depends(get_current_user)):
 
 
 @router.post("/batch")
-def create_batch_zip(payload: dict):
+def create_batch_zip(payload: dict, current_user: User = Depends(get_current_user)):
     """Criar arquivo ZIP temporário com arquivos selecionados."""
     paths = payload.get("arquivos", [])
     if not paths:
@@ -730,8 +755,14 @@ def create_batch_zip(payload: dict):
         for path in paths:
             if not path:
                 continue
+            if not is_admin_user(current_user) and not _is_path_allowed_for_download(db, path, user=current_user):
+                raise HTTPException(status_code=403, detail="Acesso negado a um ou mais arquivos solicitados.")
             resolved = _ensure_file_available(db, path)
             if resolved:
+                if not is_admin_user(current_user) and not _is_path_allowed_for_download(
+                    db, path, resolved, user=current_user
+                ):
+                    raise HTTPException(status_code=403, detail="Acesso negado a um ou mais arquivos resolvidos.")
                 resolved_paths.append(resolved)
     finally:
         db.close()
@@ -739,7 +770,10 @@ def create_batch_zip(payload: dict):
     if not resolved_paths:
         raise HTTPException(status_code=404, detail="Nenhum arquivo pôde ser recuperado para gerar o lote.")
 
-    temp_dir = get_downloads_dir() / "temp"
+    if is_admin_user(current_user):
+        temp_dir = get_downloads_dir() / "temp"
+    else:
+        temp_dir = get_downloads_dir() / "temp" / f"u_{int(current_user.id)}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     zip_name = f"lote_{os.urandom(4).hex()}.zip"
     zip_path = str(temp_dir / zip_name)
@@ -753,8 +787,37 @@ def create_batch_zip(payload: dict):
     return {"zip_path": zip_path}
 
 
+def _validate_safe_output_path(raw_output: Optional[str], db, current_user: User) -> Optional[str]:
+    if not raw_output:
+        return None
+    if "\x00" in raw_output or ".." in Path(raw_output.replace("\\", "/")).parts:
+        raise HTTPException(status_code=400, detail="Caminho de saída inválido.")
+    target = Path(raw_output)
+    if not target.is_absolute():
+        target = get_downloads_dir() / target
+    if is_admin_user(current_user):
+        return str(target)
+    allowed_roots: List[Path] = [get_downloads_dir() / "converted"]
+    allowed_ids = get_allowed_client_ids(db, current_user) or []
+    if allowed_ids:
+        for (sp_raw,) in (
+            db.query(Client.save_path)
+            .filter(Client.id.in_(allowed_ids), Client.save_path.is_not(None), Client.save_path != "")
+            .all()
+        ):
+            sp_res = resolve_storage_path(sp_raw, kind="downloads")
+            if sp_res:
+                allowed_roots.append(sp_res)
+    if not any(_is_within_root(target, root) for root in allowed_roots):
+        raise HTTPException(status_code=403, detail="Caminho de saída fora dos diretórios permitidos.")
+    return str(target)
+
+
 @router.post("/html-to-xml")
-def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
+def convert_html_to_xml_endpoint(
+    payload: HtmlToXmlRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Converte o HTML de impressão baixado da NFS-e em XML padrão SPED.
     Aceita `html_content`, `html_path` ou `invoice_id`.
@@ -764,6 +827,9 @@ def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
         invoice: Optional[Invoice] = None
         if payload.invoice_id:
             invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+            assert_invoice_access(db, current_user, invoice)
+
+        safe_xml_out = _validate_safe_output_path(payload.xml_output_path, db, current_user)
 
         html_path = payload.html_path
         if not html_path and invoice and invoice.pdf_path and invoice.pdf_path.lower().endswith(".html"):
@@ -772,39 +838,46 @@ def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
         resolved_html = _resolve_existing_path(html_path) if html_path else None
         if resolved_html and not invoice:
             invoice = _find_invoice_by_path(db, html_path or resolved_html)
+            assert_invoice_access(db, current_user, invoice)
+        if html_path and not is_admin_user(current_user) and not invoice:
+            if not _is_path_allowed_for_download(db, html_path, resolved_html, user=current_user):
+                raise HTTPException(status_code=403, detail="Acesso negado ao arquivo HTML solicitado.")
 
-        xml_path: Optional[str] = None
+        html_src: Optional[str] = None
         if payload.html_content:
-            xml_content = converter_html_para_xml(payload.html_content)
-            chave = extrair_chave_do_xml(xml_content)
-            if payload.xml_output_path:
-                out_p = Path(payload.xml_output_path)
-            elif resolved_html:
-                out_str = (
-                    str(Path(resolved_html).with_suffix(".xml"))
-                    .replace("/pdfs/", "/xmls/")
-                    .replace("\\pdfs\\", "\\xmls\\")
-                )
-                out_p = Path(out_str)
-            else:
-                out_dir = get_downloads_dir() / "converted" / "xmls"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_p = out_dir / f"{chave or 'nfse_convertida'}.xml"
-            out_p.parent.mkdir(parents=True, exist_ok=True)
-            out_p.write_text(xml_content, encoding="utf-8")
-            xml_path = str(out_p)
+            html_src = payload.html_content
         elif resolved_html and Path(resolved_html).exists():
-            xml_path = converter_arquivo_html_para_xml(resolved_html, payload.xml_output_path)
-            xml_content = Path(xml_path).read_text(encoding="utf-8")
+            html_src = Path(resolved_html).read_text(encoding="utf-8", errors="ignore")
         else:
             raise HTTPException(
                 status_code=400,
                 detail="Informe um `html_content` válido ou um `html_path` / `invoice_id` com HTML existente.",
             )
 
+        xml_content = converter_html_para_xml(html_src)
+        chave = extrair_chave_do_xml(xml_content)
+        if not invoice and chave:
+            invoice = db.query(Invoice).filter(Invoice.chave == chave).first()
+            assert_invoice_access(db, current_user, invoice)
+
+        if safe_xml_out:
+            out_p = Path(safe_xml_out)
+        elif resolved_html:
+            out_str = (
+                str(Path(resolved_html).with_suffix(".xml"))
+                .replace("/pdfs/", "/xmls/")
+                .replace("\\pdfs\\", "\\xmls\\")
+            )
+            out_p = Path(out_str)
+        else:
+            out_dir = get_downloads_dir() / "converted" / "xmls"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_p = out_dir / f"{chave or 'nfse_convertida'}.xml"
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(xml_content, encoding="utf-8")
+        xml_path = str(out_p)
+
         dados = extrair_dados_nfse(xml_path) if xml_path else {}
-        if not invoice and dados.get("chave"):
-            invoice = db.query(Invoice).filter(Invoice.chave == dados["chave"]).first()
 
         if invoice and xml_path:
             enriquecer_nota_com_xml(invoice, xml_path=xml_path, dados=dados)
@@ -830,7 +903,11 @@ def convert_html_to_xml_endpoint(payload: HtmlToXmlRequest):
 
 
 @router.post("/xml-to-pdf")
-def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False):
+def convert_xml_to_pdf_endpoint(
+    payload: XmlToPdfRequest,
+    download: bool = False,
+    current_user: User = Depends(get_current_user),
+):
     """
     Recebe o XML gerado (`xml_content`, `xml_path` ou `invoice_id`) e converte
     em PDF (DANFSe) utilizando `pynfse.danfse_generator.DanfseGenerator`.
@@ -840,6 +917,7 @@ def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False
         invoice: Optional[Invoice] = None
         if payload.invoice_id:
             invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+            assert_invoice_access(db, current_user, invoice)
 
         xml_path = payload.xml_path
         if not xml_path and invoice and invoice.xml_path:
@@ -848,6 +926,10 @@ def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False
         resolved_xml = _resolve_existing_path(xml_path) if xml_path else None
         if resolved_xml and not invoice:
             invoice = _find_invoice_by_path(db, xml_path or resolved_xml)
+            assert_invoice_access(db, current_user, invoice)
+        if xml_path and not is_admin_user(current_user) and not invoice:
+            if not _is_path_allowed_for_download(db, xml_path, resolved_xml, user=current_user):
+                raise HTTPException(status_code=403, detail="Acesso negado ao arquivo XML solicitado.")
 
         if not payload.xml_content and not resolved_xml:
             raise HTTPException(
@@ -855,13 +937,25 @@ def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False
                 detail="Informe `xml_content`, `xml_path` ou `invoice_id` com XML disponível para gerar o PDF.",
             )
 
+        safe_pdf_out = _validate_safe_output_path(payload.pdf_output_path, db, current_user)
+
+        if not invoice:
+            raw_xml_check = payload.xml_content
+            if not raw_xml_check and resolved_xml and Path(resolved_xml).exists():
+                raw_xml_check = Path(resolved_xml).read_text(encoding="utf-8", errors="ignore")
+            if raw_xml_check:
+                pre_chave = extrair_chave_do_xml(raw_xml_check)
+                if pre_chave:
+                    invoice = db.query(Invoice).filter(Invoice.chave == pre_chave).first()
+                    assert_invoice_access(db, current_user, invoice)
+
         status_nota = payload.status or (invoice.status if invoice else "NORMAL") or "NORMAL"
         default_dir = get_downloads_dir() / "converted"
 
         res = converter_xml_para_pdf_pynfse(
             xml_content=payload.xml_content,
             xml_path=resolved_xml or xml_path,
-            pdf_output_path=payload.pdf_output_path,
+            pdf_output_path=safe_pdf_out,
             status=status_nota,
             default_dir=default_dir,
         )
@@ -873,6 +967,7 @@ def convert_xml_to_pdf_endpoint(payload: XmlToPdfRequest, download: bool = False
 
         if not invoice and chave:
             invoice = db.query(Invoice).filter(Invoice.chave == chave).first()
+            assert_invoice_access(db, current_user, invoice)
 
         if invoice:
             if pdf_path:

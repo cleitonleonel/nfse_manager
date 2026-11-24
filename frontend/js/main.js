@@ -5,8 +5,8 @@ import { showPage } from './core/router.js';
 import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking, exportReport } from './pages/dashboard.js';
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
 import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport, refreshLocalMirrorBar, chooseLocalMirror, clearLocalMirror, toggleAutoMirror, mirrorInvoicesNow, clearLocalInvoices, toggleCompMonthPicker, shiftCompPickerYear, selectCompMonth } from './pages/invoices.js';
-import { sendSupportMessage, checkUpdates, initAbout, startUpdateDownload, applyDownloadedUpdate, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs } from './pages/about.js';
-import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser } from './pages/users.js';
+import { sendSupportMessage, checkUpdates, initAbout, initHelpPage, startUpdateDownload, applyDownloadedUpdate, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs } from './pages/about.js';
+import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser, filterOperatorClientsList, toggleAllOperatorClients } from './pages/users.js';
 import {
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,
     onSelectSavedCustomer, onSelectSavedService, onChangeCTribNac,
@@ -88,11 +88,12 @@ window.App = {
     cancelActiveBatch, exportActiveBatch,
     deleteBatch, deleteBatchItem, deleteSelectedBatchItems, deleteAllBatchItems,
     
-    // System/About & Team Management
+    // System/About & Team Management & Help
     sendSupportMessage, checkUpdates, startUpdateDownload, applyDownloadedUpdate,
-    initAbout, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs,
+    initAbout, initHelpPage, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs,
     loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator,
     toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser,
+    filterOperatorClientsList, toggleAllOperatorClients,
 
     // Auth (JWT Gatekeeper)
     _pollTimer: null,
@@ -299,23 +300,28 @@ window.App = {
         const pill = document.getElementById('auth-user-pill');
         const lbl = document.getElementById('auth-topbar-label');
         const roleBadge = document.getElementById('auth-topbar-role');
+        const navUsers = document.getElementById('nav-users');
         if (!lbl || !pill) return;
         const token = localStorage.getItem('nfse_token');
         const rawUser = localStorage.getItem('nfse_user');
         if (token && rawUser) {
             try {
                 const u = JSON.parse(rawUser);
+                const isAdmin = u.role === 'admin';
                 lbl.innerText = u.full_name || u.username || 'Operador';
                 if (roleBadge) {
-                    const isAdmin = u.role === 'admin';
                     roleBadge.innerText = isAdmin ? 'Admin' : 'Operador';
                     roleBadge.classList.toggle('is-admin', isAdmin);
                     roleBadge.classList.toggle('is-operador', !isAdmin);
+                }
+                if (navUsers) {
+                    navUsers.style.display = isAdmin ? 'flex' : 'none';
                 }
                 pill.style.display = 'inline-flex';
                 return;
             } catch (e) {}
         }
+        if (navUsers) navUsers.style.display = 'none';
         pill.style.display = 'none';
     },
 

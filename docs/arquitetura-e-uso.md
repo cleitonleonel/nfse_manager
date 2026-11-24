@@ -16,9 +16,9 @@ O sistema é dividido em quatro módulos desacoplados no mesmo repositório:
 ```mermaid
 flowchart TB
     subgraph Docker["Rede Docker (nfse_network)"]
-        FE["frontend (Nginx :3000 -> :80)<br/>Serve SPA + Proxy /api/*"]
-        BE["backend (FastAPI :8000)<br/>uvicorn app.main:app"]
-        DB[("database (PostgreSQL 16)<br/>Host :5434 -> Container :5432")]
+        FE["frontend (Nginx :3000 -> :80)<br>Serve SPA + Proxy /api/*"]
+        BE["backend (FastAPI :8000)<br>uvicorn app.main:app"]
+        DB[("database (PostgreSQL 16)<br>Host :5434 -> Container :5432")]
     end
 
     subgraph Volumes["Volumes e Armazenamento Persistente"]
@@ -27,8 +27,8 @@ flowchart TB
         V_DL["Bind: backend/downloads/"]
     end
 
-    FE -->|http://backend:8000| BE
-    BE -->|SQLAlchemy / psycopg2| DB
+    FE -->|"http://backend:8000"| BE
+    BE -->|"SQLAlchemy / psycopg2"| DB
     DB --- V_PG
     BE --- V_CERT
     BE --- V_DL

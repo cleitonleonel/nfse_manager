@@ -27,3 +27,17 @@ Sempre validar todas as camadas afetadas após a última edição antes de repor
 - **Compatibilidade WebKitGTK (Tauri Linux):** não depender de controles sem suporte nativo no WebKitGTK (como `<input type="month">` sem popover customizado ou `window.showDirectoryPicker()` obrigatório sem fallback).
 - **Feedback honesto de erros:** tarefas em background (como `background_download`) nunca devem retornar `status = "completed"` com sucesso se todas as notas falharem; erros SMTP (`EmailService._dispatch_smtp`) devem distinguir falhas de autenticação (`SMTPAuthenticationError` / desconexão durante `login`), porta/TLS e timeout com mensagens claras em PT-BR.
 - **Idioma e código:** manter UI, documentação e respostas ao usuário em PT-BR, evitar duplicação de lógica e manter links clicáveis para arquivos e símbolos citados.
+
+## 5. Equipe Contábil & Skills Fiscais (`.agents/skills/`)
+Sempre que a tarefa envolver legislação da NFS-e Nacional (NT 008 / NT 1.101), Reforma Tributária (`LC 214/2025` — IBS/CBS), regimes tributários (`MEI`, `Simples Nacional`, `Lucro Presumido`, `Lucro Real`), retenções, catálogos RFB ou cálculos fiscais:
+- Ativar a skill orquestradora `.agents/skills/nfse-contabilidade-equipe/SKILL.md` e suas especialistas (`.agents/skills/nfse-normas-e-reforma/`, `.agents/skills/nfse-matematica-tributaria/` e `.agents/skills/nfse-implementacao-fiscal/`).
+- Validar qualquer mudança numérica executando `.agents/skills/nfse-matematica-tributaria/scripts/audit_tax_math.py`, mantendo fonte única de verdade em `pynfse.adn.tax_calculator` e `AdnService`.
+
+## 6. Equipe Sênior Fixa & Crivo Obrigatório (`.agents/skills/nfse-equipe-engenharia/`)
+A equipe fixa de engenharia do produto é composta por 4 especialistas persistentes em `.agents/skills/`, orquestrados por `.agents/skills/nfse-equipe-engenharia/SKILL.md`. Nenhuma entrega pode ser considerada concluída sem pesquisa prévia, troca de pareceres quando aplicável, aprovação do usuário para decisões estruturais e crivo final obrigatório via subagentes dedicados:
+- **Arquiteto de Software & Data Designer Sênior (`.agents/skills/nfse-arquiteto-e-dados/SKILL.md`):** revisar modelagem relacional, design de dados (PostgreSQL 16 / SQLite), migrações, acoplamento e proteção anti-IDOR/RBAC em todas as rotas afetadas antes de concluir.
+- **Engenheiro Backend & Fullstack Sênior (`.agents/skills/nfse-dev-fullstack/SKILL.md`):** diagnosticar causa raiz, implementar backend Python/FastAPI e frontend SPA sem duplicação de lógica e manter `docs/` atualizado.
+- **Designer UI/UX Sênior — Material Design 3 (`.agents/skills/nfse-designer-material-ux/SKILL.md`):** revisar toda alteração de interface (`frontend/views/`, `frontend/css/`, `frontend/js/`) aplicando padrões modernos inspirados em Google Material Design 3, Vue/React/Flutter/Mobile-first, acessibilidade WCAG AA, temas claro/escuro e compatibilidade WebKitGTK (Tauri).
+- **Engenheiro de QA & Testes Sênior (`.agents/skills/nfse-qa-engenheiro/SKILL.md`):** garantir testes automatizados cobrindo cenários novos, negativos (403/400/404) e regressões; **todos** os testes (`pytest` em SQLite limpo + PostgreSQL 16, `ruff`, `node --check` e `mkdocs build --strict` quando aplicável) devem passar 100% antes da entrega final.
+
+

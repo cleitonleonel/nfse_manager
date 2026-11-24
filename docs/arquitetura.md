@@ -9,38 +9,38 @@ O **NFSe Manager Pro** adota uma arquitetura modular que separa claramente a cam
 ```mermaid
 flowchart LR
     subgraph Presentation["Apresentação"]
-        SPA["Frontend SPA<br/>(frontend/ - Nginx :3000)"]
-        Desktop["Desktop App<br/>(ui/ - Tauri Rust)"]
+        SPA["Frontend SPA<br>(frontend/ - Nginx :3000)"]
+        Desktop["Desktop App<br>(ui/ - Tauri Rust)"]
     end
 
     subgraph AppLayer["Backend FastAPI (backend/app/)"]
         Main["app.main:app (:8000)"]
-        Routers["api/routers/*<br/>(12 domínios REST)"]
+        Routers["api/routers/*<br>(12 domínios REST)"]
         AdnService["services/adn_service.py"]
         Deps["api/deps.py"]
     end
 
     subgraph Storage["Persistência & Arquivos"]
-        PG[("PostgreSQL 16<br/>(database/ :5434)")]
-        Certs["backend/certificados/<br/>(Arquivos .pfx)"]
-        Downloads["backend/downloads/<br/>(XMLs, PDFs, ZIPs, ADN)"]
+        PG[("PostgreSQL 16<br>(database/ :5434)")]
+        Certs["backend/certificados/<br>(Arquivos .pfx)"]
+        Downloads["backend/downloads/<br>(XMLs, PDFs, ZIPs, ADN)"]
     end
 
     subgraph External["Serviços Governamentais"]
-        ADN["ADN / Sefin Nacional<br/>(API mTLS v1.01)"]
+        ADN["ADN / Sefin Nacional<br>(API mTLS v1.01)"]
         Portal["Portal Nacional NFS-e"]
     end
 
     Desktop --> SPA
-    SPA -->|fetch /api/*| Main
+    SPA -->|"fetch /api/*"| Main
     Main --> Routers
     Routers --> PG
     Routers --> Certs
     Routers --> Downloads
     Routers --> AdnService
     Routers --> Deps
-    AdnService -->|pynfse.adn (mTLS)| ADN
-    Deps -->|ClienteNfseNacional| Portal
+    AdnService -->|"pynfse.adn (mTLS)"| ADN
+    Deps -->|"ClienteNfseNacional"| Portal
 ```
 
 ---

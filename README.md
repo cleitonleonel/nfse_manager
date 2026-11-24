@@ -52,11 +52,11 @@ O **NFSe Manager Pro** centraliza a operação fiscal de múltiplos clientes/CNP
   - **Monitoramento e Alerta de Vencimento do Certificado A1 (`.pfx`)**: extração automática da data de expiração (`cert_valid_until`) e titular (`cert_subject`) no upload, banner de aviso no Dashboard quando faltar $\le 30$ dias e coluna visual de validade na listagem de clientes (`/api/clients/certificados/alertas`).
   - Configuração de parâmetros fiscais ADN v1.01 (Inscrição Municipal, código IBGE, regime tributário `normal | simples | mei`, regime de apuração SN, série e numeração de DPS, ambiente `homologacao | producao`).
   - Personalização de diretório de saída e máscara dinâmica de pastas (`{CLIENTE}/{TIPO}/{ANO}/{MES}`).
-- **Autenticação JWT de Operadores, Gestão de Equipe e Modo Multiusuário / WTS**:
+- **Autenticação JWT de Operadores, Isolamento Multi-Empresa (`User ↔ Client`) e Modo WTS**:
   - Utilitário `python manage.py` com comandos `makemigrations`, `migrate`, `showmigrations`, `create_admin` (`createsuperuser`) e `release`.
-  - Tela inicial obrigatória de Login/Cadastro (`#auth-screen`), controle opcional de auto-cadastro (`NFSE_ALLOW_PUBLIC_REGISTER=0`), proteção JWT em todas as rotas de negócio da API e RBAC (`admin` vs `operador`).
-  - Gestão visual de **Equipe & Operadores** na aba **Sistema** (`GET/POST/PATCH/DELETE /api/auth/users`), modal **Minha Conta** no topbar para troca da própria senha, painel de diagnóstico (`/api/system/environment`) e conexão configurável com Servidor Central para uso simultâneo em **Windows Server + Área de Trabalho Remota (WTS)**.
-  - Diretórios portáveis (`NFSE_DATA_DIR`, `NFSE_CERTS_DIR`, `NFSE_DOWNLOADS_DIR`), reserva transacional de `ultimo_numero_dps` (`FOR UPDATE`), persistência de tarefas em `background_tasks` e lock distribuído no worker de contingência (`pg_try_advisory_lock` / `scheduler_locks`).
+  - Tela inicial obrigatória de Login/Cadastro (`#auth-screen`), controle opcional de auto-cadastro (`NFSE_ALLOW_PUBLIC_REGISTER=0`), controle de autocriação de empresas por operadores (`NFSE_ALLOW_OPERATOR_CREATE_CLIENT=0`), proteção JWT em todas as rotas de negócio da API e RBAC com isolamento por empresa vinculada (`user_clients`, `admin` vs `operador`/`manager`).
+  - Tela dedicada de **Equipe** (`frontend/views/users.html`, restrita a administradores) com vínculo de empresas por operador (`GET/POST/PATCH/DELETE /api/auth/users`), tela dedicada de **Ajuda & Suporte** (`frontend/views/help.html`) com Guia Rápido, FAQ e abertura de chamado, modal **Minha Conta** no topbar para troca da própria senha, painel de diagnóstico em **Sistema** (`/api/system/environment`) e conexão configurável com Servidor Central para uso simultâneo em **Windows Server + Área de Trabalho Remota (WTS)**.
+  - Auditoria de autoria e ambiente nas notas emitidas (`created_by_user_id`, `created_by_username`, `ambiente`), reserva transacional de `ultimo_numero_dps` (`FOR UPDATE`), persistência de tarefas em `background_tasks` e lock distribuído no worker de contingência (`pg_try_advisory_lock` / `scheduler_locks`).
 - **Sincronização e Downloads Inteligentes**:
   - Sincronização assíncrona em background de notas `emitidas` e `recebidas` com barra de progresso em tempo real.
   - **Cofre de Notas ADN (DistDFe / NSU via mTLS)**: sincronização incremental direta com o Ambiente Nacional da NFS-e usando o Certificado A1 (`/api/adn/cofre/sincronizar`).
@@ -108,14 +108,14 @@ flowchart LR
     end
 
     Tauri --> SPA
-    SPA -->|HTTP / JSON| API
+    SPA -->|"HTTP / JSON"| API
     API --> Routers
     Routers --> PG
     Routers --> FS
     Routers --> AdnSvc
     Routers --> PortalBot
-    AdnSvc -->|mTLS + XML-DSig| ADN
-    PortalBot -->|HTTPS / Sessão| Portal
+    AdnSvc -->|"mTLS + XML-DSig"| ADN
+    PortalBot -->|"HTTPS / Sessão"| Portal
 ```
 
 ### Tecnologias Utilizadas
@@ -164,8 +164,9 @@ nfse_manager/
 │       │   └── support_service.py       # Encaminhamento de suporte/feedback via E-mail + Telegram Bot
 │       └── api/
 │           ├── deps.py                  # Factory de ClienteNfseNacional com caminhos portáveis
+│           ├── permissions.py           # Controle de acesso RBAC/anti-IDOR (User ↔ Client e Invoice)
 │           ├── state.py                 # TaskStore persistente (background_tasks + fallback em memória)
-│           └── routers/                 # 12 routers modulares por domínio (protegidos via JWT/RBAC)
+│           └── routers/                 # 12 routers modulares por domínio (protegidos via JWT/RBAC/Client)
 │               ├── auth.py              # Login/Cadastro JWT, /me, troca de senha e gestão de operadores
 │               ├── clients.py           # CRUD de clientes, SMTP (/smtp/padrao) e upload de certificado .pfx
 │               ├── registry.py          # CRUD de Tomadores e Serviços Recorrentes + Lookup CNPJ/CEP
@@ -183,9 +184,9 @@ nfse_manager/
 │   ├── docker-compose.yml               # Compose dedicado do Frontend
 │   ├── nginx.conf                       # Configuração Nginx (SPA + proxy reverso para /api)
 │   ├── index.html                       # Layout base (login/cadastro, sidebar, topbar, modais e #task-toast)
-│   ├── css/                             # Estilos modulares (variables, base, layout, components/*, pages/{dashboard,emission,auth})
+│   ├── css/                             # Estilos modulares (variables, base, layout, components/*, pages/{dashboard,emission,auth,about})
 │   ├── js/                              # Módulos ES6 (main.js, core/{api,router,state,ui,custom-select}, pages/{dashboard,clients,invoices,emission,batch,users,about})
-│   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, emission, about)
+│   └── views/                           # Views HTML carregadas dinamicamente (dashboard, clients, invoices, emission, users, help, about)
 ├── 🖥️ ui/                               # Shell Desktop Nativo (Tauri / Rust) + Suporte WTS
 │   ├── dev.sh                           # Inicia servidor Python + janela Tauri em modo dev
 │   ├── build_sidecar.sh / .ps1          # Empacota o backend como binário sidecar via PyInstaller (Linux/Windows)
@@ -197,7 +198,7 @@ nfse_manager/
 │   ├── reforma-tributaria-adn.md / api-referencia.md
 │   ├── arquitetura-e-uso.md             # Manual de arquitetura, banco, fluxos e contratos da API
 │   └── assets/                          # Imagens e logotipos da documentação
-├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 74 testes)
+├── 🧪 tests/                            # Suíte de testes automatizados (Pytest - 84 testes)
 │   ├── conftest.py
 │   ├── test_adn_emission_and_tax.py     # CRUD fiscal, catálogos, NBS combos, calculadora IBS/CBS, ADN, Fila e E-mail
 │   ├── test_analytics_and_canceled_invoices.py
@@ -210,6 +211,7 @@ nfse_manager/
 │   ├── test_multiuser_wts_concurrency.py    # Storage configurável, concorrência DPS, TaskStore e locks do worker
 │   ├── test_router_auth_guards.py           # Proteção JWT/RBAC, PATCH users, Path Traversal e Suporte E-mail+Telegram
 │   ├── test_security_and_credentials_encryption.py
+│   ├── test_user_client_isolation.py        # Isolamento User ↔ Client, anti-IDOR (403), auditoria Invoice, Equipe/Ajuda e guarda de disco
 │   ├── test_versioning_and_updates.py   # Versão, healthcheck, update transacional, bump_version e CI
 │   └── test_xml_canonicalization_nt.py  # Canonicalização C14N, XML-DSig e ordenação XSD NT 2026/2027
 ├── 🛠️ scripts/                          # Scripts de automação e manutenção
@@ -252,6 +254,7 @@ cp .env.example .env
 | `DEFAULT_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` / `FROM` / `TLS` | Vazio (`587`, `TLS=1`) | Servidor SMTP padrão no `.env` (fallback quando o Prestador não tem SMTP próprio e envios de suporte) |
 | `NFSE_DATA_DIR` / `NFSE_CERTS_DIR` / `NFSE_DOWNLOADS_DIR` / `NFSE_CATALOGS_DIR` | `backend/` | Diretórios compartilhados para `.pfx`, XMLs/PDFs e cache atualizado dos catálogos oficiais (compatível com rede/UNC no Windows Server) |
 | `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar na tela de login após existir um administrador |
+| `NFSE_ALLOW_OPERATOR_CREATE_CLIENT` | `1` | Define se operadores não-admin podem cadastrar novas empresas (ficando vinculados como `manager` da própria empresa; `0` restringe ao Admin) |
 | `NFSE_SCHEDULER_MODE` | `auto` | Modo do worker de contingência (`auto`, `leader` ou `disabled`) |
 | `NFSE_DISABLE_SELF_UPDATE` | `0` (`1` em sidecar) | Bloqueia auto-atualização via GitHub pela interface em ambientes gerenciados / WTS |
 | `SUPPORT_EMAIL_TO` / `SUPPORT_TELEGRAM_BOT_TOKEN` / `SUPPORT_TELEGRAM_CHAT_ID` | `cleiton.leonel@gmail.com` / vazio / `@cleitonLC` | Encaminhamento de mensagens de Suporte & Feedback via E-mail e Telegram |
@@ -514,8 +517,9 @@ curl -X POST "http://localhost:8000/api/tax/calculate" \
 
 O schema é gerenciado via SQLAlchemy em [`backend/app/models.py`](file:///home/cleiton/PyJobs/MeusProjetos/nfse_manager/backend/app/models.py) e contém quatro tabelas principais:
 
+- **`users` e `user_clients`**: operadores (`admin` | `operador`), vínculo multi-empresa (`user_id`, `client_id`, `access_level` `manager | operator`) com remoção em cascata e restrição de escopo por usuário.
 - **`clients`**: armazena `id`, `cnpj` (único), `razao_social`, `username`, `password` (`EncryptedString`), `cert_path` (em `backend/certificados/`), `cert_password` (`EncryptedString`), `description`, `save_path`, `path_structure`, os campos fiscais de emissão ADN (`inscricao_municipal`, `codigo_municipio`, `uf`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `telefone`, `email`, `regime_tributario`, `regime_apuracao_sn`, `regime_especial`, `serie_dps_padrao`, `ultimo_numero_dps`, `ambiente_padrao`, `ultimo_nsu_adn`) e as configurações de SMTP próprio (`smtp_host`, `smtp_port`, `smtp_user`, `smtp_password` criptografado, `smtp_from`, `smtp_tls`, `enviar_email_automatico`).
-- **`invoices`**: armazena `id`, `client_id` (FK), `data_emissao`, `numero`, `chave` (única), `status` (`gerada`, `dps_gerada`, `fila_contingencia`, `cancelada`, `substituida`), `tipo` (`emitidas` / `recebidas`), `valor`, `xml_path`, `pdf_path`, `download_url_xml`, `download_url_pdf`, metadados ADN/IBS/CBS (`id_dps`, `serie_dps`, `numero_dps`, `chave_substituida`, `chave_substituta`, `motivo_cancelamento`, `data_cancelamento`, `xml_dps_path`, `xml_evento_path`, `valor_iss`, `valor_ibs`, `valor_cbs`, `valor_liquido`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`) e dados de tomador/fila (`tomador_documento`, `tomador_nome`, `tomador_email`, `tentativas_envio`, `ultimo_erro_envio`, `payload_dps_json`).
+- **`invoices`**: armazena `id`, `client_id` (FK), `data_emissao`, `numero`, `chave` (única), `status` (`gerada`, `dps_gerada`, `fila_contingencia`, `cancelada`, `substituida`), `tipo` (`emitidas` / `recebidas`), `valor`, `xml_path`, `pdf_path`, `download_url_xml`, `download_url_pdf`, auditoria (`created_by_user_id`, `created_by_username`, `ambiente`), metadados ADN/IBS/CBS (`id_dps`, `serie_dps`, `numero_dps`, `chave_substituida`, `chave_substituta`, `motivo_cancelamento`, `data_cancelamento`, `xml_dps_path`, `xml_evento_path`, `valor_iss`, `valor_ibs`, `valor_cbs`, `valor_liquido`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`) e dados de tomador/fila (`tomador_documento`, `tomador_nome`, `tomador_email`, `tentativas_envio`, `ultimo_erro_envio`, `payload_dps_json`).
 - **`customers`**: cadastro recorrente de Tomadores de Serviço (`id`, `client_id` opcional, `documento`, `razao_social`, `inscricao_municipal`, `email`, `telefone`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `codigo_municipio`, `uf`).
 - **`service_items`**: cadastro recorrente de Serviços (`id`, `client_id` opcional, `codigo_interno`, `titulo`, `descricao`, `valor_unitario`, `c_trib_nac`, `c_nbs`, `c_class_trib`, `cst_ibscbs`, `c_ind_op`, `aliquota_iss`, `iss_retido`, `reter_federais`).
 

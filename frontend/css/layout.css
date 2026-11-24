@@ -33,6 +33,7 @@ body.theme-light .sidebar-logo { box-shadow: 0 4px 15px rgba(59,130,246,0.4); }
   cursor: pointer; color: var(--text3); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative;
 }
 .nav-item:hover { background: var(--bg4); color: var(--text2); transform: scale(1.03); }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; color: var(--text); }
 .nav-item.active { background: rgba(59,130,246,0.12); color: var(--accent); }
 .nav-item.active::after {
   content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 4px;
@@ -118,6 +119,7 @@ body.theme-light .topbar { background: rgba(255, 255, 255, 0.8); }
   body.sidebar-expanded .nav-item,
   .nav-item {
     flex: 1 1 0;
+    min-width: 0;
     max-width: 78px;
     width: auto;
     height: 48px;
@@ -134,6 +136,7 @@ body.theme-light .topbar { background: rgba(255, 255, 255, 0.8); }
   body.sidebar-expanded .nav-label,
   .nav-label {
     display: block;
+    max-width: 100%;
     font-size: 10px;
     font-weight: 600;
     line-height: 1.1;

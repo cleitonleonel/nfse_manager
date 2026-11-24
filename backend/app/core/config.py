@@ -129,6 +129,12 @@ def allow_public_register() -> bool:
     return raw not in _FALSE_VALUES
 
 
+def allow_operator_create_client() -> bool:
+    """Indica se usuários não-admin podem cadastrar novas empresas ficando vinculados a elas (`NFSE_ALLOW_OPERATOR_CREATE_CLIENT`)."""
+    raw = (os.getenv("NFSE_ALLOW_OPERATOR_CREATE_CLIENT") or "1").strip().lower()
+    return raw not in _FALSE_VALUES
+
+
 def is_self_update_disabled() -> bool:
     """Indica se a auto-atualização in-place está bloqueada (`NFSE_DISABLE_SELF_UPDATE` ou `sys.frozen`)."""
     if getattr(sys, "frozen", False):

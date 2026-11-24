@@ -1,7 +1,7 @@
 import datetime
 import logging
 import uuid
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, text
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
 from app.core.security import decrypt_secret, encrypt_secret, is_encrypted
@@ -43,6 +43,28 @@ class User(Base):
     role = Column(String, nullable=False, default="admin")  # admin | operador
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+
+    client_links = relationship("UserClient", back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def client_ids(self) -> list[int]:
+        return [int(link.client_id) for link in (self.client_links or []) if link.client_id is not None]
+
+
+class UserClient(Base):
+    """Vínculo N:N entre usuários (operadores) e empresas (Client) autorizadas."""
+
+    __tablename__ = "user_clients"
+    __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_user_clients_user_client"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    access_level = Column(String, nullable=False, default="operator")  # manager | operator
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+
+    user = relationship("User", back_populates="client_links")
+    client = relationship("Client", back_populates="user_links")
 
 
 class SchemaMigration(Base):
@@ -105,6 +127,7 @@ class Client(Base):
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
     customers = relationship("Customer", back_populates="client", cascade="all, delete-orphan")
     service_items = relationship("ServiceItem", back_populates="client", cascade="all, delete-orphan")
+    user_links = relationship("UserClient", back_populates="client", cascade="all, delete-orphan")
 
     @property
     def dias_para_vencer(self) -> int | None:
@@ -220,6 +243,9 @@ class Invoice(Base):
     tentativas_envio = Column(Integer, nullable=True, default=0)
     ultimo_erro_envio = Column(String, nullable=True)
     payload_dps_json = Column(String, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_username = Column(String, nullable=True)
+    ambiente = Column(String, nullable=True)
 
     client = relationship("Client", back_populates="invoices")
 
@@ -371,6 +397,9 @@ def init_db():
         ("tentativas_envio", "INTEGER"),
         ("ultimo_erro_envio", "VARCHAR"),
         ("payload_dps_json", "VARCHAR"),
+        ("created_by_user_id", "INTEGER"),
+        ("created_by_username", "VARCHAR"),
+        ("ambiente", "VARCHAR"),
     ]
 
     for attempt in range(1, 31):

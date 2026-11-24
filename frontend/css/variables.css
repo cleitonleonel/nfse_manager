@@ -10,15 +10,19 @@
   --border2:  rgba(255,255,255,0.12);
   --accent:   #3b82f6;
   --accent-h: #2563eb;
+  --accent-text: #60a5fa;
   --green:    #10b981;
+  --green-text: #34d399;
   --green-bg: rgba(16,185,129,0.12);
   --amber:    #f59e0b;
+  --amber-text: #fbbf24;
   --amber-bg: rgba(245,158,11,0.12);
   --red:      #ef4444;
+  --red-text: #f87171;
   --red-bg:   rgba(239,68,68,0.12);
   --text:     #f1f5f9;
   --text2:    #94a3b8;
-  --text3:    #475569;
+  --text3:    #7c8ba1;
   --sans:     'Outfit', sans-serif;
   --mono:     'JetBrains Mono', monospace;
   --r:        10px;
@@ -46,5 +50,9 @@ body.theme-light {
   --text:     #0f172a;
   --text2:    #475569;
   --text3:    #64748b;
+  --accent-text: #1d4ed8;
+  --green-text: #047857;
+  --amber-text: #b45309;
+  --red-text: #b91c1c;
   --shadow:   0 10px 30px -10px rgba(0,0,0,0.1);
 }

@@ -10,8 +10,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.api.permissions import sync_user_clients
 from app.core.config import allow_public_register
 from app.core.security import create_access_token, hash_password, verify_access_token, verify_password
 from app.database import get_db
@@ -42,7 +43,12 @@ def get_current_user(
     if not payload or "sub" not in payload:
         raise HTTPException(status_code=401, detail="Token inválido ou expirado.")
 
-    user = db.query(User).filter(User.username == str(payload["sub"])).first()
+    user = (
+        db.query(User)
+        .options(selectinload(User.client_links))
+        .filter(User.username == str(payload["sub"]))
+        .first()
+    )
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Usuário inativo ou não encontrado.")
     return user
@@ -72,7 +78,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not ident or not payload.password:
         raise HTTPException(status_code=400, detail="Informe usuário e senha.")
 
-    user = db.query(User).filter(or_(User.username == ident, User.email == ident.lower())).first()
+    user = (
+        db.query(User)
+        .options(selectinload(User.client_links))
+        .filter(or_(User.username == ident, User.email == ident.lower()))
+        .first()
+    )
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Credenciais inválidas.")
 
@@ -168,7 +179,7 @@ def list_users(
     db: Session = Depends(get_db),
 ):
     """Lista todos os operadores cadastrados (restrito a administradores)."""
-    return db.query(User).order_by(User.id.asc()).all()
+    return db.query(User).options(selectinload(User.client_links)).order_by(User.id.asc()).all()
 
 
 @router.post("/users", response_model=UserResponse)
@@ -197,9 +208,16 @@ def create_user(
         is_active=1,
     )
     db.add(new_user)
+    db.flush()
+    if payload.client_ids is not None and new_user.role != "admin":
+        sync_user_clients(db, new_user.id, payload.client_ids, access_level="operator")
     db.commit()
-    db.refresh(new_user)
-    return new_user
+    return (
+        db.query(User)
+        .options(selectinload(User.client_links))
+        .filter(User.id == new_user.id)
+        .first()
+    )
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
@@ -255,10 +273,19 @@ def update_user(
     if payload.password is not None:
         target.password_hash = hash_password(payload.password)
 
+    if payload.client_ids is not None and target.role != "admin":
+        sync_user_clients(db, target.id, payload.client_ids, access_level="operator")
+    elif payload.role == "admin":
+        sync_user_clients(db, target.id, [], access_level="operator")
+
     db.add(target)
     db.commit()
-    db.refresh(target)
-    return target
+    return (
+        db.query(User)
+        .options(selectinload(User.client_links))
+        .filter(User.id == target.id)
+        .first()
+    )
 
 
 @router.delete("/users/{user_id}")

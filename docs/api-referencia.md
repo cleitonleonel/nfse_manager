@@ -16,9 +16,9 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 | `POST` | `/api/auth/login` | Autentica um operador por `username` ou `email` e retorna token JWT Bearer |
 | `GET` | `/api/auth/me` | Retorna os dados do operador autenticado pelo cabeçalho `Authorization: Bearer <token>` |
 | `POST` | `/api/auth/change-password` | Altera a senha do operador autenticado |
-| `GET` | `/api/auth/users` | Lista todos os operadores cadastrados (restrito a `role == "admin"`) |
-| `POST` | `/api/auth/users` | Cadastra novo operador (restrito a `role == "admin"`) |
-| `PATCH` | `/api/auth/users/{user_id}` | Atualiza dados, papel (`admin` \| `operador`), status ativo ou redefine senha de um operador (restrito a `role == "admin"`, protegendo contra auto-bloqueio/remoção do último admin) |
+| `GET` | `/api/auth/users` | Lista todos os operadores cadastrados com seus respectivos `client_ids` vinculados (restrito a `role == "admin"`) |
+| `POST` | `/api/auth/users` | Cadastra novo operador aceitando lista opcional de `client_ids` autorizados (restrito a `role == "admin"`) |
+| `PATCH` | `/api/auth/users/{user_id}` | Atualiza dados, papel (`admin` \| `operador`), status ativo, `client_ids` vinculados ou senha de um operador (restrito a `role == "admin"`, protegendo contra auto-bloqueio/remoção do último admin) |
 | `DELETE` | `/api/auth/users/{user_id}` | Remove um operador pelo ID (restrito a `role == "admin"`) |
 | `GET` | `/api/system/version` | Retorna a versão atual lida do `pyproject.toml` |
 | `GET` | `/api/system/environment` | Retorna diagnóstico de implantação (dialeto do banco, modo servidor/local, diretórios configurados, status do worker e prontidão multiusuário) |
@@ -34,11 +34,11 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
-| `GET` | `/api/clients` | Lista todos os clientes cadastrados (incluindo `cert_valid_until`, `dias_para_vencer` e `status_certificado`) |
-| `GET` | `/api/clients/certificados/alertas` | Lista certificados A1 vencidos ($\le 0$ dias), expirando ($\le$ `dias_aviso`, padrão `30`) e válidos |
-| `POST` | `/api/clients` | Cria novo cliente via `multipart/form-data` (dados + certificado `.pfx` com extração automática da validade X.509) |
-| `PUT` | `/api/clients/{client_id}` | Atualiza dados cadastrais, fiscais ou certificado do cliente |
-| `DELETE` | `/api/clients/{client_id}` | Remove um cliente pelo ID |
+| `GET` | `/api/clients` | Lista as empresas acessíveis ao usuário autenticado (`admin` vê todas; `operador` vê apenas as vinculadas em `user_clients`) |
+| `GET` | `/api/clients/certificados/alertas` | Lista certificados A1 vencidos ($\le 0$ dias), expirando ($\le$ `dias_aviso`, padrão `30`) e válidos das empresas acessíveis |
+| `POST` | `/api/clients` | Cria novo cliente via `multipart/form-data` (quando criado por não-admin, vincula automaticamente o criador como `manager`; respeita `NFSE_ALLOW_OPERATOR_CREATE_CLIENT`) |
+| `PUT` | `/api/clients/{client_id}` | Atualiza dados cadastrais, fiscais ou certificado do cliente (validando acesso do usuário ao `client_id`) |
+| `DELETE` | `/api/clients/{client_id}` | Remove um cliente pelo ID (restrito a `admin` ou ao gestor `manager` que criou a empresa) |
 
 ### Exemplo: Criar Cliente com Certificado e Parâmetros Fiscais ADN
 

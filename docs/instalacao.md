@@ -40,13 +40,14 @@ cp .env.example .env
 | `NFSE_DEPLOYMENT_MODE` | Auto-detectado | Modo exibido no diagnóstico (`server`, `standalone`, `client`) |
 | `NFSE_SCHEDULER_MODE` | `auto` | Controle do worker de contingência (`auto`, `leader` ou `disabled`) |
 | `NFSE_ALLOW_PUBLIC_REGISTER` | `1` | Define se novos usuários podem se auto-cadastrar após o 1º admin (`0` fecha o cadastro público para uso corporativo) |
+| `NFSE_ALLOW_OPERATOR_CREATE_CLIENT` | `1` | Define se usuários não-admin podem cadastrar novas empresas (ficando vinculados como `manager` somente das empresas que criarem; `0` restringe a criação ao Admin) |
 | `NFSE_DISABLE_SELF_UPDATE` | `0` (`1` em sidecar frozen) | Desabilita auto-atualização via GitHub na UI (`403`) em servidores gerenciados / WTS |
 | `DEFAULT_SMTP_*` | Vazio (`PORT=587`, `TLS=1`) | Credenciais SMTP padrão do sistema (envio de NFS-e sem SMTP próprio e notificações de suporte) |
 | `SUPPORT_EMAIL_TO` | `cleiton.leonel@gmail.com` | Destinatário das mensagens enviadas pelo formulário de Suporte & Feedback |
 | `SUPPORT_TELEGRAM_BOT_TOKEN` | Vazio | Token do bot Telegram (`@BotFather`) para encaminhar mensagens de suporte |
 | `SUPPORT_TELEGRAM_CHAT_ID` | `@cleitonLC` | `chat_id` numérico (para DM privada após `/start`) ou canal/grupo de destino no Telegram |
 
-> 🔒 **Dica de Segurança:** Em produção, gere uma chave criptográfica forte para `NFSE_ENCRYPTION_KEY` (por exemplo: `python -c "import secrets; print(secrets.token_hex(32))"`). Em ambientes multiusuário (escritórios contábeis), configure `NFSE_ALLOW_PUBLIC_REGISTER=0` e `DB_FALLBACK_SQLITE=0` após criar o administrador inicial, garantindo que os operadores sejam cadastrados apenas pelo Admin em **Sistema → Gestão de Equipe**.
+> 🔒 **Dica de Segurança:** Em produção, gere uma chave criptográfica forte para `NFSE_ENCRYPTION_KEY` (por exemplo: `python -c "import secrets; print(secrets.token_hex(32))"`). Em ambientes multiusuário (escritórios contábeis), configure `NFSE_ALLOW_PUBLIC_REGISTER=0`, `NFSE_ALLOW_OPERATOR_CREATE_CLIENT=0` e `DB_FALLBACK_SQLITE=0` após criar o administrador inicial, gerenciando os operadores e seus vínculos de empresas em **Equipe** (visível para administradores).
 
 ---
 

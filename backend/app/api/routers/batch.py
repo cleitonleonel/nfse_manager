@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api.permissions import assert_client_access
 from app.api.routers.auth import get_current_user
 from app.database import get_db
 from app.models import User
@@ -50,6 +51,7 @@ async def import_batch_spreadsheet(
     db: Session = Depends(get_db),
 ):
     """Importa e normaliza planilha de notas em lote sem realizar nenhuma transmissão fiscal."""
+    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
     content = await file.read()
     batch = BatchEmissionService.import_spreadsheet(
         db=db,
@@ -69,23 +71,44 @@ def list_batches(
     client_id: Optional[int] = Query(None, description="Filtrar lotes pelo ID do prestador"),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lista os lotes de importação registrados (mais recentes primeiro)."""
+    allowed_ids = assert_client_access(db, current_user, client_id, allow_none_for_admin=True)
+    if client_id is None and allowed_ids is not None and not allowed_ids:
+        return []
     batches = BatchEmissionService.list_batches(db, client_id=client_id, limit=limit)
+    if client_id is None and allowed_ids is not None:
+        allowed_set = set(allowed_ids)
+        batches = [b for b in batches if b.client_id in allowed_set]
     return [serialize_batch(db, b) for b in batches]
 
 
-@router.get("/{batch_id}", response_model=BatchImportResponse)
-def get_batch(batch_id: str, db: Session = Depends(get_db)):
-    """Consulta metadados e contadores de um lote específico."""
+def _get_authorized_batch(db: Session, current_user: User, batch_id: str):
     batch = BatchEmissionService.get_batch_or_404(db, batch_id)
+    assert_client_access(db, current_user, batch.client_id, allow_none_for_admin=False)
+    return batch
+
+
+@router.get("/{batch_id}", response_model=BatchImportResponse)
+def get_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Consulta metadados e contadores de um lote específico."""
+    batch = _get_authorized_batch(db, current_user, batch_id)
     return serialize_batch(db, batch)
 
 
 @router.post("/{batch_id}/validate", response_model=BatchImportResponse)
-def validate_batch(batch_id: str, db: Session = Depends(get_db)):
+def validate_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Executa validação estrutural, cadastral e fiscal/XSD nos itens pendentes/editados do lote."""
-    batch = BatchEmissionService.get_batch_or_404(db, batch_id)
+    batch = _get_authorized_batch(db, current_user, batch_id)
     batch = validate_all_batch_items(db, batch)
     return serialize_batch(db, batch)
 
@@ -95,8 +118,10 @@ def list_batch_items(
     batch_id: str,
     status: Optional[str] = Query(None, description="Filtrar itens por estado (VALID, INVALID, AUTHORIZED, REJECTED, UNKNOWN, RETRY...)"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lista todas as linhas/itens do lote para pré-visualização, revisão e acompanhamento."""
+    _get_authorized_batch(db, current_user, batch_id)
     items = BatchEmissionService.list_items(db, batch_id, status_filter=status)
     return [serialize_batch_item(it) for it in items]
 
@@ -107,8 +132,10 @@ def update_batch_item(
     item_id: str,
     req: BatchImportItemUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Corrige campos de uma linha específica do lote e reexecuta os 3 níveis de validação."""
+    _get_authorized_batch(db, current_user, batch_id)
     item = BatchEmissionService.update_item_and_revalidate(db, batch_id, item_id, req)
     return serialize_batch_item(item)
 
@@ -118,8 +145,10 @@ async def process_batch(
     batch_id: str,
     req: Optional[BatchProcessRequest] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Processa sequencialmente os itens válidos confirmados pelo usuário."""
+    _get_authorized_batch(db, current_user, batch_id)
     body = req or BatchProcessRequest()
     batch = await process_batch_items(
         db=db,
@@ -127,13 +156,19 @@ async def process_batch(
         item_ids=body.item_ids,
         transmitir=body.transmitir,
         enviar_email=body.enviar_email,
+        current_user=current_user,
     )
     return serialize_batch(db, batch)
 
 
 @router.post("/{batch_id}/cancel", response_model=BatchImportResponse)
-def cancel_batch(batch_id: str, db: Session = Depends(get_db)):
+def cancel_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Cancela o lote e marca itens ainda não transmitidos como CANCELLED."""
+    _get_authorized_batch(db, current_user, batch_id)
     batch = BatchEmissionService.cancel_pending_items(db, batch_id)
     return serialize_batch(db, batch)
 
@@ -143,8 +178,10 @@ async def retry_batch(
     batch_id: str,
     req: Optional[BatchRetryRequest] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Consulta itens `UNKNOWN` no ADN antes de reenviar e reprocessa itens `RETRY`."""
+    _get_authorized_batch(db, current_user, batch_id)
     body = req or BatchRetryRequest()
     batch = await resolve_unknown_and_retry_batch(
         db=db,
@@ -152,6 +189,7 @@ async def retry_batch(
         item_ids=body.item_ids,
         transmitir=body.transmitir,
         enviar_email=body.enviar_email,
+        current_user=current_user,
     )
     return serialize_batch(db, batch)
 
@@ -161,22 +199,34 @@ def export_batch(
     batch_id: str,
     format: str = Query("xlsx", description="csv ou xlsx"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Exporta resumo e detalhamento dos resultados do lote em CSV ou XLSX."""
-    batch = BatchEmissionService.get_batch_or_404(db, batch_id)
+    batch = _get_authorized_batch(db, current_user, batch_id)
     items = BatchEmissionService.list_items(db, batch_id)
     return export_batch_results(batch, items, fmt=format)
 
 
 @router.delete("/{batch_id}")
-def delete_batch(batch_id: str, db: Session = Depends(get_db)):
+def delete_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Exclui um lote completo de importação e seus itens de staging."""
+    _get_authorized_batch(db, current_user, batch_id)
     return BatchEmissionService.delete_batch(db, batch_id)
 
 
 @router.delete("/{batch_id}/items/{item_id}")
-def delete_batch_item(batch_id: str, item_id: str, db: Session = Depends(get_db)):
+def delete_batch_item(
+    batch_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Exclui uma única linha importada do lote e recalcula os contadores."""
+    _get_authorized_batch(db, current_user, batch_id)
     res = BatchEmissionService.delete_items(db, batch_id, item_ids=[item_id], delete_all=False)
     return {
         "deleted": res["deleted"],
@@ -190,8 +240,10 @@ def delete_batch_items(
     batch_id: str,
     req: BatchItemsDeleteRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Exclui múltiplos itens selecionados ou todos os itens de um lote."""
+    _get_authorized_batch(db, current_user, batch_id)
     res = BatchEmissionService.delete_items(
         db,
         batch_id,

@@ -1,0 +1,99 @@
+<div class="page-content" id="page-help">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-shrink:0;">
+        <h2 style="font-size:var(--fs-page-title); font-weight:700;">Ajuda &amp; Suporte</h2>
+    </div>
+
+    <!-- GUIA RÁPIDO DE USO -->
+    <div class="card glass about-env-card">
+        <div class="env-header">
+            <div>
+                <div class="env-header-title">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Guia Rápido de Operação</span>
+                </div>
+                <div class="env-header-sub">Resumo do fluxo completo para configurar empresas, emitir NFS-e Nacional (ADN) e acompanhar contingências.</div>
+            </div>
+        </div>
+
+        <div class="help-steps-grid">
+            <div class="help-step-card">
+                <div class="help-step-num">1</div>
+                <div class="help-step-title">Cadastre a Empresa &amp; Certificado A1</div>
+                <div class="help-step-desc">Em <strong>Clientes</strong>, informe CNPJ, regime tributário (Normal, Simples ou MEI), código IBGE e envie o certificado digital A1 (<code>.pfx</code>) com a senha para assinar e transmitir no ADN.</div>
+            </div>
+            <div class="help-step-card">
+                <div class="help-step-num">2</div>
+                <div class="help-step-title">Escolha Homologação ou Produção</div>
+                <div class="help-step-desc">Use <strong>Homologação</strong> (<code>tpAmb=2</code>) para testes sem validade fiscal e <strong>Produção</strong> (<code>tpAmb=1</code>) para notas oficiais. Selecione a empresa ativa no seletor do topo.</div>
+            </div>
+            <div class="help-step-card">
+                <div class="help-step-num">3</div>
+                <div class="help-step-title">Emissão, Lote &amp; Contingência</div>
+                <div class="help-step-desc">Em <strong>Emissor ADN</strong>, gere DPS individuais ou importe planilhas CSV/XLSX. Se o certificado estiver ausente ou a Sefin oscilar, a DPS vai para a <strong>Fila de Contingência</strong> para reenvio seguro.</div>
+            </div>
+            <div class="help-step-card">
+                <div class="help-step-num">4</div>
+                <div class="help-step-title">Notas Fiscais &amp; Pasta Local</div>
+                <div class="help-step-desc">Em <strong>Notas Fiscais</strong>, sincronize o Cofre ADN (NSU) ou o portal, confira a competência mensal e use <strong>Pasta Local</strong> para espelhar XMLs e PDFs direto na sua máquina.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="help-main-grid">
+        <!-- DÚVIDAS FREQUENTES (FAQ) -->
+        <div class="card glass">
+            <h4 style="font-size:14px; font-weight:700; color:var(--text2); text-transform:uppercase; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                Dúvidas Frequentes (FAQ)
+            </h4>
+            <div class="help-faq-list">
+                <details class="help-faq-item" open>
+                    <summary>Por que uma nota ficou com status de fila de contingência?</summary>
+                    <p>Isso ocorre em dois casos: (1) a empresa prestadora estava sem Certificado Digital A1 (<code>.pfx</code>) válido configurado no servidor — o XML salvo fica sem a tag <code>&lt;Signature&gt;</code>; ou (2) houve instabilidade de rede/Sefin (HTTP 5xx/timeout) no envio. Confira o motivo na aba <strong>Emissor ADN → Fila de Contingência</strong> e retransmita ou cancele o item pendente.</p>
+                </details>
+                <details class="help-faq-item">
+                    <summary>Como funciona a permissão entre Admin e Operador?</summary>
+                    <p>Administradores gerenciam toda a plataforma, equipe e configurações globais. Operadores visualizam e emitem notas <strong>apenas</strong> para as empresas vinculadas ao seu usuário em <strong>Equipe</strong> (ou empresas que eles mesmos cadastrarem, quando habilitado pelo administrador).</p>
+                </details>
+                <details class="help-faq-item">
+                    <summary>Notas em contingência ou canceladas somam no faturamento do Dashboard?</summary>
+                    <p>Não. Os indicadores de receita autorizada do <strong>Dashboard</strong> desconsideram notas canceladas, substituídas, rejeitadas ou pendentes na fila de contingência, evitando distorções por testes ou falhas de envio.</p>
+                </details>
+                <details class="help-faq-item">
+                    <summary>Como atualizar as tabelas de NBS, cClassTrib e cIndOp (IBS/CBS)?</summary>
+                    <p>Acesse <strong>Sistema → Catálogos Tributários Oficiais (RFB / gov.br)</strong> para verificar novidades da Receita Federal. Administradores podem sincronizar as tabelas sem reinstalar o sistema.</p>
+                </details>
+            </div>
+        </div>
+
+        <!-- SUPORTE & FEEDBACK -->
+        <div class="card glass">
+            <h4 style="font-size:14px; font-weight:700; color:var(--text2); text-transform:uppercase; margin-bottom:20px; display:flex; align-items:center; gap:8px;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3z"/></svg>
+                Suporte &amp; Feedback
+            </h4>
+            <p style="font-size:13px; color:var(--text3); margin-bottom:18px; line-height:1.5;">
+                Encontrou algum problema na emissão, divergência fiscal ou quer sugerir melhorias? Envie uma mensagem direta para o suporte técnico.
+            </p>
+            <div class="about-form-2col">
+                <div class="form-group">
+                    <label class="form-label" for="sup-email">Seu E-mail</label>
+                    <input type="email" id="sup-email" class="form-input" placeholder="contato@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="sup-whatsapp">WhatsApp (contato)</label>
+                    <input type="text" id="sup-whatsapp" class="form-input" placeholder="(00) 00000-0000" oninput="App.maskPhone(this)">
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label class="form-label" for="sup-msg">Sua Mensagem</label>
+                <textarea id="sup-msg" class="form-input" style="height:130px; resize:vertical; padding:12px;" placeholder="Descreva sua dúvida, CNPJ/ambiente se aplicável, sugestão ou feedback..."></textarea>
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+                <button class="btn btn-primary" onclick="App.sendSupportMessage()" id="btn-send-sup" style="min-width:170px;">
+                    Enviar Mensagem
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

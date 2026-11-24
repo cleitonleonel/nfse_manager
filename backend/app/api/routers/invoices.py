@@ -12,6 +12,7 @@ from app.database import get_db, SessionLocal
 from app.models import BatchImportItem, Client, Invoice, User
 from app.schemas import SyncRequest, InvoiceResponse
 from app.api.deps import get_nfse_client
+from app.api.permissions import assert_client_access, filter_query_by_allowed_clients
 from app.api.routers.auth import get_current_user
 from app.api.state import TaskStore
 
@@ -26,6 +27,7 @@ def background_sync(
     data_fim: str,
     tipo: str,
     created_by: Optional[str] = None,
+    allowed_client_ids: Optional[List[int]] = None,
 ):
     """Executa sincronização em background."""
     db = SessionLocal()
@@ -39,9 +41,20 @@ def background_sync(
 
         clients_to_sync = []
         if client_id:
+            if allowed_client_ids is not None and int(client_id) not in allowed_client_ids:
+                TaskStore.set_task(
+                    sync_id,
+                    {"status": "failed", "message": "Acesso negado à empresa informada.", "progress": 0},
+                    kind="sync",
+                    created_by=created_by,
+                )
+                return
             c = db.query(Client).filter(Client.id == client_id).first()
             if c:
                 clients_to_sync.append(c)
+        elif allowed_client_ids is not None:
+            if allowed_client_ids:
+                clients_to_sync = db.query(Client).filter(Client.id.in_(allowed_client_ids)).all()
         else:
             clients_to_sync = db.query(Client).all()
 
@@ -182,9 +195,16 @@ def background_sync(
 def trigger_sync(
     request: SyncRequest,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Iniciar sincronização de notas em background."""
+    allowed_ids = assert_client_access(
+        db,
+        current_user,
+        request.client_id if request.client_id else None,
+        allow_none_for_admin=True,
+    )
     sync_id = f"sync_{request.client_id or 0}_{os.urandom(4).hex()}"
     background_tasks.add_task(
         background_sync,
@@ -194,16 +214,23 @@ def trigger_sync(
         request.data_fim,
         request.tipo,
         current_user.username,
+        allowed_ids,
     )
     return {"task_id": sync_id}
 
 
 @router.get("/api/tasks/{task_id}")
-def get_task_status(task_id: str):
+def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+):
     """Obter status de uma tarefa em background."""
     status = TaskStore.get_task(task_id)
     if not status:
         raise HTTPException(status_code=404, detail="Task not found")
+    created_by = status.get("created_by")
+    if getattr(current_user, "role", None) != "admin" and created_by and created_by != current_user.username:
+        raise HTTPException(status_code=403, detail="Acesso negado ao status desta tarefa.")
     return status
 
 
@@ -261,11 +288,19 @@ def list_invoices(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Listar notas com filtros opcionais."""
-    query = _apply_invoice_filters(
+    """Listar notas com filtros opcionais respeitando o escopo do usuário."""
+    query = filter_query_by_allowed_clients(
         db.query(Invoice),
+        Invoice.client_id,
+        db,
+        current_user,
         client_id=client_id,
+    )
+    query = _apply_invoice_filters(
+        query,
+        client_id=None,
         tipo=tipo,
         data_inicio=data_inicio,
         data_fim=data_fim,

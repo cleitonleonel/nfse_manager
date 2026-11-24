@@ -12,10 +12,11 @@ from fastapi.responses import StreamingResponse
 import openpyxl
 from sqlalchemy.orm import Session
 
+from app.api.permissions import filter_query_by_allowed_clients
 from app.api.routers.auth import get_current_user
 from app.constants import DEFAULT_PERIOD, PERIOD_DAYS_MAP
 from app.database import get_db
-from app.models import Client, Invoice
+from app.models import Client, Invoice, User
 
 router = APIRouter(prefix="/api/reports", tags=["reports"], dependencies=[Depends(get_current_user)])
 
@@ -26,20 +27,29 @@ def export_report(
     period: str = DEFAULT_PERIOD,
     client_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Exportar relatório em JSON, CSV ou XLSX."""
     days = PERIOD_DAYS_MAP.get(period, 30)
     date_limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
-    query = db.query(Invoice).filter(Invoice.data_emissao >= date_limit)
-    if client_id:
-        query = query.filter(Invoice.client_id == client_id)
+    query = filter_query_by_allowed_clients(
+        db.query(Invoice).filter(Invoice.data_emissao >= date_limit),
+        Invoice.client_id,
+        db,
+        current_user,
+        client_id=client_id,
+    )
 
     invoices = query.order_by(Invoice.data_emissao.desc()).all()
 
     def nota_valida_para_calculo(n: Invoice) -> bool:
         st = (n.status or "").lower()
-        return "cancelad" not in st and "substitu" not in st
+        return (
+            "cancelad" not in st
+            and "substitu" not in st
+            and st not in {"dps_gerada", "fila_contingencia", "rejeitada", "dps_substituta"}
+        )
 
     total_emitidas = sum(n.valor or 0 for n in invoices if n.tipo == "emitidas" and nota_valida_para_calculo(n))
     total_recebidas = sum(n.valor or 0 for n in invoices if n.tipo == "recebidas" and nota_valida_para_calculo(n))
@@ -139,22 +149,28 @@ def export_competencia_report(
     client_id: Optional[int] = Query(None, description="Filtrar por ID do Prestador"),
     format: str = Query("json", description="json, csv ou xlsx"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Gera relatório contábil de conferência por competência mensal (emitidas, recebidas, tributos e canceladas)."""
     comp_alvo = (competencia or datetime.datetime.now(datetime.UTC).strftime("%Y-%m")).strip()
     if not re.match(r"^\d{4}-\d{2}$", comp_alvo):
         raise HTTPException(status_code=400, detail="Competência inválida. Informe no formato YYYY-MM (ex: 2026-11).")
 
-    query = db.query(Invoice)
-    if client_id is not None:
-        query = query.filter(Invoice.client_id == client_id)
+    query = filter_query_by_allowed_clients(
+        db.query(Invoice),
+        Invoice.client_id,
+        db,
+        current_user,
+        client_id=client_id,
+    )
 
     todas = query.order_by(Invoice.data_emissao.asc()).all()
     notas = [n for n in todas if _nota_competencia(n) == comp_alvo]
 
+    allowed_clients = filter_query_by_allowed_clients(db.query(Client), Client.id, db, current_user).all()
     clients_map: Dict[int, str] = {
         c.id: c.razao_social or c.cnpj
-        for c in db.query(Client).all()
+        for c in allowed_clients
     }
 
     def is_ativa(n: Invoice) -> bool:

@@ -25,12 +25,28 @@ export function maskCep(input) {
     input.placeholder = '00000-000';
 }
 
+let staticModalEscapeBound = false;
+
 export function openModal(id) {
-    document.getElementById(id).classList.add('open');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('open');
+    if (!staticModalEscapeBound) {
+        staticModalEscapeBound = true;
+        document.addEventListener('keydown', (evt) => {
+            if (evt.key !== 'Escape') return;
+            const openOverlays = Array.from(document.querySelectorAll('.modal-overlay.open:not(#app-dialog-overlay)'));
+            const top = openOverlays[openOverlays.length - 1];
+            if (top) {
+                top.classList.remove('open');
+            }
+        });
+    }
 }
 
 export function closeModal(id) {
-    document.getElementById(id).classList.remove('open');
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('open');
 }
 
 let toastProgressTimer = null;
@@ -136,7 +152,7 @@ export function showTaskToast(title, msg, options = {}) {
     const msgEl = document.getElementById('task-msg');
     if (titleEl) titleEl.innerText = title || 'Processando...';
     if (msgEl) {
-        msgEl.style.color = variant === 'error' ? 'var(--red)' : 'var(--text2)';
+        msgEl.style.color = variant === 'error' ? 'var(--red-text)' : 'var(--text2)';
         msgEl.innerText = msg || '';
     }
 
@@ -518,11 +534,11 @@ export function escapeAttr(str) {
 export function renderInvoiceStatusBadge(status) {
     const raw = String(status || 'desconhecido');
     const norm = raw.toLowerCase();
-    let style = 'background:var(--amber-bg); color:var(--amber); border-color:rgba(245,158,11,0.28);';
+    let style = 'background:var(--amber-bg); color:var(--amber-text); border-color:rgba(245,158,11,0.28);';
     if (['gerada', 'emitida', 'autorizada', 'normal'].includes(norm)) {
-        style = 'background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.28);';
+        style = 'background:var(--green-bg); color:var(--green-text); border-color:rgba(16,185,129,0.28);';
     } else if (['cancelada', 'substituida', 'erro', 'rejeitada'].includes(norm)) {
-        style = 'background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.28);';
+        style = 'background:var(--red-bg); color:var(--red-text); border-color:rgba(239,68,68,0.28);';
     }
     return `<span class="badge badge-ctrl" style="${style}"><span class="badge-dot"></span> ${escapeDialogHtml(raw)}</span>`;
 }
@@ -536,9 +552,23 @@ export function renderInvoiceSummaryCells(invoice, formattedValue) {
         ? `#${invoice.numero} · ${invoice.chave}`
         : chaveDisplay;
 
+    const metaParts = [];
+    if (invoice?.ambiente === 'homologacao') {
+        metaParts.push('<span class="inv-meta-tag is-homolog" title="Nota gerada em ambiente de Homologação (sem validade fiscal)">Homologação</span>');
+    } else if (invoice?.ambiente === 'producao') {
+        metaParts.push('<span class="inv-meta-tag is-prod" title="Emitida em ambiente de Produção">Produção</span>');
+    }
+    if (invoice?.created_by_username) {
+        metaParts.push(`<span class="inv-meta-tag is-author" title="Emitida pelo operador @${escapeDialogHtml(invoice.created_by_username)}">@${escapeDialogHtml(invoice.created_by_username)}</span>`);
+    }
+    const metaHtml = metaParts.length ? `<div class="inv-meta-row">${metaParts.join('')}</div>` : '';
+
     return `
         <td><span class="tbl-cell-chip">${escapeDialogHtml(dataFmt)}</span></td>
-        <td><span class="tbl-cell-chip tbl-cell-chip--key" title="${escapeDialogHtml(chaveDisplay)}">${escapeDialogHtml(keyLabel)}</span></td>
+        <td>
+            <span class="tbl-cell-chip tbl-cell-chip--key" title="${escapeDialogHtml(chaveDisplay)}">${escapeDialogHtml(keyLabel)}</span>
+            ${metaHtml}
+        </td>
         <td><span class="tbl-cell-chip tbl-cell-chip--value">${escapeDialogHtml(formattedValue)}</span></td>
         <td>${renderInvoiceStatusBadge(invoice?.status)}</td>
     `;

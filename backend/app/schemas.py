@@ -93,6 +93,7 @@ class UserCreate(BaseModel):
     full_name: Optional[str] = None
     password: str = Field(..., min_length=4)
     role: Literal["admin", "operador"] = "operador"
+    client_ids: Optional[List[int]] = None
 
 
 class UserUpdate(BaseModel):
@@ -101,6 +102,7 @@ class UserUpdate(BaseModel):
     role: Optional[Literal["admin", "operador"]] = None
     is_active: Optional[int] = Field(None, ge=0, le=1)
     password: Optional[str] = Field(None, min_length=4)
+    client_ids: Optional[List[int]] = None
 
 
 class UserRegister(BaseModel):
@@ -118,6 +120,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: int
     created_at: Optional[datetime] = None
+    client_ids: List[int] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -259,6 +262,9 @@ class InvoiceResponse(InvoiceBase):
     client_id: int | None = None
     xml_path: Optional[str] = None
     pdf_path: Optional[str] = None
+    created_by_user_id: Optional[int] = None
+    created_by_username: Optional[str] = None
+    ambiente: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 

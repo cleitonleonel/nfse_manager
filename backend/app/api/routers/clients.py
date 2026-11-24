@@ -10,6 +10,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api.permissions import (
+    assert_client_access,
+    filter_query_by_allowed_clients,
+    grant_client_access,
+    is_admin_user,
+)
 from app.api.routers.auth import get_current_user
 from app.constants import (
     DEFAULT_AMBIENTE,
@@ -22,6 +28,7 @@ from app.constants import (
 )
 from app.core.config import (
     BACKEND_DIR,
+    allow_operator_create_client,
     get_certs_dir,
     get_data_dir,
     get_downloads_dir,
@@ -29,7 +36,7 @@ from app.core.config import (
     to_storage_relative_path,
 )
 from app.database import get_db
-from app.models import Client, Invoice, User
+from app.models import BatchImport, BatchImportItem, Client, Invoice, User, UserClient
 from app.schemas import ClientResponse
 from app.services.email_service import EmailService
 from pynfse.adn import DpsSigner
@@ -283,18 +290,23 @@ router = APIRouter(prefix="/api/clients", tags=["clients"], dependencies=[Depend
 
 
 @router.get("", response_model=List[ClientResponse])
-def list_clients(db: Session = Depends(get_db)):
-    """Listar todos os clientes cadastrados."""
-    return db.query(Client).all()
+def list_clients(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Listar as empresas cadastradas acessíveis ao usuário autenticado."""
+    query = filter_query_by_allowed_clients(db.query(Client), Client.id, db, current_user)
+    return query.all()
 
 
 @router.get("/certificados/alertas")
 def get_certificate_alerts(
     dias_aviso: int = Query(30, ge=1, le=365, description="Quantidade de dias para alerta preventivo de vencimento"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Lista os certificados A1 vencidos, prestes a vencer (<= dias_aviso) e válidos."""
-    clients = db.query(Client).all()
+    """Lista os certificados A1 vencidos, prestes a vencer (<= dias_aviso) e válidos das empresas acessíveis."""
+    clients = filter_query_by_allowed_clients(db.query(Client), Client.id, db, current_user).all()
     vencidos = []
     expirando = []
     validos = []
@@ -390,6 +402,12 @@ def create_client(
     current_user: User = Depends(get_current_user),
 ):
     """Criar novo cliente com certificado e dados fiscais opcionais."""
+    if not is_admin_user(current_user) and not allow_operator_create_client():
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas administradores podem cadastrar novas empresas no sistema.",
+        )
+
     validated_save_path = _validate_client_save_path(save_path, current_user) or ""
     cert_path = salvar_arquivo_certificado(cert_file, cnpj)
     cert_valid_until, cert_subject = extrair_metadados_certificado_pfx(cert_path, cert_password)
@@ -443,17 +461,37 @@ def create_client(
         enviar_email_automatico=enviar_email_automatico or 0,
     )
     db.add(db_client)
+    db.flush()
+    if not is_admin_user(current_user) and getattr(current_user, "id", None):
+        grant_client_access(db, current_user.id, db_client.id, access_level="manager")
     db.commit()
     db.refresh(db_client)
     return db_client
 
 
 @router.delete("/{client_id}")
-def delete_client(client_id: int, db: Session = Depends(get_db)):
+def delete_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Remove o cliente, todas as suas notas associadas no banco de dados e todos os
     arquivos físicos (certificados e downloads) no servidor.
     """
+    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
+    if not is_admin_user(current_user):
+        link = (
+            db.query(UserClient)
+            .filter(UserClient.user_id == current_user.id, UserClient.client_id == client_id)
+            .first()
+        )
+        if not link or link.access_level != "manager":
+            raise HTTPException(
+                status_code=403,
+                detail="Apenas administradores ou o gestor da empresa podem excluí-la.",
+            )
+
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -463,11 +501,23 @@ def delete_client(client_id: int, db: Session = Depends(get_db)):
     # 1. Deletar arquivos físicos e pastas do cliente (certificados e downloads)
     info_remocao = remover_arquivos_e_pastas_cliente(db_client, invoices)
 
-    # 2. Deletar notas associadas no banco de dados
+    # 2. Desvincular e limpar lotes de importação associados (integridade FK PostgreSQL)
+    inv_ids = [inv.id for inv in invoices if inv.id is not None]
+    if inv_ids:
+        db.query(BatchImportItem).filter(BatchImportItem.invoice_id.in_(inv_ids)).update(
+            {BatchImportItem.invoice_id: None},
+            synchronize_session=False,
+        )
+    batch_ids = [b[0] for b in db.query(BatchImport.id).filter(BatchImport.client_id == client_id).all()]
+    if batch_ids:
+        db.query(BatchImportItem).filter(BatchImportItem.batch_id.in_(batch_ids)).delete(synchronize_session=False)
+        db.query(BatchImport).filter(BatchImport.id.in_(batch_ids)).delete(synchronize_session=False)
+
+    # 3. Deletar notas associadas no banco de dados
     for inv in invoices:
         db.delete(inv)
 
-    # 3. Deletar cliente no banco de dados
+    # 4. Deletar cliente no banco de dados
     db.delete(db_client)
     db.commit()
 
@@ -520,6 +570,7 @@ def update_client(
     current_user: User = Depends(get_current_user),
 ):
     """Atualizar dados do cliente."""
+    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Client not found")

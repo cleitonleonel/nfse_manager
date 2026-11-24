@@ -162,6 +162,18 @@ erDiagram
 | `c_trib_nac` / `c_nbs` / `c_class_trib` / `cst_ibscbs` | `VARCHAR` | Classificações fiscais aplicadas na emissão |
 | `tomador_documento` / `tomador_nome` / `tomador_email` | `VARCHAR` | Dados do tomador salvos na emissão para consulta rápida e envio de e-mail |
 | `tentativas_envio` / `ultimo_erro_envio` / `payload_dps_json` | `INTEGER` / `VARCHAR` | Controle da Fila de Contingência Offline e diagnóstico de retransmissão |
+| `created_by_user_id` / `created_by_username` | `INTEGER` / `VARCHAR` | Auditoria do operador responsável pela emissão da DPS/NFS-e |
+| `ambiente` | `VARCHAR` | Ambiente da nota (`producao` ou `homologacao`) |
+
+### Tabela `user_clients`
+
+| Coluna | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `INTEGER` (PK) | Identificador do vínculo |
+| `user_id` | `INTEGER` (FK) | Referência para `users.id` (`ON DELETE CASCADE`) |
+| `client_id` | `INTEGER` (FK) | Referência para `clients.id` (`ON DELETE CASCADE`) |
+| `access_level` | `VARCHAR` | Nível de acesso na empresa (`manager` para criador/gestor, `operator` para operador vinculado) |
+| `created_at` | `TIMESTAMP` | Data de criação do vínculo |
 
 ---
 

@@ -1,7 +1,6 @@
 import { api, getApiBaseUrl } from '../core/api.js';
 import { showTaskToast, setTaskProgress, completeTaskToast, failTaskToast, uiAlert } from '../core/ui.js';
 import { state } from '../core/state.js';
-import { loadUsers } from './users.js';
 
 let updatePollTimer = null;
 
@@ -24,7 +23,7 @@ function resetUpdateUi() {
     setDisplay('update-progress-area', 'none');
     setDisplay('btn-download-update', 'none');
     setDisplay('btn-apply-update', 'none');
-    setDisplay('btn-check-update', 'block');
+    setDisplay('btn-check-update', 'inline-flex');
     setText('update-progress-text', 'Aguardando ação...');
     setProgress(0);
     state.updateReady = false;
@@ -32,7 +31,7 @@ function resetUpdateUi() {
 
 function showDownloadActions() {
     setDisplay('btn-check-update', 'none');
-    setDisplay('btn-download-update', 'block');
+    setDisplay('btn-download-update', 'inline-flex');
     setDisplay('btn-apply-update', 'none');
     setDisplay('update-progress-area', 'block');
 }
@@ -40,7 +39,7 @@ function showDownloadActions() {
 function showApplyAction() {
     setDisplay('btn-check-update', 'none');
     setDisplay('btn-download-update', 'none');
-    setDisplay('btn-apply-update', 'block');
+    setDisplay('btn-apply-update', 'inline-flex');
     setDisplay('update-progress-area', 'block');
 }
 
@@ -68,7 +67,7 @@ async function pollUpdateTask() {
             setText('update-progress-text', 'Atualização baixada e pronta para aplicação segura.');
             completeTaskToast('Atualização Pronta', 'Download concluído! Clique em "Reiniciar e aplicar".', 5000);
             showApplyAction();
-            setDisplay('btn-apply-update', 'block');
+            setDisplay('btn-apply-update', 'inline-flex');
         } else if (res.status === 'failed') {
             state.updateTask = null;
             stopUpdatePoll();
@@ -327,6 +326,17 @@ export async function loadSystemEnvironment() {
     }
 }
 
+export function initHelpPage() {
+    const emailEl = document.getElementById('sup-email');
+    if (emailEl && !emailEl.value) {
+        try {
+            const raw = localStorage.getItem('nfse_user');
+            const u = raw ? JSON.parse(raw) : null;
+            if (u?.email) emailEl.value = u.email;
+        } catch (_) {}
+    }
+}
+
 export async function initAbout() {
     // Try to fetch installed version without triggering a GitHub check
     try {
@@ -366,7 +376,6 @@ export async function initAbout() {
         await loadCatalogsStatus(false);
     }
 
-    const adminSection = document.getElementById('admin-users-section');
     const syncCatalogBtn = document.getElementById('btn-sync-catalogs');
     let role = null;
     try {
@@ -376,15 +385,6 @@ export async function initAbout() {
 
     if (syncCatalogBtn) {
         syncCatalogBtn.style.display = role === 'admin' ? 'inline-flex' : 'none';
-    }
-
-    if (adminSection) {
-        if (role === 'admin') {
-            adminSection.style.display = 'block';
-            await loadUsers();
-        } else {
-            adminSection.style.display = 'none';
-        }
     }
 }
 

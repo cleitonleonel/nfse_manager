@@ -12,7 +12,7 @@
 <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
-<link rel="stylesheet" href="css/style.css?v=31">
+<link rel="stylesheet" href="css/style.css?v=33">
 <script>
   if (localStorage.getItem('nfse_token')) {
     document.documentElement.classList.add('auth-checking');
@@ -29,24 +29,32 @@
     </div>
     <span class="sidebar-brand-text">NFSe Pro</span>
   </button>
-  <div class="nav-item active" onclick="App.showPage('dashboard')" id="nav-dashboard" title="Dashboard">
+  <div class="nav-item active" role="button" tabindex="0" onclick="App.showPage('dashboard')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('dashboard');}" id="nav-dashboard" title="Dashboard">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
     <span class="nav-label">Dashboard</span>
   </div>
-  <div class="nav-item" onclick="App.showPage('clients')" id="nav-clients" title="Clientes">
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('clients')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('clients');}" id="nav-clients" title="Clientes">
     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     <span class="nav-label">Clientes</span>
   </div>
-  <div class="nav-item" onclick="App.showPage('invoices')" id="nav-invoices" title="Notas Fiscais">
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('invoices')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('invoices');}" id="nav-invoices" title="Notas Fiscais">
     <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
     <span class="nav-label">Notas Fiscais</span>
   </div>
-  <div class="nav-item" onclick="App.showPage('emission')" id="nav-emission" title="Emissor NFS-e">
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('emission')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('emission');}" id="nav-emission" title="Emissor NFS-e">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
     <span class="nav-label">Emissor ADN</span>
   </div>
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('users')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('users');}" id="nav-users" title="Gestão de Equipe" style="display:none;">
+    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+    <span class="nav-label">Equipe</span>
+  </div>
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('help')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('help');}" id="nav-help" title="Ajuda &amp; Suporte">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span class="nav-label">Ajuda</span>
+  </div>
   <div class="sidebar-spacer"></div>
-  <div class="nav-item" onclick="App.showPage('about')" id="nav-about" title="Sobre o Sistema">
+  <div class="nav-item" role="button" tabindex="0" onclick="App.showPage('about')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showPage('about');}" id="nav-about" title="Sobre o Sistema">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     <span class="nav-label">Sistema</span>
   </div>
@@ -58,7 +66,7 @@
     <div class="topbar-title" id="page-title">Dashboard</div>
     <div class="topbar-actions">
       <div class="dropdown" id="global-client-dropdown">
-        <button class="btn btn-secondary" onclick="this.nextElementSibling.classList.toggle('show')" id="global-client-btn">
+        <button type="button" class="btn btn-secondary" onclick="this.nextElementSibling.classList.toggle('show')" id="global-client-btn">
           <span>Todos os Clientes (Visão Geral)</span>
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
@@ -84,7 +92,7 @@
         </button>
         <button type="button" class="btn btn-secondary btn-sm auth-logout-btn" onclick="App.logout()" title="Encerrar sessão">Sair</button>
       </div>
-      <button class="btn btn-ghost topbar-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema">
+      <button type="button" class="btn btn-ghost topbar-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema" aria-label="Alternar Tema">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       </button>
     </div>
@@ -100,19 +108,19 @@
 </div>
 
 <!-- MODAL: ADD CLIENT -->
-<div class="modal-overlay" id="modal-client">
+<div class="modal-overlay" id="modal-client" role="dialog" aria-modal="true" aria-labelledby="modal-client-title">
   <div class="modal">
     <div class="modal-header">
-      <h3 style="font-weight:600;">Adicionar Novo Cliente</h3>
-      <button class="btn-ghost" onclick="App.closeModal('modal-client')">&times;</button>
+      <h3 id="modal-client-title" style="font-weight:600;">Adicionar Novo Cliente</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-client')" aria-label="Fechar modal">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label">CNPJ</label>
+        <label class="form-label" for="c-cnpj">CNPJ</label>
         <input type="text" class="form-input" id="c-cnpj" placeholder="00.000.000/0000-00" maxlength="18" oninput="App.maskCnpj(this)">
       </div>
       <div class="form-group">
-        <label class="form-label">Razão Social</label>
+        <label class="form-label" for="c-razao">Razão Social</label>
         <input type="text" class="form-input" id="c-razao" placeholder="Nome da Empresa">
       </div>
 
@@ -130,18 +138,18 @@
 
       <div id="auth-portal" class="modal-grid-2">
         <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Usuário Portal</label>
+          <label class="form-label" for="c-user">Usuário Portal</label>
           <input type="text" class="form-input" id="c-user">
         </div>
         <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Senha Portal</label>
+          <label class="form-label" for="c-pass">Senha Portal</label>
           <input type="password" class="form-input" id="c-pass">
         </div>
       </div>
 
       <div id="auth-cert" class="modal-grid-2" style="display:none;">
         <div class="form-group">
-          <label class="form-label">Certificado (.pfx, .p12)</label>
+          <label class="form-label" for="c-cert-file">Certificado (.pfx, .p12)</label>
           <label class="file-upload-wrapper">
             <span class="file-upload-btn">
               <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -152,7 +160,7 @@
           </label>
         </div>
         <div class="form-group">
-          <label class="form-label">Senha do Certificado</label>
+          <label class="form-label" for="c-cert-pass">Senha do Certificado</label>
           <input type="password" class="form-input" id="c-cert-pass">
         </div>
       </div>
@@ -160,10 +168,10 @@
       <div class="form-group" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
         <label class="form-label">Configuração de Diretórios</label>
         <div class="form-group" id="c-save-path-group">
-          <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Caminho Base no Servidor (Apenas Admin)</label>
+          <label for="c-save-path" style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Caminho Base no Servidor (Apenas Admin)</label>
           <div style="display:flex; gap:8px; margin-bottom:8px;">
             <input type="text" class="form-input" id="c-save-path" readonly placeholder="Clique em Explorar para selecionar uma pasta...">
-            <button class="btn btn-secondary" onclick="App.toggleExplorer()" id="btn-toggle-explorer" style="padding:0 12px; font-size:12px;">Explorar</button>
+            <button type="button" class="btn btn-secondary" onclick="App.toggleExplorer()" id="btn-toggle-explorer" style="padding:0 12px; font-size:12px;">Explorar</button>
           </div>
           
           <!-- Web-Native Folder Explorer -->
@@ -173,12 +181,12 @@
                 <!-- Folders go here -->
             </div>
             <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:8px; display:flex; justify-content:flex-end;">
-                <button class="btn btn-primary btn-sm" onclick="App.selectCurrentFolder()" style="font-size:11px; padding:4px 10px;">Selecionar esta pasta</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="App.selectCurrentFolder()" style="font-size:11px; padding:4px 10px;">Selecionar esta pasta</button>
             </div>
           </div>
         </div>
         <div class="form-group">
-          <label style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Estrutura de Pastas Personalizada</label>
+          <label for="c-path-structure" style="font-size:12px; color:var(--text3); margin-bottom:6px; display:block;">Estrutura de Pastas Personalizada</label>
           <input type="text" class="form-input" id="c-path-structure" placeholder="Ex: {ANO} / {MES} / {CLIENTE}" onkeydown="App.handlePathKey(event, this)">
           <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
             <span class="badge" style="cursor:pointer; background:var(--bg4); border:1px solid var(--border);" onclick="App.addPathTag('{ANO}')">{ANO}</span>
@@ -191,7 +199,7 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Descrição (Opcional)</label>
+        <label class="form-label" for="c-desc">Descrição (Opcional)</label>
         <input type="text" class="form-input" id="c-desc">
       </div>
 
@@ -205,31 +213,31 @@
         </div>
         <div class="modal-grid-2">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">E-mail do Prestador (Reply-To)</label>
+            <label class="form-label" for="c-email">E-mail do Prestador (Reply-To)</label>
             <input type="email" class="form-input" id="c-email" placeholder="fiscal@empresa.com.br">
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">E-mail Remetente (SMTP From)</label>
+            <label class="form-label" for="c-smtp-from">E-mail Remetente (SMTP From)</label>
             <input type="email" class="form-input" id="c-smtp-from" placeholder="Opcional (padrão = usuário SMTP)">
           </div>
         </div>
         <div class="modal-grid-2-1">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Servidor SMTP (Host)</label>
+            <label class="form-label" for="c-smtp-host">Servidor SMTP (Host)</label>
             <input type="text" class="form-input" id="c-smtp-host" placeholder="Ex.: smtp.gmail.com ou smtp.office365.com">
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Porta SMTP</label>
+            <label class="form-label" for="c-smtp-port">Porta SMTP</label>
             <input type="number" class="form-input" id="c-smtp-port" value="587" placeholder="587 ou 465">
           </div>
         </div>
         <div class="modal-grid-2">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Usuário SMTP</label>
+            <label class="form-label" for="c-smtp-user">Usuário SMTP</label>
             <input type="text" class="form-input" id="c-smtp-user" placeholder="usuario@dominio.com.br">
           </div>
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Senha / App Password SMTP</label>
+            <label class="form-label" for="c-smtp-pass">Senha / App Password SMTP</label>
             <input type="password" class="form-input" id="c-smtp-pass" placeholder="Senha SMTP" oninput="delete this.dataset.usingDefault">
           </div>
         </div>
@@ -244,18 +252,18 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="App.closeModal('modal-client')">Cancelar</button>
-      <button class="btn btn-primary" onclick="App.saveClient()">Salvar Cliente</button>
+      <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-client')">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="App.saveClient()">Salvar Cliente</button>
     </div>
   </div>
 </div>
 
 <!-- MODAL: MINHA CONTA / ALTERAR SENHA -->
-<div class="modal-overlay" id="modal-account-profile">
+<div class="modal-overlay" id="modal-account-profile" role="dialog" aria-modal="true" aria-labelledby="modal-profile-title">
   <div class="modal">
     <div class="modal-header">
-      <h3 style="font-weight:600;">Minha Conta</h3>
-      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-account-profile')">&times;</button>
+      <h3 id="modal-profile-title" style="font-weight:600;">Minha Conta</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-account-profile')" aria-label="Fechar modal">&times;</button>
     </div>
     <div class="modal-body">
       <div class="profile-summary-card">
@@ -313,11 +321,11 @@
 </div>
 
 <!-- MODAL: CRIAR / EDITAR OPERADOR -->
-<div class="modal-overlay" id="modal-operator">
+<div class="modal-overlay" id="modal-operator" role="dialog" aria-modal="true" aria-labelledby="op-modal-title">
   <div class="modal">
     <div class="modal-header">
       <h3 style="font-weight:600;" id="op-modal-title">Novo Operador</h3>
-      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator')">&times;</button>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator')" aria-label="Fechar modal">&times;</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="op-id" value="">
@@ -351,6 +359,22 @@
           </button>
         </div>
       </div>
+      <div class="form-group" id="op-clients-group">
+        <div class="op-clients-header">
+          <label class="form-label" style="margin-bottom:0;">Empresas Vinculadas</label>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="App.toggleAllOperatorClients(true)">Todas</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="App.toggleAllOperatorClients(false)">Limpar</button>
+          </div>
+        </div>
+        <input type="text" class="form-input" id="op-clients-search" aria-label="Filtrar empresas por CNPJ ou razão social" placeholder="Filtrar empresas por CNPJ ou razão social..." oninput="App.filterOperatorClientsList()" style="margin-bottom:8px; padding:7px 10px; font-size:12px;">
+        <div class="op-clients-list" id="op-clients-list">
+          <div style="font-size:12px; color:var(--text3); padding:8px;">Carregando empresas...</div>
+        </div>
+      </div>
+      <div class="modal-info-banner" id="op-clients-admin-note" style="display:none; margin-bottom:14px;">
+        Administradores possuem acesso irrestrito a todas as empresas cadastradas.
+      </div>
       <div class="form-group" id="op-active-group" style="margin-bottom:0;">
         <label class="modal-checkbox-row">
           <input type="checkbox" id="op-is-active" checked>
@@ -366,11 +390,11 @@
 </div>
 
 <!-- MODAL: REDEFINIR SENHA DO OPERADOR -->
-<div class="modal-overlay" id="modal-operator-reset-pwd">
+<div class="modal-overlay" id="modal-operator-reset-pwd" role="dialog" aria-modal="true" aria-labelledby="modal-reset-pwd-title">
   <div class="modal">
     <div class="modal-header">
-      <h3 style="font-weight:600;">Redefinir Senha de Operador</h3>
-      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator-reset-pwd')">&times;</button>
+      <h3 id="modal-reset-pwd-title" style="font-weight:600;">Redefinir Senha de Operador</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-operator-reset-pwd')" aria-label="Fechar modal">&times;</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="reset-op-id" value="">
@@ -404,11 +428,11 @@
 </div>
 
 <!-- MODAL: CONFIGURAR SERVIDOR CENTRAL (WTS / DESKTOP) -->
-<div class="modal-overlay modal-topmost" id="modal-server-url">
+<div class="modal-overlay modal-topmost" id="modal-server-url" role="dialog" aria-modal="true" aria-labelledby="modal-server-url-title">
   <div class="modal">
     <div class="modal-header">
-      <h3 style="font-weight:600;">Configurar Servidor Central</h3>
-      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-server-url')">&times;</button>
+      <h3 id="modal-server-url-title" style="font-weight:600;">Configurar Servidor Central</h3>
+      <button type="button" class="btn-ghost" onclick="App.closeModal('modal-server-url')" aria-label="Fechar modal">&times;</button>
     </div>
     <div class="modal-body">
       <div class="modal-info-banner">
@@ -431,11 +455,11 @@
 <!-- TELA CHEIA: LOGIN / CADASTRO -->
 <div class="auth-screen" id="auth-screen">
   <div class="auth-top-controls">
-    <button type="button" class="btn btn-secondary auth-server-btn" id="auth-server-config-btn" onclick="App.openServerUrlModal()" title="Configurar URL do Servidor Central">
+    <button type="button" class="btn btn-secondary auth-server-btn" id="auth-server-config-btn" onclick="App.openServerUrlModal()" title="Configurar URL do Servidor Central" aria-label="Configurar URL do Servidor Central">
       <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
       <span>Servidor</span>
     </button>
-    <button type="button" class="btn btn-secondary auth-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema Claro / Escuro">
+    <button type="button" class="btn btn-secondary auth-theme-btn" onclick="App.toggleTheme()" title="Alternar Tema Claro / Escuro" aria-label="Alternar Tema Claro / Escuro">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       <span>Alternar Tema</span>
     </button>

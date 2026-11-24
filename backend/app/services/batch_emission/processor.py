@@ -13,7 +13,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.spreadsheets import parse_date_iso
-from app.models import BatchImport, BatchImportItem, Client, Invoice
+from app.models import BatchImport, BatchImportItem, Client, Invoice, User
 from app.services.adn_service import AdnService
 from app.services.batch_emission.validator import (
     build_emission_context_for_item,
@@ -67,6 +67,8 @@ def _upsert_invoice_for_item(
     xml_nfse_path: Optional[str],
     pdf_path: Optional[str],
     ultimo_erro: Optional[str],
+    created_by_user_id: Optional[int] = None,
+    created_by_username: Optional[str] = None,
 ) -> Invoice:
     reforma = tributacao_calc.get("reforma_tributaria") or {}
     iss_info = tributacao_calc.get("iss") or {}
@@ -97,6 +99,12 @@ def _upsert_invoice_for_item(
         existing.tentativas_envio = item.attempts
         existing.ultimo_erro_envio = ultimo_erro
         existing.payload_dps_json = payload_resumo
+        if not existing.ambiente:
+            existing.ambiente = ambiente
+        if created_by_user_id and not existing.created_by_user_id:
+            existing.created_by_user_id = created_by_user_id
+        if created_by_username and not existing.created_by_username:
+            existing.created_by_username = created_by_username
         db.add(existing)
         db.flush()
         return existing
@@ -128,6 +136,9 @@ def _upsert_invoice_for_item(
         tentativas_envio=item.attempts,
         ultimo_erro_envio=ultimo_erro,
         payload_dps_json=payload_resumo,
+        created_by_user_id=created_by_user_id,
+        created_by_username=created_by_username,
+        ambiente=ambiente,
     )
     db.add(nova)
     db.flush()
@@ -141,6 +152,7 @@ async def process_batch_items(
     transmitir: bool = True,
     enviar_email: bool = False,
     allowed_statuses: Optional[set[str]] = None,
+    current_user: Optional[User] = None,
 ) -> BatchImport:
     """Processa sequencialmente os itens selecionados de um lote sem manter transações durante chamadas HTTP."""
     lock = _get_batch_lock(batch_id)
@@ -336,6 +348,7 @@ async def process_batch_items(
                 client_cur = db.query(Client).filter(Client.id == batch_cur.client_id).first()
                 item_upd = db.query(BatchImportItem).filter(BatchImportItem.id == cur_item_id).first()
 
+                audit_uid, audit_uname = AdnService._resolve_audit_user(db, current_user)
                 inv = _upsert_invoice_for_item(
                     db,
                     client_db=client_cur,
@@ -352,6 +365,8 @@ async def process_batch_items(
                     xml_nfse_path=xml_nfse_path,
                     pdf_path=pdf_path,
                     ultimo_erro=ultimo_erro,
+                    created_by_user_id=audit_uid,
+                    created_by_username=audit_uname or batch_cur.created_by,
                 )
 
                 item_upd.invoice_id = inv.id
@@ -389,6 +404,7 @@ async def resolve_unknown_and_retry_batch(
     item_ids: Optional[List[str]] = None,
     transmitir: bool = True,
     enviar_email: bool = False,
+    current_user: Optional[User] = None,
 ) -> BatchImport:
     """Consulta DPS em estado `UNKNOWN` no ADN antes de permitir reenvio, e reprocessa itens `RETRY`."""
     batch = db.query(BatchImport).filter(BatchImport.id == batch_id).first()
@@ -489,6 +505,7 @@ async def resolve_unknown_and_retry_batch(
             transmitir=transmitir,
             enviar_email=enviar_email,
             allowed_statuses={"RETRY"},
+            current_user=current_user,
         )
 
     db.refresh(batch)

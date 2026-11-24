@@ -8,6 +8,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.api.permissions import (
+    assert_client_access,
+    filter_query_by_allowed_clients,
+    get_allowed_client_ids,
+    is_admin_user,
+)
 from app.api.routers.auth import get_current_user
 from app.core.spreadsheets import (
     build_template_response as _build_template_response,
@@ -17,7 +23,7 @@ from app.core.spreadsheets import (
     parse_spreadsheet_rows as _parse_spreadsheet_rows,
 )
 from app.database import get_db
-from app.models import Customer, ServiceItem
+from app.models import Customer, ServiceItem, User
 from app.schemas import (
     CustomerCreate,
     CustomerResponse,
@@ -33,6 +39,12 @@ from app.services.lookup_service import LookupService
 from pynfse.adn import buscar_correlacoes_anexo_viii, clean_digits, obter_cclasstrib
 
 router = APIRouter(prefix="/api", tags=["registry", "lookup"], dependencies=[Depends(get_current_user)])
+
+
+def _assert_registry_client_access(db: Session, current_user: User, client_id: Optional[int]) -> None:
+    if is_admin_user(current_user):
+        return
+    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
 
 
 # ==============================================================================
@@ -62,11 +74,17 @@ def list_customers(
     client_id: Optional[int] = Query(None, description="ID do Prestador (retorna os vinculados e os globais)"),
     q: Optional[str] = Query(None, description="Busca por documento ou razão social"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lista os tomadores recorrentes cadastrados."""
-    query = db.query(Customer)
-    if client_id is not None:
-        query = query.filter(or_(Customer.client_id == client_id, Customer.client_id.is_(None)))
+    query = filter_query_by_allowed_clients(
+        db.query(Customer),
+        Customer.client_id,
+        db,
+        current_user,
+        client_id=client_id,
+        include_global_none_for_admin=True,
+    )
     if q:
         termo = f"%{q.strip()}%"
         query = query.filter(or_(Customer.razao_social.ilike(termo), Customer.documento.ilike(termo)))
@@ -74,8 +92,13 @@ def list_customers(
 
 
 @router.post("/customers", response_model=CustomerResponse)
-def create_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
+def create_customer(
+    payload: CustomerCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Cadastra um novo tomador recorrente."""
+    _assert_registry_client_access(db, current_user, payload.client_id)
     doc_limpo = _clean_doc(payload.documento)
     if len(doc_limpo) not in (11, 14):
         raise HTTPException(status_code=400, detail="Documento do tomador deve ser CNPJ (14) ou CPF (11).")
@@ -102,13 +125,21 @@ def create_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/customers/{customer_id}", response_model=CustomerResponse)
-def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Depends(get_db)):
+def update_customer(
+    customer_id: int,
+    payload: CustomerUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Atualiza um tomador recorrente."""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    _assert_registry_client_access(db, current_user, customer.client_id)
 
     data = payload.model_dump(exclude_unset=True)
+    if "client_id" in data:
+        _assert_registry_client_access(db, current_user, data["client_id"])
     if "documento" in data and data["documento"]:
         data["documento"] = _clean_doc(data["documento"])
     if "cep" in data and data["cep"]:
@@ -124,14 +155,27 @@ def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Dep
     return customer
 
 
-def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session) -> dict:
+def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session, current_user: User) -> dict:
     """Helper compartilhado para exclusão em lote de tomadores ou serviços."""
+    allowed_ids = get_allowed_client_ids(db, current_user)
     q = db.query(model)
     if req.delete_all:
         if req.client_id is not None:
-            q = q.filter(or_(model.client_id == req.client_id, model.client_id.is_(None)))
+            assert_client_access(db, current_user, req.client_id, allow_none_for_admin=True)
+            if allowed_ids is None:
+                q = q.filter(or_(model.client_id == req.client_id, model.client_id.is_(None)))
+            else:
+                q = q.filter(model.client_id == req.client_id)
+        elif allowed_ids is not None:
+            if not allowed_ids:
+                return {"deleted": 0}
+            q = q.filter(model.client_id.in_(allowed_ids))
     elif req.ids:
         q = q.filter(model.id.in_(req.ids))
+        if allowed_ids is not None:
+            if not allowed_ids:
+                return {"deleted": 0}
+            q = q.filter(model.client_id.in_(allowed_ids))
     else:
         raise HTTPException(status_code=400, detail="Informe ids ou delete_all=true.")
 
@@ -141,20 +185,29 @@ def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session) 
 
 
 @router.delete("/customers/{customer_id}")
-def delete_customer(customer_id: int, db: Session = Depends(get_db)):
+def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Remove um tomador recorrente."""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    _assert_registry_client_access(db, current_user, customer.client_id)
     db.delete(customer)
     db.commit()
     return {"message": "Tomador removido com sucesso."}
 
 
 @router.post("/customers/delete-batch")
-def delete_customers_batch(req: RegistryBatchDeleteRequest, db: Session = Depends(get_db)):
+def delete_customers_batch(
+    req: RegistryBatchDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Remove múltiplos tomadores recorrentes selecionados ou todos."""
-    return _delete_registry_batch(Customer, req, db)
+    return _delete_registry_batch(Customer, req, db, current_user)
 
 
 # ==============================================================================
@@ -204,11 +257,17 @@ def list_service_items(
     client_id: Optional[int] = Query(None, description="ID do Prestador (retorna os vinculados e os globais)"),
     q: Optional[str] = Query(None, description="Busca por título, descrição ou cTribNac"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lista os serviços recorrentes cadastrados."""
-    query = db.query(ServiceItem)
-    if client_id is not None:
-        query = query.filter(or_(ServiceItem.client_id == client_id, ServiceItem.client_id.is_(None)))
+    query = filter_query_by_allowed_clients(
+        db.query(ServiceItem),
+        ServiceItem.client_id,
+        db,
+        current_user,
+        client_id=client_id,
+        include_global_none_for_admin=True,
+    )
     if q:
         termo = f"%{q.strip()}%"
         query = query.filter(
@@ -222,8 +281,13 @@ def list_service_items(
 
 
 @router.post("/service-items", response_model=ServiceItemResponse)
-def create_service_item(payload: ServiceItemCreate, db: Session = Depends(get_db)):
+def create_service_item(
+    payload: ServiceItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Cadastra um novo serviço recorrente com preenchimento automático e validação NBS × cClassTrib × cIndOp."""
+    _assert_registry_client_access(db, current_user, payload.client_id)
     cst_input = payload.cst_ibscbs if "cst_ibscbs" in payload.model_fields_set else None
     ctrib, nbs, cclass, cst, indop = _enriquecer_servico_pelo_anexo_viii(
         payload.c_trib_nac,
@@ -275,13 +339,21 @@ def create_service_item(payload: ServiceItemCreate, db: Session = Depends(get_db
 
 
 @router.put("/service-items/{item_id}", response_model=ServiceItemResponse)
-def update_service_item(item_id: int, payload: ServiceItemUpdate, db: Session = Depends(get_db)):
+def update_service_item(
+    item_id: int,
+    payload: ServiceItemUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Atualiza um serviço recorrente validando regras IBS/CBS e compatibilidade com a NBS."""
     item = db.query(ServiceItem).filter(ServiceItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Serviço não encontrado.")
+    _assert_registry_client_access(db, current_user, item.client_id)
 
     data = payload.model_dump(exclude_unset=True)
+    if "client_id" in data:
+        _assert_registry_client_access(db, current_user, data["client_id"])
     if "iss_retido" in data and data["iss_retido"] is not None:
         data["iss_retido"] = 1 if data["iss_retido"] else 0
     if "reter_federais" in data and data["reter_federais"] is not None:
@@ -317,20 +389,29 @@ def update_service_item(item_id: int, payload: ServiceItemUpdate, db: Session = 
 
 
 @router.delete("/service-items/{item_id}")
-def delete_service_item(item_id: int, db: Session = Depends(get_db)):
+def delete_service_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Remove um serviço recorrente."""
     item = db.query(ServiceItem).filter(ServiceItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Serviço não encontrado.")
+    _assert_registry_client_access(db, current_user, item.client_id)
     db.delete(item)
     db.commit()
     return {"message": "Serviço removido com sucesso."}
 
 
 @router.post("/service-items/delete-batch")
-def delete_service_items_batch(req: RegistryBatchDeleteRequest, db: Session = Depends(get_db)):
+def delete_service_items_batch(
+    req: RegistryBatchDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Remove múltiplos serviços recorrentes selecionados ou todos."""
-    return _delete_registry_batch(ServiceItem, req, db)
+    return _delete_registry_batch(ServiceItem, req, db, current_user)
 
 
 # ==============================================================================
@@ -378,8 +459,10 @@ async def import_customers_batch(
     client_id: Optional[int] = Form(None),
     atualizar_existentes: bool = Form(True),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Importa tomadores recorrentes em lote a partir de planilha CSV ou XLSX."""
+    _assert_registry_client_access(db, current_user, client_id)
     content = await file.read()
     try:
         rows = _parse_spreadsheet_rows(content, file.filename or "import.csv")
@@ -487,8 +570,10 @@ async def import_services_batch(
     client_id: Optional[int] = Form(None),
     atualizar_existentes: bool = Form(True),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Importa serviços recorrentes em lote via CSV ou XLSX com preenchimento automático pelo Anexo VIII."""
+    _assert_registry_client_access(db, current_user, client_id)
     content = await file.read()
     try:
         rows = _parse_spreadsheet_rows(content, file.filename or "import.csv")
