@@ -3,7 +3,7 @@ package-mode = false
 
 [project]
 name = "nfse_manager"
-version = "0.2.4"
+version = "0.3.0"
 description = "Sistema de gestão e consulta de NFS-e Nacional em Python (FastAPI + SQLAlchemy + PostgreSQL), com autenticação A1/credenciais, downloads em lote de XML/PDF, dashboard analítico e exportação de relatórios em JSON, CSV e XLSX."
 authors = [
     {name = "cleiton",email = "cleiton.leonel@gmail.com"}

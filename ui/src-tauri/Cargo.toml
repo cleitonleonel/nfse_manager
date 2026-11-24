@@ -1,6 +1,6 @@
 [package]
 name = "nfse-manager"
-version = "0.2.4"
+version = "0.3.0"
 description = "Sistema multiusuário para gestão, emissão ADN v1.01 (IBS/CBS) e sincronização de NFS-e Nacional"
 authors = ["Cleiton Leonel <cleiton.leonel@gmail.com>"]
 license = ""

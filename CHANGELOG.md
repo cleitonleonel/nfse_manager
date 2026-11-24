@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.3.0 (2026-11-24)
+
+Comparativo a partir de `v0.2.4`.
+
+### Destaques
+
+Isolamento multi-empresa (User <-> Client), auditoria de autoria/ambiente, exclusao de contingencia do Dashboard, novas telas Equipe e Ajuda & Suporte e correcao Mermaid v11 nos docs.
+
+### Novas Funcionalidades
+
+- `2ba63fd` feat: isola empresas por usuario, separa Equipe e Ajuda e adiciona auditoria (cleiton)
+
+### Resumo por Camada
+
+- **Raiz & Configuração**: 4 arquivo(s)
+- **Backend (API, Serviços & Banco)**: 16 arquivo(s)
+- **Documentação**: 5 arquivo(s)
+- **Frontend SPA**: 13 arquivo(s)
+- **Testes Automatizados**: 1 arquivo(s)
+
 ## v0.2.4 (2026-11-19)
 
 Comparativo a partir de `v0.2.3`.

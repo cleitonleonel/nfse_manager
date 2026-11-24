@@ -2,6 +2,67 @@ NFSe Manager Pro — Registro Detalhado de Alterações (Changelog para Análise
 Gerado automaticamente por scripts/bump_version.py
 
 ================================================================================
+VERSAO v0.3.0  (Data: 2026-11-24 15:50:36)
+Base anterior: v0.2.4 (tag: v0.2.4)
+Commits incluidos: 1 | Arquivos pendentes no workspace: 0
+================================================================================
+
+[RESUMO / DESTAQUES DA VERSAO]
+Isolamento multi-empresa (User <-> Client), auditoria de autoria/ambiente, exclusao de contingencia do Dashboard, novas telas Equipe e Ajuda & Suporte e correcao Mermaid v11 nos docs.
+
+Resumo git (v0.2.4..HEAD): 39 files changed, 2225 insertions(+), 407 deletions(-)
+
+[ALTERACOES POR CATEGORIA (COMMITS)]
+  * Novas Funcionalidades (1):
+      - [2ba63fd] (2026-11-24) feat: isola empresas por usuario, separa Equipe e Ajuda e adiciona auditoria — cleiton
+
+[INVENTARIO DE ARQUIVOS MODIFICADOS POR CAMADA (PARA ANALISE)]
+  [Raiz & Configuração] (4 arquivos)
+      M          .env.example
+      M          .gitignore
+      M          AGENTS.md
+      M          README.md
+  [Backend (API, Serviços & Banco)] (16 arquivos)
+      A          backend/app/api/permissions.py
+      M          backend/app/api/routers/analytics.py
+      M          backend/app/api/routers/auth.py
+      M          backend/app/api/routers/batch.py
+      M          backend/app/api/routers/clients.py
+      M          backend/app/api/routers/downloads.py
+      M          backend/app/api/routers/emission.py
+      M          backend/app/api/routers/invoices.py
+      M          backend/app/api/routers/registry.py
+      M          backend/app/api/routers/reports.py
+      M          backend/app/core/config.py
+      M          backend/app/models.py
+      M          backend/app/schemas.py
+      M          backend/app/services/adn_service.py
+      M          backend/app/services/batch_emission/processor.py
+      A          backend/migrations/versions/0004_add_user_clients_and_invoice_audit.py
+  [Documentação] (5 arquivos)
+      M          docs/api-referencia.md
+      M          docs/arquitetura-e-uso.md
+      M          docs/arquitetura.md
+      M          docs/banco-de-dados.md
+      M          docs/instalacao.md
+  [Frontend SPA] (13 arquivos)
+      M          frontend/css/layout.css
+      M          frontend/css/pages/about.css
+      M          frontend/css/variables.css
+      M          frontend/index.html
+      M          frontend/js/core/router.js
+      M          frontend/js/core/ui.js
+      M          frontend/js/main.js
+      M          frontend/js/pages/about.js
+      M          frontend/js/pages/clients.js
+      M          frontend/js/pages/users.js
+      M          frontend/views/about.html
+      A          frontend/views/help.html
+      A          frontend/views/users.html
+  [Testes Automatizados] (1 arquivos)
+      A          tests/test_user_client_isolation.py
+
+================================================================================
 VERSAO v0.2.4  (Data: 2026-11-19 15:17:54)
 Base anterior: v0.2.3 (tag: v0.2.3)
 Commits incluidos: 0 | Arquivos pendentes no workspace: 6
