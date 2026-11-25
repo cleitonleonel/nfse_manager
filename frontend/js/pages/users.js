@@ -45,6 +45,8 @@ export async function loadUsers() {
         }
         cachedUsers = Array.isArray(list) ? list : [];
         filterUsersTable();
+        const auditSection = document.getElementById('admin-audit-section');
+        if (auditSection) enhanceSelects(auditSection);
         loadAuditLogs(1);
     } catch (e) {
         if (tbody) {

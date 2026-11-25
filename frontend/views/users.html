@@ -63,7 +63,7 @@
                     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <input type="text" class="form-input" id="audit-search-input" aria-label="Buscar na trilha de auditoria" placeholder="Buscar por ator, ação, resumo..." oninput="App.debouncedLoadAuditLogs()">
                 </div>
-                <select class="form-select" id="audit-entity-filter" aria-label="Filtrar por entidade" onchange="App.loadAuditLogs(1)" style="width:auto; min-width:140px;">
+                <select class="form-input audit-filter-select" id="audit-entity-filter" aria-label="Filtrar por entidade" onchange="App.loadAuditLogs(1)">
                     <option value="">Todas entidades</option>
                     <option value="user">Usuários</option>
                     <option value="client">Empresas</option>
@@ -71,7 +71,7 @@
                     <option value="batch">Emissão em Lote</option>
                     <option value="system">Sistema</option>
                 </select>
-                <select class="form-select" id="audit-status-filter" aria-label="Filtrar por status" onchange="App.loadAuditLogs(1)" style="width:auto; min-width:120px;">
+                <select class="form-input audit-filter-select" id="audit-status-filter" aria-label="Filtrar por status" onchange="App.loadAuditLogs(1)">
                     <option value="">Todos status</option>
                     <option value="success">Sucesso</option>
                     <option value="error">Erro</option>

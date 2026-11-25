@@ -172,11 +172,13 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .users-search-wrap {
   position: relative;
-  min-width: 240px;
+  flex: 1 1 240px;
+  min-width: 220px;
 }
 
 .users-search-wrap svg {
@@ -192,9 +194,43 @@
   pointer-events: none;
 }
 
-.users-search-wrap .form-input {
-  padding-left: 36px;
+.users-search-wrap .form-input,
+.users-toolbar .form-input,
+.users-toolbar .cs-trigger,
+.users-toolbar .btn,
+.users-toolbar .btn-sm {
   height: var(--ctrl-h-sm);
+  min-height: var(--ctrl-h-sm);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.users-search-wrap .form-input {
+  width: 100%;
+  padding-left: 36px;
+}
+
+.users-toolbar .audit-filter-select,
+.users-toolbar .cs-wrap {
+  width: 175px;
+  min-width: 155px;
+  flex: 0 0 175px;
+}
+
+.users-toolbar .cs-trigger {
+  width: 100%;
+  padding: 0 12px;
+}
+
+.users-toolbar .btn,
+.users-toolbar .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .user-identity-cell {
@@ -369,6 +405,10 @@
   }
   .users-toolbar {
     width: 100%;
+  }
+  .users-toolbar .cs-wrap {
+    flex: 1 1 140px;
+    width: auto;
   }
   .users-avatar {
     width: 28px;
