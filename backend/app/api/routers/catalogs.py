@@ -7,11 +7,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session
 
 from app.api.routers.auth import get_current_user, require_admin_user
+from app.database import get_db
 from app.models import User
 from app.services.adn_service import AdnService
+from app.services.audit_service import AuditService, get_client_ip
 
 router = APIRouter(prefix="/api/catalogs", tags=["catalogs"], dependencies=[Depends(get_current_user)])
 
@@ -146,15 +149,34 @@ def get_catalogs_status(
 
 @router.post("/sync")
 def sync_catalogs_from_official_sources(
+    request: Request,
     force: bool = Query(False, description="Forçar gravação mesmo se a versão oficial já estiver atual"),
     validar_calculadora: bool = Query(
         False,
         description="Consultar combinações aceitas na calculadora piloto RFB por NBS (mais lento)",
     ),
+    db: Session = Depends(get_db),
     _admin: User = Depends(require_admin_user),
 ):
     """Sincroniza os catálogos fiscais no cache compartilhado a partir das fontes oficiais RFB e gov.br/nfse (somente admin)."""
-    return AdnService.sincronizar_catalogos_oficiais(
+    res = AdnService.sincronizar_catalogos_oficiais(
         force=force,
         validar_calculadora=validar_calculadora,
     )
+    AuditService.record(
+        db,
+        action="system.catalogs_sync",
+        entity_type="catalog",
+        current_user=_admin,
+        summary="Sincronização dos catálogos fiscais oficiais (RFB / gov.br/nfse) executada.",
+        details={
+            "force": force,
+            "validar_calculadora": validar_calculadora,
+            "atualizado": res.get("atualizado") if isinstance(res, dict) else None,
+            "versao_db": ((res.get("metadados") or {}).get("versao_db") if isinstance(res, dict) else None),
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
+    return res

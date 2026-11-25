@@ -82,6 +82,7 @@ def test_resolve_database_url_docker_vs_local_vs_sqlite_fallback(monkeypatch):
         assert "@localhost:5434/nfse_db" in url_pg_local
 
     # 2. Quando estamos fora do Docker e nenhum PostgreSQL está rodando -> fallback para SQLite local
+    monkeypatch.setenv("DB_FALLBACK_SQLITE", "1")
     with (
         patch("app.database._can_resolve_host", return_value=False),
         patch("app.database._is_tcp_port_open", return_value=False),

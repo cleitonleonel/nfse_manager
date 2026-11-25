@@ -15,6 +15,7 @@ from app.core.spreadsheets import clean_doc, parse_date_iso, validate_cpf_cnpj
 from app.models import BatchImport, BatchImportItem, Client, Customer, ServiceItem
 from app.schemas import TaxCalculationRequest, TaxValidationRequest
 from app.services.adn_service import AdnService
+from app.services.batch_emission.importer import normalize_tax_code_field
 from pynfse.adn import (
     XsdValidator,
     build_dps_xml,
@@ -26,21 +27,42 @@ from pynfse.adn import (
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _lookup_customer(db: Session, client_id: int, doc_clean: str) -> Optional[Customer]:
+def _lookup_customer(
+    db: Session,
+    client_id: int,
+    doc_clean: str,
+    *,
+    include_global: bool = False,
+) -> Optional[Customer]:
     if not doc_clean:
         return None
+    customer = (
+        db.query(Customer)
+        .filter(
+            Customer.documento == doc_clean,
+            Customer.client_id == client_id,
+        )
+        .first()
+    )
+    if customer is not None or not include_global:
+        return customer
     return (
         db.query(Customer)
         .filter(
             Customer.documento == doc_clean,
-            or_(Customer.client_id == client_id, Customer.client_id.is_(None)),
+            Customer.client_id.is_(None),
         )
-        .order_by(Customer.client_id.desc())
         .first()
     )
 
 
-def _lookup_service_item(db: Session, client_id: int, codigo_servico: str) -> Optional[ServiceItem]:
+def _lookup_service_item(
+    db: Session,
+    client_id: int,
+    codigo_servico: str,
+    *,
+    include_global: bool = False,
+) -> Optional[ServiceItem]:
     code = (codigo_servico or "").strip()
     if not code:
         return None
@@ -50,14 +72,79 @@ def _lookup_service_item(db: Session, client_id: int, codigo_servico: str) -> Op
     ]
     if code.isdigit():
         filters.append(ServiceItem.id == int(code))
+
+    service_item = (
+        db.query(ServiceItem)
+        .filter(
+            ServiceItem.client_id == client_id,
+            or_(*filters),
+        )
+        .first()
+    )
+    if service_item is not None or not include_global:
+        return service_item
     return (
         db.query(ServiceItem)
         .filter(
-            or_(ServiceItem.client_id == client_id, ServiceItem.client_id.is_(None)),
+            ServiceItem.client_id.is_(None),
             or_(*filters),
         )
-        .order_by(ServiceItem.client_id.desc())
         .first()
+    )
+
+
+def build_tax_validation_request(servico: Dict[str, Any]) -> TaxValidationRequest:
+    """Constrói `TaxValidationRequest` único a partir do dicionário `servico` resolvido do lote."""
+    return TaxValidationRequest(
+        cClassTrib=servico["cClassTrib"],
+        cst=servico.get("cst"),
+        cIndOp=servico.get("cIndOp") or servico.get("indop") or "100301",
+        cTribNac=servico.get("cTribNac"),
+        cNBS=servico.get("cNBS") or None,
+    )
+
+
+def build_tax_calculation_request(
+    prestador: Dict[str, Any],
+    servico: Dict[str, Any],
+    *,
+    data_competencia: Optional[str] = None,
+    ano_competencia: Optional[int] = None,
+) -> TaxCalculationRequest:
+    """Constrói `TaxCalculationRequest` único (SSoT) compartilhado por validação e processamento."""
+    return TaxCalculationRequest(
+        valor_servicos=float(servico["valor"]),
+        regime_prestador=str(prestador.get("regime") or "normal").strip().lower(),
+        cClassTrib=servico["cClassTrib"],
+        cst=servico.get("cst"),
+        cIndOp=servico.get("cIndOp") or servico.get("indop") or "100301",
+        cTribNac=servico.get("cTribNac"),
+        cNBS=servico.get("cNBS") or None,
+        data_competencia=data_competencia,
+        ano_competencia=ano_competencia,
+        desconto_incondicionado=float(servico.get("desconto_incondicionado") or 0.0),
+        deducao_reducao_iss=float(servico.get("deducao_reducao_iss") or 0.0),
+        aliquota_iss=servico.get("aliquota_iss"),
+        iss_retido=bool(servico.get("iss_retido")),
+        reter_federais=bool(servico.get("reter_federais")),
+    )
+
+
+def calculate_batch_item_taxes(
+    prestador: Dict[str, Any],
+    servico: Dict[str, Any],
+    *,
+    data_competencia: Optional[str] = None,
+    ano_competencia: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Calcula tributos do item do lote via `AdnService.calcular_tributos` (fonte única de verdade)."""
+    return AdnService.calcular_tributos(
+        build_tax_calculation_request(
+            prestador,
+            servico,
+            data_competencia=data_competencia,
+            ano_competencia=ano_competencia,
+        )
     )
 
 
@@ -65,11 +152,18 @@ def build_emission_context_for_item(
     db: Session,
     client_db: Client,
     payload: Dict[str, Any],
+    *,
+    include_global: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Optional[Customer], Optional[ServiceItem]]:
     """Resolve tomador, serviço e tributação reutilizando cadastros internos e Anexo VIII."""
     doc_clean = clean_doc(payload.get("documento_tomador"))
-    customer = _lookup_customer(db, client_db.id, doc_clean)
-    service_item = _lookup_service_item(db, client_db.id, payload.get("codigo_servico") or "")
+    customer = _lookup_customer(db, client_db.id, doc_clean, include_global=include_global)
+    service_item = _lookup_service_item(
+        db,
+        client_db.id,
+        payload.get("codigo_servico") or "",
+        include_global=include_global,
+    )
 
     prestador = {
         "cnpj": clean_doc(client_db.cnpj),
@@ -126,42 +220,42 @@ def build_emission_context_for_item(
         "endereco": tomador_addr,
     }
 
-    c_trib_nac = str(
-        payload.get("c_trib_nac")
-        or (service_item.c_trib_nac if service_item else None)
-        or ""
-    ).strip()
-    c_nbs = str(
-        payload.get("c_nbs")
-        or (service_item.c_nbs if service_item else None)
-        or ""
-    ).strip() or None
-    c_class_trib = str(
-        payload.get("cclasstrib")
-        or (service_item.c_class_trib if service_item else None)
-        or "000001"
-    ).strip()
-    cst = str(
-        payload.get("cst_ibs_cbs")
-        or (service_item.cst_ibscbs if service_item else None)
-        or ""
-    ).strip() or None
-    indop = str(
-        payload.get("indop")
-        or (service_item.c_ind_op if service_item else None)
-        or ""
-    ).strip() or None
+    raw_ctrib = payload.get("c_trib_nac")
+    if not str(raw_ctrib or "").strip() and service_item is not None:
+        raw_ctrib = service_item.c_trib_nac
+    c_trib_nac = normalize_tax_code_field("c_trib_nac", raw_ctrib)
+
+    raw_cnbs = payload.get("c_nbs")
+    if not str(raw_cnbs or "").strip() and service_item is not None:
+        raw_cnbs = service_item.c_nbs
+    c_nbs = normalize_tax_code_field("c_nbs", raw_cnbs) or None
+
+    raw_cclass = payload.get("cclasstrib")
+    if not str(raw_cclass or "").strip() and service_item is not None:
+        raw_cclass = service_item.c_class_trib
+    c_class_trib = normalize_tax_code_field("cclasstrib", raw_cclass) or None
+
+    raw_cst = payload.get("cst_ibs_cbs")
+    if not str(raw_cst or "").strip() and service_item is not None:
+        raw_cst = service_item.cst_ibscbs
+    cst = normalize_tax_code_field("cst_ibs_cbs", raw_cst) or None
+
+    raw_indop = payload.get("indop")
+    if not str(raw_indop or "").strip() and service_item is not None:
+        raw_indop = service_item.c_ind_op
+    indop = normalize_tax_code_field("indop", raw_indop) or None
 
     # Enriquecimento via Anexo VIII caso c_trib_nac exista e campos estejam omissos
-    if c_trib_nac and (not c_nbs or not indop):
+    if c_trib_nac and (not c_nbs or not indop or not c_class_trib):
         corrs = buscar_correlacoes_anexo_viii(c_trib_nac=c_trib_nac, limite=1)
         if corrs:
             corr = corrs[0]
             c_nbs = c_nbs or corr.get("cNBS")
-            c_class_trib = payload.get("cclasstrib") or corr.get("cClassTrib") or c_class_trib
+            c_class_trib = c_class_trib or corr.get("cClassTrib")
             cst = cst or corr.get("cst")
             indop = indop or corr.get("indop")
 
+    c_class_trib = c_class_trib or "000001"
     if not cst and c_class_trib:
         meta_ct = obter_cclasstrib(c_class_trib)
         if meta_ct:
@@ -174,10 +268,16 @@ def build_emission_context_for_item(
         or "Prestação de serviços"
     )
     valor_bruto = float(payload.get("valor_servico") or 0.0)
-    desconto_total = float(payload.get("valor_desconto") or 0.0) + float(payload.get("valor_deducao") or 0.0)
+    valor_desconto = float(payload.get("valor_desconto") or 0.0)
+    valor_deducao = float(payload.get("valor_deducao") or 0.0)
+
+    regime_norm = str(prestador.get("regime") or "normal").strip().lower()
     aliq_iss = payload.get("aliquota_iss")
     if aliq_iss is None and service_item is not None:
         aliq_iss = service_item.aliquota_iss
+    if aliq_iss is None:
+        aliq_iss = 0.0 if regime_norm == "mei" else (2.0 if regime_norm == "simples" else 5.0)
+
     iss_retido = payload.get("iss_retido")
     if iss_retido is None and service_item is not None:
         iss_retido = bool(service_item.iss_retido)
@@ -188,18 +288,20 @@ def build_emission_context_for_item(
     servico = {
         "valor": valor_bruto,
         "cTribNac": c_trib_nac or "010101",
-        "cNBS": c_nbs or "115021000",
-        "cClassTrib": c_class_trib or "000001",
+        "cNBS": c_nbs or None,
+        "cClassTrib": c_class_trib,
         "cst": cst or "000",
+        "cIndOp": indop or "100301",
         "indop": indop or "100301",
         "descricao": descricao,
         "codigo_municipio_prestacao": str(
             payload.get("municipio_prestacao") or client_db.codigo_municipio or "3201308"
         ),
-        "aliquota_iss": float(aliq_iss) if aliq_iss is not None else 2.0,
+        "aliquota_iss": float(aliq_iss),
         "iss_retido": bool(iss_retido),
         "reter_federais": bool(reter_fed),
-        "desconto_incondicionado": desconto_total,
+        "desconto_incondicionado": valor_desconto,
+        "deducao_reducao_iss": valor_deducao,
     }
     return prestador, tomador, servico, customer, service_item
 
@@ -209,6 +311,8 @@ def validate_batch_item(
     client_db: Client,
     payload: Dict[str, Any],
     ambiente: str = "homologacao",
+    *,
+    include_global: bool = False,
 ) -> List[Dict[str, str]]:
     """Executa validação em 3 níveis (Estrutural, Cadastral e Fiscal/XSD) retornando os erros por campo."""
     errors: List[Dict[str, str]] = list(payload.get("_parse_errors") or [])
@@ -275,8 +379,8 @@ def validate_batch_item(
         errors.append({"field": "prestador", "level": "cadastral", "message": "Prestador sem CNPJ configurado."})
 
     cod_serv = str(payload.get("codigo_servico") or "").strip()
-    c_trib_nac_raw = str(payload.get("c_trib_nac") or "").strip()
-    service_item = _lookup_service_item(db, client_db.id, cod_serv)
+    c_trib_nac_raw = normalize_tax_code_field("c_trib_nac", payload.get("c_trib_nac"))
+    service_item = _lookup_service_item(db, client_db.id, cod_serv, include_global=include_global)
 
     if cod_serv and service_item is None and not c_trib_nac_raw:
         errors.append(
@@ -295,7 +399,10 @@ def validate_batch_item(
             }
         )
 
-    c_trib_resolved = c_trib_nac_raw or (service_item.c_trib_nac if service_item else "")
+    c_trib_resolved = c_trib_nac_raw or normalize_tax_code_field(
+        "c_trib_nac",
+        service_item.c_trib_nac if service_item else "",
+    )
     if c_trib_resolved and obter_servico_ctribnac(c_trib_resolved) is None:
         errors.append(
             {
@@ -319,17 +426,15 @@ def validate_batch_item(
         return errors
 
     # --- Nível 3: Validação Fiscal e XSD ---
-    prestador, tomador, servico, _, _ = build_emission_context_for_item(db, client_db, payload)
+    prestador, tomador, servico, _, _ = build_emission_context_for_item(
+        db,
+        client_db,
+        payload,
+        include_global=include_global,
+    )
     ano_comp = int(comp_iso[:4]) if comp_iso else datetime.datetime.now(datetime.UTC).year
 
-    tax_val = AdnService.validar_ibscbs(
-        TaxValidationRequest(
-            cClassTrib=servico["cClassTrib"],
-            cst=servico["cst"],
-            cTribNac=servico["cTribNac"],
-            indop=servico["indop"],
-        )
-    )
+    tax_val = AdnService.validar_ibscbs(build_tax_validation_request(servico))
     if not tax_val.get("valido"):
         for err in tax_val.get("erros") or []:
             errors.append(
@@ -342,17 +447,11 @@ def validate_batch_item(
         return errors
 
     try:
-        tributacao = AdnService.calcular_tributos(
-            TaxCalculationRequest(
-                valor_servicos=servico["valor"],
-                ano_competencia=ano_comp,
-                regime_prestador=prestador.get("regime") or "normal",
-                aliquota_iss_informada=servico.get("aliquota_iss"),
-                iss_retido=servico["iss_retido"],
-                reter_federais=servico["reter_federais"],
-                desconto_incondicionado=servico.get("desconto_incondicionado") or 0.0,
-                cClassTrib=servico["cClassTrib"],
-            )
+        tributacao = calculate_batch_item_taxes(
+            prestador,
+            servico,
+            data_competencia=comp_iso,
+            ano_competencia=ano_comp,
         )
         xml_bruto = build_dps_xml(
             prestador=prestador,
@@ -400,6 +499,8 @@ def recompute_batch_counters(db: Session, batch: BatchImport) -> None:
     statuses = {it.status for it in items}
     if not items:
         batch.status = "IMPORTED"
+    elif statuses <= {"CANCELLED"}:
+        batch.status = "CANCELLED"
     elif statuses <= {"AUTHORIZED"}:
         batch.status = "COMPLETED"
         batch.completed_at = batch.completed_at or datetime.datetime.now(datetime.UTC)
@@ -422,7 +523,12 @@ def recompute_batch_counters(db: Session, batch: BatchImport) -> None:
         batch.status = "IMPORTED"
 
 
-def validate_all_batch_items(db: Session, batch: BatchImport) -> BatchImport:
+def validate_all_batch_items(
+    db: Session,
+    batch: BatchImport,
+    *,
+    include_global: bool = False,
+) -> BatchImport:
     """Valida todos os itens elegíveis (`PENDING`, `VALID`, `INVALID`) de um lote."""
     client_db = db.query(Client).filter(Client.id == batch.client_id).first()
     if not client_db:
@@ -441,7 +547,13 @@ def validate_all_batch_items(db: Session, batch: BatchImport) -> BatchImport:
         if item.status in {"AUTHORIZED", "PROCESSING", "UNKNOWN", "CANCELLED"}:
             continue
         payload = json.loads(item.payload_json)
-        errors = validate_batch_item(db, client_db, payload, ambiente=batch.ambiente)
+        errors = validate_batch_item(
+            db,
+            client_db,
+            payload,
+            ambiente=batch.ambiente,
+            include_global=include_global,
+        )
         item.validation_errors_json = json.dumps(errors, ensure_ascii=False)
         item.status = "INVALID" if errors else "VALID"
         db.add(item)

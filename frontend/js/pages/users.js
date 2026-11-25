@@ -6,6 +6,9 @@ import { openModal, closeModal, completeTaskToast, uiAlert, uiConfirm, escapeAtt
 let cachedUsers = [];
 let operatorRoleBound = false;
 let operatorSelectedClientIds = new Set();
+let auditCurrentPage = 1;
+let auditTotalPages = 1;
+let auditSearchTimer = null;
 
 function getStoredUser() {
     try {
@@ -42,6 +45,7 @@ export async function loadUsers() {
         }
         cachedUsers = Array.isArray(list) ? list : [];
         filterUsersTable();
+        loadAuditLogs(1);
     } catch (e) {
         if (tbody) {
             tbody.innerHTML = `
@@ -464,5 +468,95 @@ export async function deleteUser(userId) {
         await loadUsers();
     } catch (e) {
         await uiAlert({ title: 'Erro ao excluir operador', message: e?.message || 'Não foi possível excluir o operador.', variant: 'error' });
+    }
+}
+
+function formatAuditDate(isoValue) {
+    if (!isoValue) return '—';
+    try {
+        const dt = new Date(isoValue);
+        if (Number.isNaN(dt.getTime())) return String(isoValue);
+        return dt.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    } catch (_) {
+        return String(isoValue);
+    }
+}
+
+export function debouncedLoadAuditLogs() {
+    clearTimeout(auditSearchTimer);
+    auditSearchTimer = setTimeout(() => {
+        loadAuditLogs(1);
+    }, 280);
+}
+
+export function changeAuditPage(delta) {
+    const next = Math.max(1, Math.min(auditTotalPages, auditCurrentPage + Number(delta || 0)));
+    if (next !== auditCurrentPage) {
+        loadAuditLogs(next);
+    }
+}
+
+export async function loadAuditLogs(page = 1) {
+    const tbody = document.getElementById('audit-table-body');
+    const infoEl = document.getElementById('audit-pagination-info');
+    const prevBtn = document.getElementById('audit-prev-btn');
+    const nextBtn = document.getElementById('audit-next-btn');
+    const me = getStoredUser();
+    if (!tbody || !me || me.role !== 'admin') return;
+
+    const q = (document.getElementById('audit-search-input')?.value || '').trim();
+    const entityType = (document.getElementById('audit-entity-filter')?.value || '').trim();
+    const status = (document.getElementById('audit-status-filter')?.value || '').trim();
+
+    const params = new URLSearchParams();
+    params.set('page', String(Math.max(1, Number(page) || 1)));
+    params.set('page_size', '15');
+    if (q) params.set('q', q);
+    if (entityType) params.set('entity_type', entityType);
+    if (status) params.set('status', status);
+
+    try {
+        const data = await api(`/audit-logs?${params.toString()}`);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const total = Number(data?.total || 0);
+        const pageSize = Number(data?.page_size || 15);
+        auditCurrentPage = Number(data?.page || 1);
+        auditTotalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        if (infoEl) {
+            infoEl.textContent = `${total} registro${total === 1 ? '' : 's'} — Página ${auditCurrentPage} de ${auditTotalPages}`;
+        }
+        if (prevBtn) prevBtn.disabled = auditCurrentPage <= 1;
+        if (nextBtn) nextBtn.disabled = auditCurrentPage >= auditTotalPages;
+
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text3);">Nenhum evento de auditoria encontrado para os filtros informados.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = items.map(item => {
+            const st = String(item.status || 'success').toLowerCase();
+            const statusClass = st === 'success' ? 'is-active' : 'is-inactive';
+            const statusLabel = st === 'success' ? 'Sucesso' : (st === 'denied' ? 'Negado' : 'Erro');
+            const actor = item.actor_username ? `@${escapeAttr(item.actor_username)}` : 'sistema';
+            const entityBadge = escapeAttr(item.entity_type || '—');
+            const clientSuffix = item.client_name ? ` · ${escapeAttr(item.client_name)}` : '';
+            return `<tr>
+                <td style="white-space:nowrap; font-size:12px; color:var(--text2);">${escapeAttr(formatAuditDate(item.created_at))}</td>
+                <td><span class="inv-meta-tag is-author">${actor}</span></td>
+                <td><code style="font-size:11.5px;">${escapeAttr(item.action || '—')}</code></td>
+                <td style="font-size:12px; color:var(--text2);">${entityBadge}${clientSuffix}</td>
+                <td style="font-size:12.5px; color:var(--text);">${escapeAttr(item.summary || '—')}</td>
+                <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--red-text);">${escapeAttr(e?.message || 'Erro ao carregar trilha de auditoria.')}</td></tr>`;
     }
 }

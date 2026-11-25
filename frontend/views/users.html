@@ -48,4 +48,68 @@
             </table>
         </div>
     </div>
+
+    <div class="card glass users-section" id="admin-audit-section" style="margin-top:20px;">
+        <div class="users-header">
+            <div>
+                <div class="env-header-title">
+                    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Trilha de Auditoria</span>
+                </div>
+                <div class="env-header-sub">Histórico consultável de ações críticas (usuários, empresas, emissões, cancelamentos, exclusões e configurações).</div>
+            </div>
+            <div class="users-toolbar">
+                <div class="users-search-wrap">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" class="form-input" id="audit-search-input" aria-label="Buscar na trilha de auditoria" placeholder="Buscar por ator, ação, resumo..." oninput="App.debouncedLoadAuditLogs()">
+                </div>
+                <select class="form-select" id="audit-entity-filter" aria-label="Filtrar por entidade" onchange="App.loadAuditLogs(1)" style="width:auto; min-width:140px;">
+                    <option value="">Todas entidades</option>
+                    <option value="user">Usuários</option>
+                    <option value="client">Empresas</option>
+                    <option value="invoice">Notas Fiscais</option>
+                    <option value="batch">Emissão em Lote</option>
+                    <option value="system">Sistema</option>
+                </select>
+                <select class="form-select" id="audit-status-filter" aria-label="Filtrar por status" onchange="App.loadAuditLogs(1)" style="width:auto; min-width:120px;">
+                    <option value="">Todos status</option>
+                    <option value="success">Sucesso</option>
+                    <option value="error">Erro</option>
+                    <option value="denied">Negado</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="App.loadAuditLogs(1)" title="Atualizar trilha de auditoria">
+                    <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Atualizar
+                </button>
+            </div>
+        </div>
+
+        <div class="tbl-container">
+            <table class="tbl" id="audit-table">
+                <thead>
+                    <tr>
+                        <th>Data/Hora</th>
+                        <th>Autor</th>
+                        <th>Ação</th>
+                        <th>Entidade / Empresa</th>
+                        <th>Resumo</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="audit-table-body">
+                    <tr>
+                        <td colspan="6" style="text-align:center; color:var(--text3);">Carregando trilha de auditoria...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:14px; font-size:12.5px; color:var(--text2);">
+            <span id="audit-pagination-info">0 registros</span>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="audit-prev-btn" onclick="App.changeAuditPage(-1)" disabled>Anterior</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="audit-next-btn" onclick="App.changeAuditPage(1)" disabled>Próxima</button>
+            </div>
+        </div>
+    </div>
 </div>

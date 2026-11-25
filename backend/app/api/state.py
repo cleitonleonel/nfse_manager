@@ -97,6 +97,8 @@ class TaskStore:
             if row.message is not None:
                 data.setdefault("message", row.message)
             data.setdefault("progress", row.progress)
+            data["created_by"] = row.created_by
+            data["kind"] = row.kind
             return data
         except Exception as exc:
             logger.debug("Falha ao consultar tarefa %s no banco: %s", task_id, exc)
@@ -114,8 +116,17 @@ class TaskStore:
     ) -> Dict[str, Any]:
         payload = dict(data)
         with _STATE_LOCK:
+            existing = tasks_status.get(task_id) or {}
+            eff_kind = kind if kind is not None else payload.get("kind", existing.get("kind"))
+            eff_created_by = (
+                created_by if created_by is not None else payload.get("created_by", existing.get("created_by"))
+            )
+            if eff_kind is not None:
+                payload["kind"] = eff_kind
+            if eff_created_by is not None:
+                payload["created_by"] = eff_created_by
             tasks_status[task_id] = payload
-        cls._persist_task(task_id, payload, kind=kind, created_by=created_by)
+        cls._persist_task(task_id, payload, kind=eff_kind, created_by=eff_created_by)
         return payload
 
     @classmethod
@@ -129,7 +140,12 @@ class TaskStore:
         current.update(fields)
         with _STATE_LOCK:
             tasks_status[task_id] = current
-        cls._persist_task(task_id, current)
+        cls._persist_task(
+            task_id,
+            current,
+            kind=current.get("kind"),
+            created_by=current.get("created_by"),
+        )
         return current
 
     @classmethod

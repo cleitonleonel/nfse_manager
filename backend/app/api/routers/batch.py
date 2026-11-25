@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.permissions import assert_client_access
+from app.api.permissions import assert_client_access, is_admin_user
 from app.api.routers.auth import get_current_user
 from app.database import get_db
 from app.models import User
@@ -19,6 +19,7 @@ from app.schemas import (
     BatchProcessRequest,
     BatchRetryRequest,
 )
+from app.services.audit_service import AuditService, get_client_ip
 from app.services.batch_emission import BatchEmissionService, serialize_batch, serialize_batch_item
 from app.services.batch_emission.exporters import export_batch_results
 from app.services.batch_emission.importer import build_batch_template
@@ -42,6 +43,7 @@ def download_batch_template(
 
 @router.post("/import", response_model=BatchImportResponse)
 async def import_batch_spreadsheet(
+    request: Request,
     client_id: int = Form(..., description="ID do Prestador responsável pelo lote"),
     file: UploadFile = File(..., description="Planilha CSV ou XLSX com as notas"),
     delimiter: Optional[str] = Form(None, description="Delimitador opcional para CSV (';' ou ',')"),
@@ -62,6 +64,27 @@ async def import_batch_spreadsheet(
         ambiente=ambiente,
         created_by=current_user.username,
         auto_validate=auto_validate,
+        include_global_registry=is_admin_user(current_user),
+    )
+    AuditService.record(
+        db,
+        action="batch.import",
+        entity_type="batch_import",
+        entity_id=batch.id,
+        client_id=client_id,
+        current_user=current_user,
+        summary=f"Importação de lote '{batch.filename}' ({batch.total_items} itens, status={batch.status}).",
+        details={
+            "filename": batch.filename,
+            "ambiente": batch.ambiente,
+            "total_items": batch.total_items,
+            "valid_items": batch.valid_items,
+            "invalid_items": batch.invalid_items,
+            "status": batch.status,
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
     )
     return serialize_batch(db, batch)
 
@@ -77,10 +100,12 @@ def list_batches(
     allowed_ids = assert_client_access(db, current_user, client_id, allow_none_for_admin=True)
     if client_id is None and allowed_ids is not None and not allowed_ids:
         return []
-    batches = BatchEmissionService.list_batches(db, client_id=client_id, limit=limit)
-    if client_id is None and allowed_ids is not None:
-        allowed_set = set(allowed_ids)
-        batches = [b for b in batches if b.client_id in allowed_set]
+    batches = BatchEmissionService.list_batches(
+        db,
+        client_id=client_id,
+        limit=limit,
+        allowed_client_ids=allowed_ids,
+    )
     return [serialize_batch(db, b) for b in batches]
 
 
@@ -109,7 +134,7 @@ def validate_batch(
 ):
     """Executa validação estrutural, cadastral e fiscal/XSD nos itens pendentes/editados do lote."""
     batch = _get_authorized_batch(db, current_user, batch_id)
-    batch = validate_all_batch_items(db, batch)
+    batch = validate_all_batch_items(db, batch, include_global=is_admin_user(current_user))
     return serialize_batch(db, batch)
 
 
@@ -136,13 +161,20 @@ def update_batch_item(
 ):
     """Corrige campos de uma linha específica do lote e reexecuta os 3 níveis de validação."""
     _get_authorized_batch(db, current_user, batch_id)
-    item = BatchEmissionService.update_item_and_revalidate(db, batch_id, item_id, req)
+    item = BatchEmissionService.update_item_and_revalidate(
+        db,
+        batch_id,
+        item_id,
+        req,
+        include_global_registry=is_admin_user(current_user),
+    )
     return serialize_batch_item(item)
 
 
 @router.post("/{batch_id}/process", response_model=BatchImportResponse)
 async def process_batch(
     batch_id: str,
+    request: Request,
     req: Optional[BatchProcessRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -158,24 +190,62 @@ async def process_batch(
         enviar_email=body.enviar_email,
         current_user=current_user,
     )
+    AuditService.record(
+        db,
+        action="batch.process",
+        entity_type="batch_import",
+        entity_id=batch.id,
+        client_id=batch.client_id,
+        current_user=current_user,
+        summary=(
+            f"Processamento do lote '{batch.filename}' concluído "
+            f"(status={batch.status}, autorizadas={batch.authorized_items}, rejeitadas={batch.rejected_items})."
+        ),
+        details={
+            "transmitir": body.transmitir,
+            "enviar_email": body.enviar_email,
+            "status": batch.status,
+            "authorized_items": batch.authorized_items,
+            "rejected_items": batch.rejected_items,
+            "unknown_items": batch.unknown_items,
+        },
+        status="success" if batch.rejected_items == 0 else "error",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
     return serialize_batch(db, batch)
 
 
 @router.post("/{batch_id}/cancel", response_model=BatchImportResponse)
 def cancel_batch(
     batch_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Cancela o lote e marca itens ainda não transmitidos como CANCELLED."""
     _get_authorized_batch(db, current_user, batch_id)
     batch = BatchEmissionService.cancel_pending_items(db, batch_id)
+    AuditService.record(
+        db,
+        action="batch.cancel",
+        entity_type="batch_import",
+        entity_id=batch.id,
+        client_id=batch.client_id,
+        current_user=current_user,
+        summary=f"Lote '{batch.filename}' cancelado.",
+        details={"status": batch.status, "total_items": batch.total_items},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
     return serialize_batch(db, batch)
 
 
 @router.post("/{batch_id}/retry", response_model=BatchImportResponse)
 async def retry_batch(
     batch_id: str,
+    request: Request,
     req: Optional[BatchRetryRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -190,6 +260,29 @@ async def retry_batch(
         transmitir=body.transmitir,
         enviar_email=body.enviar_email,
         current_user=current_user,
+    )
+    AuditService.record(
+        db,
+        action="batch.retry",
+        entity_type="batch_import",
+        entity_id=batch.id,
+        client_id=batch.client_id,
+        current_user=current_user,
+        summary=(
+            f"Reprocessamento do lote '{batch.filename}' "
+            f"(status={batch.status}, autorizadas={batch.authorized_items}, rejeitadas={batch.rejected_items})."
+        ),
+        details={
+            "transmitir": body.transmitir,
+            "enviar_email": body.enviar_email,
+            "status": batch.status,
+            "authorized_items": batch.authorized_items,
+            "rejected_items": batch.rejected_items,
+            "unknown_items": batch.unknown_items,
+        },
+        status="success" if batch.rejected_items == 0 else "error",
+        ip_address=get_client_ip(request),
+        commit=True,
     )
     return serialize_batch(db, batch)
 
@@ -210,24 +303,59 @@ def export_batch(
 @router.delete("/{batch_id}")
 def delete_batch(
     batch_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Exclui um lote completo de importação e seus itens de staging."""
-    _get_authorized_batch(db, current_user, batch_id)
-    return BatchEmissionService.delete_batch(db, batch_id)
+    batch = _get_authorized_batch(db, current_user, batch_id)
+    client_id = batch.client_id
+    filename = batch.filename
+    res = BatchEmissionService.delete_batch(db, batch_id)
+    AuditService.record(
+        db,
+        action="batch.delete",
+        entity_type="batch_import",
+        entity_id=batch_id,
+        client_id=client_id,
+        current_user=current_user,
+        summary=f"Lote '{filename}' excluído ({res.get('deleted_items', 0)} itens).",
+        details=res,
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
+    return res
 
 
 @router.delete("/{batch_id}/items/{item_id}")
 def delete_batch_item(
     batch_id: str,
     item_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Exclui uma única linha importada do lote e recalcula os contadores."""
-    _get_authorized_batch(db, current_user, batch_id)
+    batch = _get_authorized_batch(db, current_user, batch_id)
     res = BatchEmissionService.delete_items(db, batch_id, item_ids=[item_id], delete_all=False)
+    AuditService.record(
+        db,
+        action="batch.item_delete",
+        entity_type="batch_import_item",
+        entity_id=item_id,
+        client_id=batch.client_id,
+        current_user=current_user,
+        summary=f"Item '{item_id}' excluído do lote {batch_id}.",
+        details={
+            "batch_id": batch_id,
+            "deleted": res["deleted"],
+            "removed_from_contingency": res["removed_from_contingency"],
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
     return {
         "deleted": res["deleted"],
         "removed_from_contingency": res["removed_from_contingency"],
@@ -239,16 +367,36 @@ def delete_batch_item(
 def delete_batch_items(
     batch_id: str,
     req: BatchItemsDeleteRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Exclui múltiplos itens selecionados ou todos os itens de um lote."""
-    _get_authorized_batch(db, current_user, batch_id)
+    batch = _get_authorized_batch(db, current_user, batch_id)
     res = BatchEmissionService.delete_items(
         db,
         batch_id,
         item_ids=req.item_ids,
         delete_all=req.delete_all,
+    )
+    AuditService.record(
+        db,
+        action="batch.item_delete",
+        entity_type="batch_import_item",
+        entity_id=batch_id,
+        client_id=batch.client_id,
+        current_user=current_user,
+        summary=f"Exclusão em massa de {res['deleted']} item(ns) no lote {batch_id}.",
+        details={
+            "batch_id": batch_id,
+            "delete_all": req.delete_all,
+            "item_ids": req.item_ids,
+            "deleted": res["deleted"],
+            "removed_from_contingency": res["removed_from_contingency"],
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
     )
     return {
         "deleted": res["deleted"],

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import logging
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -21,6 +22,8 @@ from sqlalchemy import text
 from app.core.security import encrypt_secret, hash_password, is_encrypted
 from app.database import Base, SessionLocal, engine
 from app.models import User
+
+logger = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MIGRATIONS_DIR = BACKEND_DIR / "migrations" / "versions"
@@ -264,8 +267,9 @@ def migrate(migrations_dir: Optional[Path] = None, db_engine=None) -> List[str]:
                         {"p": new_pwd, "cp": new_cert_pwd, "sp": new_smtp_pwd, "id": row_id},
                     )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            conn.rollback()
+            logger.warning("Aviso durante migração de credenciais criptografadas: %s", exc)
 
     return newly_applied
 

@@ -23,8 +23,9 @@ import zipfile
 from pathlib import Path
 
 import httpx2 as httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.api.routers.auth import get_current_user, require_admin_user
 from app.api.state import TaskStore, tasks_status  # noqa: F401
@@ -35,9 +36,10 @@ from app.core.config import (
     get_downloads_dir,
     is_self_update_disabled,
 )
-from app.database import engine
+from app.database import engine, get_db
 from app.models import User
 from app.schemas import SupportMessage, UpdateApplyRequest, UpdateDownloadRequest
+from app.services.audit_service import AuditService, get_client_ip
 from app.services.scheduler_service import SchedulerService
 from app.services.support_service import SupportService
 from app.version import VERSION as CURRENT_VERSION
@@ -140,7 +142,11 @@ def _stage_from_zip(zip_path: Path, staging_dir: Path, task_id: str) -> None:
             )
 
 
-def _download_release_package(task_id: str, version: str | None = None) -> None:
+def _download_release_package(
+    task_id: str,
+    version: str | None = None,
+    created_by: str | None = None,
+) -> None:
     release_info = None
     try:
         TaskStore.set_task(
@@ -152,6 +158,7 @@ def _download_release_package(task_id: str, version: str | None = None) -> None:
                 "progress": 0,
             },
             kind="update_download",
+            created_by=created_by,
         )
 
         release_info = _latest_release_data()
@@ -221,6 +228,7 @@ def _download_release_package(task_id: str, version: str | None = None) -> None:
                 "restart_required": True,
             },
             kind="update_download",
+            created_by=created_by,
         )
     except Exception as exc:
         logger.error("Falha ao baixar atualização: %s", exc, exc_info=True)
@@ -234,6 +242,7 @@ def _download_release_package(task_id: str, version: str | None = None) -> None:
                 "release_url": release_info.get("html_url") if release_info else None,
             },
             kind="update_download",
+            created_by=created_by,
         )
 
 
@@ -409,19 +418,36 @@ def get_system_environment(_current_user: User = Depends(get_current_user)):
 def start_update_download(
     payload: UpdateDownloadRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
     _admin: User = Depends(require_admin_user),
 ):
     """Baixa a release mais recente em background para a pasta release/staging."""
     if is_self_update_disabled():
         raise HTTPException(status_code=403, detail="Auto-atualização desabilitada neste ambiente.")
     task_id = f"update_{os.urandom(4).hex()}"
-    background_tasks.add_task(_download_release_package, task_id, payload.version)
+    created_by = getattr(_admin, "username", None)
+    background_tasks.add_task(_download_release_package, task_id, payload.version, created_by)
+    AuditService.record(
+        db,
+        action="system.update_download",
+        entity_type="system",
+        entity_id=task_id,
+        current_user=_admin,
+        summary=f"Download de atualização iniciado (task={task_id}).",
+        details={"task_id": task_id, "requested_version": payload.version},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
     return {"task_id": task_id}
 
 
 @router.post("/system/update/apply")
 def apply_downloaded_update(
     payload: UpdateApplyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
     _admin: User = Depends(require_admin_user),
 ):
     """Aplica a atualização já baixada e agenda o reinício do processo."""
@@ -440,6 +466,8 @@ def apply_downloaded_update(
     if not source_dir.exists():
         raise HTTPException(status_code=404, detail="A pasta staged da atualização não existe mais.")
 
+    created_by = getattr(_admin, "username", None)
+    ip_addr = get_client_ip(request)
     TaskStore.set_task(
         payload.task_id,
         {
@@ -449,6 +477,7 @@ def apply_downloaded_update(
             "progress": 0,
         },
         kind="update_apply",
+        created_by=created_by,
     )
 
     try:
@@ -460,6 +489,18 @@ def apply_downloaded_update(
             message="Atualização aplicada com sucesso. Reiniciando o programa...",
             progress=100,
             restart_required=True,
+        )
+        AuditService.record(
+            db,
+            action="system.update_apply",
+            entity_type="system",
+            entity_id=payload.task_id,
+            current_user=_admin,
+            summary=f"Atualização aplicada (versão={status.get('version') or 'desconhecida'}).",
+            details={"task_id": payload.task_id, "version": status.get("version")},
+            status="success",
+            ip_address=ip_addr,
+            commit=True,
         )
 
         thread = threading.Thread(target=_restart_self_after_delay, kwargs={"delay": 1.0}, daemon=True)
@@ -478,6 +519,19 @@ def apply_downloaded_update(
                 "restart_required": False,
             },
             kind="update_apply",
+            created_by=created_by,
+        )
+        AuditService.record(
+            db,
+            action="system.update_apply",
+            entity_type="system",
+            entity_id=payload.task_id,
+            current_user=_admin,
+            summary=f"Falha ao aplicar atualização (task={payload.task_id}).",
+            details={"task_id": payload.task_id, "error": str(exc)},
+            status="error",
+            ip_address=ip_addr,
+            commit=True,
         )
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -495,9 +549,11 @@ def get_system_version():
 def list_folders(path: str | None = None, _admin: User = Depends(require_admin_user)):
     """Listar diretórios para navegação de pastas."""
     try:
-        target_path = Path(path) if path else Path.cwd()
+        downloads_root = get_downloads_dir()
+        downloads_root.mkdir(parents=True, exist_ok=True)
+        target_path = Path(path) if path else downloads_root
         if not target_path.exists() or not target_path.is_dir():
-            target_path = Path.cwd()
+            target_path = downloads_root
 
         items = []
         if target_path.parent != target_path:

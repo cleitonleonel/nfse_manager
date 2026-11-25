@@ -20,6 +20,7 @@ O backend FastAPI expõe todos os endpoints sob o prefixo `/api` (além da docum
 | `POST` | `/api/auth/users` | Cadastra novo operador aceitando lista opcional de `client_ids` autorizados (restrito a `role == "admin"`) |
 | `PATCH` | `/api/auth/users/{user_id}` | Atualiza dados, papel (`admin` \| `operador`), status ativo, `client_ids` vinculados ou senha de um operador (restrito a `role == "admin"`, protegendo contra auto-bloqueio/remoção do último admin) |
 | `DELETE` | `/api/auth/users/{user_id}` | Remove um operador pelo ID (restrito a `role == "admin"`) |
+| `GET` | `/api/audit-logs` | Consulta paginada da trilha de auditoria (`q`, `action`, `entity_type`, `actor`, `client_id`, `status`, `date_from`, `date_to`, restrito a `role == "admin"`) |
 | `GET` | `/api/system/version` | Retorna a versão atual lida do `pyproject.toml` |
 | `GET` | `/api/system/environment` | Retorna diagnóstico de implantação (dialeto do banco, modo servidor/local, diretórios configurados, status do worker e prontidão multiusuário) |
 | `GET` | `/api/system/check-update` | Consulta a última release no GitHub e compara com a versão local |

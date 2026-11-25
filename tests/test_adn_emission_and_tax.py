@@ -845,15 +845,22 @@ def test_recurring_customers_and_service_items_and_one_click_emission(
 
     # 5. Reenvia a fila (/api/adn/fila/reenviar) quando a conexão retorna
     chave_reenviada = "52087072212345678000113202604000000000009910777777"
-    with patch(
-        "app.services.adn_service.AdnNfseClient.emitir_dps",
-        new_callable=AsyncMock,
-        return_value={
-            "sucesso": True,
-            "status_code": 201,
-            "chave_acesso": chave_reenviada,
-            "nfse_xml": "<NFSe versao='1.01'><infNFSe Id='NFS52087072212345678000113202604000000000009910777777'/></NFSe>",
-        },
+    with (
+        patch(
+            "app.services.adn_service.AdnNfseClient.consultar_dps",
+            new_callable=AsyncMock,
+            return_value={"sucesso": False, "status_code": 404, "conteudo": None},
+        ),
+        patch(
+            "app.services.adn_service.AdnNfseClient.emitir_dps",
+            new_callable=AsyncMock,
+            return_value={
+                "sucesso": True,
+                "status_code": 201,
+                "chave_acesso": chave_reenviada,
+                "nfse_xml": "<NFSe versao='1.01'><infNFSe Id='NFS52087072212345678000113202604000000000009910777777'/></NFSe>",
+            },
+        ),
     ):
         r_reenvio = api_client.post(
             "/api/adn/fila/reenviar",
@@ -935,7 +942,7 @@ def test_recurring_customers_and_service_items_and_one_click_emission(
                 ]
             },
         },
-    ):
+    ) as mock_dfe:
         r_cofre = api_client.post(
             "/api/adn/cofre/sincronizar",
             json={"client_id": client_id, "max_paginas": 1},
@@ -945,6 +952,7 @@ def test_recurring_customers_and_service_items_and_one_click_emission(
     assert cofre_data["sucesso"] is True
     assert cofre_data["ultimo_nsu"] == 42
     assert cofre_data["novas_notas"] >= 1
+    assert mock_dfe.call_args.kwargs.get("cnpj") == "12345678000113"
 
     # 8. Testa lookup de CEP e CNPJ (/api/lookup/cep e /api/lookup/cnpj)
     with patch(

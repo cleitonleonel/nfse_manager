@@ -197,20 +197,19 @@ class SchedulerService:
                 }
 
             cls._is_leader = True
-            dialect = db.bind.dialect.name if db.bind is not None else engine.dialect.name
-            query = (
-                db.query(Invoice)
+            rows = (
+                db.query(Invoice.id)
                 .filter(
                     Invoice.status == "fila_contingencia",
                     or_(Invoice.tentativas_envio.is_(None), Invoice.tentativas_envio < max_tent),
                 )
                 .order_by(Invoice.id.asc())
+                .all()
             )
-            if dialect == "postgresql":
-                query = query.with_for_update(skip_locked=True)
+            ids_elegiveis = [int(r[0]) for r in rows]
+            db.rollback()
 
-            pendentes = query.all()
-            if not pendentes:
+            if not ids_elegiveis:
                 cls._last_run_at = datetime.datetime.now(datetime.UTC).isoformat()
                 res_empty = {
                     "total_processadas": 0,
@@ -221,7 +220,6 @@ class SchedulerService:
                 cls._last_result = res_empty
                 return res_empty
 
-            ids_elegiveis = [inv.id for inv in pendentes]
             res_reenvio = await AdnService.reenviar_fila_contingencia(
                 db=db,
                 req=ReenviarFilaRequest(invoice_ids=ids_elegiveis),
@@ -232,7 +230,12 @@ class SchedulerService:
             for item in res_reenvio.get("resultados", []):
                 if item.get("sucesso"):
                     inv_obj = db.query(Invoice).filter(Invoice.id == item["invoice_id"]).first()
-                    if inv_obj and inv_obj.client_id and inv_obj.tomador_email:
+                    if (
+                        inv_obj
+                        and (inv_obj.status or "") == "gerada"
+                        and inv_obj.client_id
+                        and inv_obj.tomador_email
+                    ):
                         cli_obj = db.query(Client).filter(Client.id == inv_obj.client_id).first()
                         if cli_obj and cli_obj.enviar_email_automatico and EmailService.obter_config_smtp(cli_obj):
                             try:
@@ -246,6 +249,7 @@ class SchedulerService:
                                 logger.warning(
                                     f"Aviso ao enviar e-mail automático pós-fila para nota {inv_obj.id}: {exc}"
                                 )
+            db.rollback()
 
             res_final = {
                 "total_processadas": res_reenvio.get("total_processadas", 0),
@@ -258,6 +262,10 @@ class SchedulerService:
             cls._last_result = res_final
             return res_final
         finally:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             if lock_acquired:
                 cls._release_distributed_lock(db, lock_conn)
             db.close()

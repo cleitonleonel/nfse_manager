@@ -43,6 +43,7 @@ class User(Base):
     role = Column(String, nullable=False, default="admin")  # admin | operador
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
+    last_login_at = Column(DateTime, nullable=True)
 
     client_links = relationship("UserClient", back_populates="user", cascade="all, delete-orphan")
 
@@ -128,6 +129,7 @@ class Client(Base):
     customers = relationship("Customer", back_populates="client", cascade="all, delete-orphan")
     service_items = relationship("ServiceItem", back_populates="client", cascade="all, delete-orphan")
     user_links = relationship("UserClient", back_populates="client", cascade="all, delete-orphan")
+    batch_imports = relationship("BatchImport", back_populates="client", cascade="all, delete-orphan")
 
     @property
     def dias_para_vencer(self) -> int | None:
@@ -163,7 +165,7 @@ class Customer(Base):
     __tablename__ = "customers"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
     documento = Column(String, index=True)  # CPF ou CNPJ
     razao_social = Column(String)
     inscricao_municipal = Column(String, nullable=True)
@@ -186,7 +188,7 @@ class ServiceItem(Base):
     __tablename__ = "service_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
     codigo_interno = Column(String, nullable=True)
     titulo = Column(String)
     descricao = Column(String)
@@ -207,7 +209,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), index=True)
     data_emissao = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
     numero = Column(String)
     chave = Column(String, unique=True, index=True)
@@ -256,7 +258,7 @@ class BatchImport(Base):
     __tablename__ = "batch_imports"
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     filename = Column(String, nullable=False)
     file_hash = Column(String, nullable=False, index=True)
     ambiente = Column(String, nullable=False, default="homologacao")
@@ -272,7 +274,7 @@ class BatchImport(Base):
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
     completed_at = Column(DateTime, nullable=True)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="batch_imports")
     items = relationship("BatchImportItem", back_populates="batch", cascade="all, delete-orphan")
 
 
@@ -282,13 +284,13 @@ class BatchImportItem(Base):
     __tablename__ = "batch_import_items"
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    batch_id = Column(String, ForeignKey("batch_imports.id"), nullable=False, index=True)
+    batch_id = Column(String, ForeignKey("batch_imports.id", ondelete="CASCADE"), nullable=False, index=True)
     row_number = Column(Integer, nullable=False)
     raw_data_json = Column(String, nullable=True)
     payload_json = Column(String, nullable=False)
     status = Column(String, nullable=False, default="PENDING", index=True)
     validation_errors_json = Column(String, nullable=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True, index=True)
     id_dps = Column(String, nullable=True, index=True)
     serie_dps = Column(String, nullable=True)
     numero_dps = Column(Integer, nullable=True)
@@ -336,10 +338,162 @@ class SchedulerLock(Base):
     )
 
 
+class AuditLog(Base):
+    """Trilha de auditoria administrativa de ações críticas no sistema."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        nullable=False,
+        index=True,
+    )
+    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_username = Column(String, nullable=True, index=True)
+    actor_role = Column(String, nullable=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String, nullable=False, index=True)
+    entity_type = Column(String, nullable=False, index=True)
+    entity_id = Column(String, nullable=True, index=True)
+    summary = Column(String, nullable=False)
+    details_json = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="success", index=True)
+    ip_address = Column(String, nullable=True)
+
+    actor_user = relationship("User")
+    client = relationship("Client")
+
+
+PG_FK_PARITY_SPECS = (
+    ("batch_import_items", "batch_id", "batch_imports", "id", "CASCADE"),
+    ("batch_import_items", "invoice_id", "invoices", "id", "SET NULL"),
+    ("customers", "client_id", "clients", "id", "CASCADE"),
+    ("service_items", "client_id", "clients", "id", "CASCADE"),
+    ("invoices", "client_id", "clients", "id", "CASCADE"),
+    ("invoices", "created_by_user_id", "users", "id", "SET NULL"),
+    ("batch_imports", "client_id", "clients", "id", "CASCADE"),
+    ("audit_logs", "actor_user_id", "users", "id", "SET NULL"),
+    ("audit_logs", "client_id", "clients", "id", "SET NULL"),
+)
+
+ADDITIVE_INDEX_SPECS = (
+    ("invoices", "ix_invoices_client_id", "client_id"),
+    ("invoices", "ix_invoices_created_by_user_id", "created_by_user_id"),
+    ("batch_import_items", "ix_batch_import_items_invoice_id", "invoice_id"),
+    ("audit_logs", "ix_audit_logs_id", "id"),
+    ("audit_logs", "ix_audit_logs_created_at", "created_at"),
+    ("audit_logs", "ix_audit_logs_actor_user_id", "actor_user_id"),
+    ("audit_logs", "ix_audit_logs_actor_username", "actor_username"),
+    ("audit_logs", "ix_audit_logs_client_id", "client_id"),
+    ("audit_logs", "ix_audit_logs_action", "action"),
+    ("audit_logs", "ix_audit_logs_entity_type", "entity_type"),
+    ("audit_logs", "ix_audit_logs_entity_id", "entity_id"),
+    ("audit_logs", "ix_audit_logs_status", "status"),
+)
+
+
+def ensure_pg_fk_ondelete(
+    conn,
+    table_name: str,
+    col_name: str,
+    ref_table: str,
+    ref_col: str,
+    ondelete: str,
+) -> None:
+    """Reconcilia uma FK no PostgreSQL 16 garantindo `ON DELETE <ondelete>` sem falhar em transações."""
+    from sqlalchemy import inspect
+
+    if conn.dialect.name != "postgresql":
+        return
+
+    insp = inspect(conn)
+    tables = set(insp.get_table_names())
+    if table_name not in tables or ref_table not in tables:
+        return
+    cols = {c["name"] for c in insp.get_columns(table_name)}
+    if col_name not in cols:
+        return
+
+    matching_fks = [
+        fk
+        for fk in insp.get_foreign_keys(table_name)
+        if fk.get("constrained_columns") == [col_name] and fk.get("referred_table") == ref_table
+    ]
+    target_rule = ondelete.upper()
+    if (
+        len(matching_fks) == 1
+        and ((matching_fks[0].get("options") or {}).get("ondelete") or "").upper() == target_rule
+    ):
+        return
+
+    try:
+        for fk in matching_fks:
+            fk_name = fk.get("name")
+            if fk_name:
+                conn.execute(text(f'ALTER TABLE "{table_name}" DROP CONSTRAINT IF EXISTS "{fk_name}"'))
+        conn.execute(text(f'ALTER TABLE "{table_name}" DROP CONSTRAINT IF EXISTS "{table_name}_{col_name}_fkey"'))
+
+        if target_rule == "SET NULL":
+            conn.execute(
+                text(
+                    f'UPDATE "{table_name}" SET "{col_name}" = NULL '
+                    f'WHERE "{col_name}" IS NOT NULL '
+                    f'AND NOT EXISTS (SELECT 1 FROM "{ref_table}" r WHERE r."{ref_col}" = "{table_name}"."{col_name}")'
+                )
+            )
+        elif target_rule == "CASCADE":
+            conn.execute(
+                text(
+                    f'DELETE FROM "{table_name}" '
+                    f'WHERE "{col_name}" IS NOT NULL '
+                    f'AND NOT EXISTS (SELECT 1 FROM "{ref_table}" r WHERE r."{ref_col}" = "{table_name}"."{col_name}")'
+                )
+            )
+
+        conn.execute(
+            text(
+                f'ALTER TABLE "{table_name}" ADD CONSTRAINT "{table_name}_{col_name}_fkey" '
+                f'FOREIGN KEY ("{col_name}") REFERENCES "{ref_table}" ("{ref_col}") ON DELETE {target_rule}'
+            )
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.warning("Aviso ao reconciliar FK %s.%s: %s", table_name, col_name, exc)
+
+
+def ensure_additive_indexes(conn) -> None:
+    """Cria índices aditivos faltantes de forma idempotente em SQLite e PostgreSQL."""
+    from sqlalchemy import inspect
+
+    insp = inspect(conn)
+    tables = set(insp.get_table_names())
+    for table_name, idx_name, col_name in ADDITIVE_INDEX_SPECS:
+        if table_name not in tables:
+            continue
+        existing_cols = {c["name"] for c in insp.get_columns(table_name)}
+        if col_name not in existing_cols:
+            continue
+        existing_idx = {idx["name"] for idx in insp.get_indexes(table_name)}
+        if idx_name not in existing_idx:
+            try:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table_name} ({col_name})"))
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                logger.warning("Aviso ao criar índice %s em %s: %s", idx_name, table_name, exc)
+
+
 def init_db():
     import time
     from sqlalchemy import inspect
     from sqlalchemy.exc import OperationalError
+
+    user_migrations = [
+        ("last_login_at", "TIMESTAMP"),
+    ]
 
     client_migrations = [
         ("inscricao_municipal", "VARCHAR"),
@@ -414,26 +568,47 @@ def init_db():
 
     inspector = inspect(engine)
     with engine.connect() as conn:
-        for table_name, migrations in (("clients", client_migrations), ("invoices", invoice_migrations)):
+        for table_name, migrations in (
+            ("users", user_migrations),
+            ("clients", client_migrations),
+            ("invoices", invoice_migrations),
+        ):
             existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
             for col, col_type in migrations:
                 if col not in existing_cols:
                     try:
                         conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col} {col_type}"))
                         conn.commit()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("Aviso ao adicionar coluna %s.%s: %s", table_name, col, exc)
+                        conn.rollback()
+
+        try:
+            ensure_additive_indexes(conn)
+        except Exception as exc:
+            conn.rollback()
+            logger.warning("Aviso ao garantir índices aditivos: %s", exc)
+
+        if engine.dialect.name == "postgresql":
+            for spec in PG_FK_PARITY_SPECS:
+                try:
+                    ensure_pg_fk_ondelete(conn, *spec)
+                except Exception as exc:
+                    conn.rollback()
+                    logger.warning("Aviso ao garantir FK %s.%s: %s", spec[0], spec[1], exc)
 
         # Migração transparente de senhas legadas para o formato criptografado em repouso
         try:
-            rows = conn.execute(text("SELECT id, password, cert_password FROM clients")).fetchall()
+            rows = conn.execute(text("SELECT id, password, cert_password, smtp_password FROM clients")).fetchall()
             for row in rows:
                 row_id = row[0]
                 pwd = row[1]
                 cert_pwd = row[2]
+                smtp_pwd = row[3]
                 needs_update = False
                 new_pwd = pwd
                 new_cert_pwd = cert_pwd
+                new_smtp_pwd = smtp_pwd
 
                 if pwd and not is_encrypted(pwd):
                     new_pwd = encrypt_secret(pwd)
@@ -441,12 +616,18 @@ def init_db():
                 if cert_pwd and not is_encrypted(cert_pwd):
                     new_cert_pwd = encrypt_secret(cert_pwd)
                     needs_update = True
+                if smtp_pwd and not is_encrypted(smtp_pwd):
+                    new_smtp_pwd = encrypt_secret(smtp_pwd)
+                    needs_update = True
 
                 if needs_update:
                     conn.execute(
-                        text("UPDATE clients SET password = :p, cert_password = :cp WHERE id = :id"),
-                        {"p": new_pwd, "cp": new_cert_pwd, "id": row_id},
+                        text(
+                            "UPDATE clients SET password = :p, cert_password = :cp, smtp_password = :sp WHERE id = :id"
+                        ),
+                        {"p": new_pwd, "cp": new_cert_pwd, "sp": new_smtp_pwd, "id": row_id},
                     )
             conn.commit()
         except Exception as e:
+            conn.rollback()
             logger.warning(f"Aviso durante verificação/migração de credenciais criptografadas: {e}")

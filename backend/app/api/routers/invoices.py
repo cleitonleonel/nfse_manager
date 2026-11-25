@@ -68,6 +68,8 @@ def background_sync(
             return
 
         new_count_total = 0
+        succeeded_clients = 0
+        failed_errors: list[str] = []
         total_clients = len(clients_to_sync)
         for idx, client_db in enumerate(clients_to_sync):
             client_start = int((idx / total_clients) * 100)
@@ -95,6 +97,7 @@ def background_sync(
 
                 if "erro" in resultado:
                     logger.warning(f"Erro no cliente {client_db.razao_social}: {resultado['erro']}")
+                    failed_errors.append(f"{client_db.razao_social}: {resultado['erro']}")
                     continue
 
                 notas = resultado.get("notas", [])
@@ -154,6 +157,7 @@ def background_sync(
                             existing.numero = nota_data.get("numero")
 
                 db.commit()
+                succeeded_clients += 1
                 new_count_total += new_count
                 TaskStore.update_task(
                     sync_id,
@@ -161,7 +165,9 @@ def background_sync(
                     progress=client_end,
                 )
             except Exception as ce:
+                db.rollback()
                 logger.error(f"Erro no cliente {client_db.razao_social}: {ce}")
+                failed_errors.append(f"{client_db.razao_social}: {ce}")
                 cur_task = TaskStore.get_task(sync_id) or {}
                 TaskStore.update_task(
                     sync_id,
@@ -169,16 +175,44 @@ def background_sync(
                     progress=max(client_start, int(cur_task.get("progress", 0))),
                 )
 
-        TaskStore.set_task(
-            sync_id,
-            {
-                "status": "completed",
-                "message": f"Sincronização concluída. {new_count_total} novas notas.",
-                "progress": 100,
-            },
-            kind="sync",
-            created_by=created_by,
-        )
+        if succeeded_clients == 0 and failed_errors:
+            TaskStore.set_task(
+                sync_id,
+                {
+                    "status": "failed",
+                    "message": f"Sincronização falhou para todas as empresas ({len(failed_errors)}): {failed_errors[0]}",
+                    "progress": 100,
+                    "errors": failed_errors[:10],
+                },
+                kind="sync",
+                created_by=created_by,
+            )
+        elif failed_errors:
+            TaskStore.set_task(
+                sync_id,
+                {
+                    "status": "completed",
+                    "message": (
+                        f"Sincronização concluída com avisos: {new_count_total} novas notas "
+                        f"({succeeded_clients}/{total_clients} empresas; {len(failed_errors)} falha(s))."
+                    ),
+                    "progress": 100,
+                    "errors": failed_errors[:10],
+                },
+                kind="sync",
+                created_by=created_by,
+            )
+        else:
+            TaskStore.set_task(
+                sync_id,
+                {
+                    "status": "completed",
+                    "message": f"Sincronização concluída. {new_count_total} novas notas.",
+                    "progress": 100,
+                },
+                kind="sync",
+                created_by=created_by,
+            )
     except Exception as e:
         logger.error(f"Sync error: {e}")
         TaskStore.set_task(

@@ -6,7 +6,7 @@ import { loadDashboardStats, loadDashboardChart, changeChartPeriod, loadRanking,
 import { loadClients, renderClients, editClient, toggleAuthType, saveClient, deleteClient, addPathTag, handlePathKey, toggleExplorer, browseFolders, selectCurrentFolder, usarSmtpPadrao } from './pages/clients.js';
 import { loadInvoices, setFilterType, toggleSelectAll, downloadBatch, startSync, pollTask, enrichFromXml, triggerDownload, convertHtmlToXmlAndPdf, syncCofreAdn, sendInvoiceEmailPrompt, cancelInvoicePrompt, loadCompetenciaReport, downloadCompetenciaReport, refreshLocalMirrorBar, chooseLocalMirror, clearLocalMirror, toggleAutoMirror, mirrorInvoicesNow, clearLocalInvoices, toggleCompMonthPicker, shiftCompPickerYear, selectCompMonth } from './pages/invoices.js';
 import { sendSupportMessage, checkUpdates, initAbout, initHelpPage, startUpdateDownload, applyDownloadedUpdate, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs } from './pages/about.js';
-import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser, filterOperatorClientsList, toggleAllOperatorClients } from './pages/users.js';
+import { loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator, toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser, filterOperatorClientsList, toggleAllOperatorClients, loadAuditLogs, debouncedLoadAuditLogs, changeAuditPage } from './pages/users.js';
 import {
     initEmissionPage, switchEmissionTab, loadSavedCustomersAndServices,
     onSelectSavedCustomer, onSelectSavedService, onChangeCTribNac,
@@ -93,6 +93,7 @@ window.App = {
     initAbout, initHelpPage, loadSystemEnvironment, loadCatalogsStatus, syncOfficialCatalogs,
     loadUsers, filterUsersTable, renderUsersTable, openOperatorModal, saveOperator,
     toggleUserActive, openResetPasswordModal, submitResetOperatorPassword, deleteUser,
+    loadAuditLogs, debouncedLoadAuditLogs, changeAuditPage,
     filterOperatorClientsList, toggleAllOperatorClients,
 
     // Auth (JWT Gatekeeper)

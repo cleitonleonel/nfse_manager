@@ -9,6 +9,7 @@ authors = [
     {name = "cleiton",email = "cleiton.leonel@gmail.com"}
 ]
 readme = "README.md"
+license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.12,<4.0"
 dependencies = [
     "fastapi (>=0.136.1,<0.137.0)",

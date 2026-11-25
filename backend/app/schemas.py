@@ -87,6 +87,12 @@ class ClientResponse(ClientBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserClientLinkSchema(BaseModel):
+    client_id: int
+    access_level: Literal["manager", "operator"] = "operator"
+    model_config = ConfigDict(from_attributes=True)
+
+
 class UserCreate(BaseModel):
     username: str
     email: Optional[str] = None
@@ -94,6 +100,7 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=4)
     role: Literal["admin", "operador"] = "operador"
     client_ids: Optional[List[int]] = None
+    client_links: Optional[List[UserClientLinkSchema]] = None
 
 
 class UserUpdate(BaseModel):
@@ -103,6 +110,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[int] = Field(None, ge=0, le=1)
     password: Optional[str] = Field(None, min_length=4)
     client_ids: Optional[List[int]] = None
+    client_links: Optional[List[UserClientLinkSchema]] = None
 
 
 class UserRegister(BaseModel):
@@ -120,7 +128,9 @@ class UserResponse(BaseModel):
     role: str
     is_active: int
     created_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
     client_ids: List[int] = Field(default_factory=list)
+    client_links: List[UserClientLinkSchema] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -645,3 +655,29 @@ class RegistryBatchDeleteRequest(BaseModel):
     ids: Optional[List[int]] = Field(None, description="IDs específicos para excluir")
     client_id: Optional[int] = Field(None, description="Filtrar exclusão em massa pelo cliente quando delete_all=true")
     delete_all: bool = Field(False, description="Se true, exclui todos os registros filtrados")
+
+
+class AuditLogItemResponse(BaseModel):
+    id: int
+    created_at: datetime
+    actor_user_id: Optional[int] = None
+    actor_username: Optional[str] = None
+    actor_role: Optional[str] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    client_cnpj: Optional[str] = None
+    action: str
+    entity_type: str
+    entity_id: Optional[str] = None
+    summary: str
+    details: Optional[Dict[str, Any]] = None
+    status: str = "success"
+    ip_address: Optional[str] = None
+
+
+class AuditLogListResponse(BaseModel):
+    items: List[AuditLogItemResponse] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 25
+    facets: Dict[str, List[str]] = Field(default_factory=dict)

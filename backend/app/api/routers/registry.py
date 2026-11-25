@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ from app.schemas import (
     TaxValidationRequest,
 )
 from app.services.adn_service import AdnService
+from app.services.audit_service import AuditService, get_client_ip
 from app.services.lookup_service import LookupService
 from pynfse.adn import buscar_correlacoes_anexo_viii, clean_digits, obter_cclasstrib
 
@@ -94,6 +95,7 @@ def list_customers(
 @router.post("/customers", response_model=CustomerResponse)
 def create_customer(
     payload: CustomerCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -119,6 +121,20 @@ def create_customer(
         uf=(payload.uf or "ES").upper(),
     )
     db.add(customer)
+    db.flush()
+    AuditService.record(
+        db,
+        action="registry.customer_create",
+        entity_type="customer",
+        entity_id=customer.id,
+        client_id=customer.client_id,
+        current_user=current_user,
+        summary=f"Tomador '{customer.razao_social}' ({customer.documento}) cadastrado.",
+        details={"documento": customer.documento, "razao_social": customer.razao_social},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     db.refresh(customer)
     return customer
@@ -128,6 +144,7 @@ def create_customer(
 def update_customer(
     customer_id: int,
     payload: CustomerUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -140,8 +157,14 @@ def update_customer(
     data = payload.model_dump(exclude_unset=True)
     if "client_id" in data:
         _assert_registry_client_access(db, current_user, data["client_id"])
-    if "documento" in data and data["documento"]:
-        data["documento"] = _clean_doc(data["documento"])
+    if "documento" in data:
+        doc_limpo = _clean_doc(data["documento"])
+        if len(doc_limpo) not in (11, 14):
+            raise HTTPException(
+                status_code=400,
+                detail="Documento do tomador deve ser CNPJ (14) ou CPF (11).",
+            )
+        data["documento"] = doc_limpo
     if "cep" in data and data["cep"]:
         data["cep"] = clean_digits(data["cep"])
     if "codigo_municipio" in data and data["codigo_municipio"]:
@@ -150,12 +173,33 @@ def update_customer(
     for k, v in data.items():
         setattr(customer, k, v)
 
+    AuditService.record(
+        db,
+        action="registry.customer_update",
+        entity_type="customer",
+        entity_id=customer.id,
+        client_id=customer.client_id,
+        current_user=current_user,
+        summary=f"Tomador '{customer.razao_social}' ({customer.documento}) atualizado.",
+        details={"changed_fields": sorted(data.keys()), "documento": customer.documento},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     db.refresh(customer)
     return customer
 
 
-def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session, current_user: User) -> dict:
+def _delete_registry_batch(
+    model,
+    req: RegistryBatchDeleteRequest,
+    db: Session,
+    current_user: User,
+    *,
+    entity_type: str,
+    ip_address: Optional[str] = None,
+) -> dict:
     """Helper compartilhado para exclusão em lote de tomadores ou serviços."""
     allowed_ids = get_allowed_client_ids(db, current_user)
     q = db.query(model)
@@ -180,6 +224,18 @@ def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session, 
         raise HTTPException(status_code=400, detail="Informe ids ou delete_all=true.")
 
     deleted = q.delete(synchronize_session=False)
+    AuditService.record(
+        db,
+        action=f"registry.{entity_type}_batch_delete",
+        entity_type=entity_type,
+        client_id=req.client_id,
+        current_user=current_user,
+        summary=f"Exclusão em lote de {deleted} registro(s) ({entity_type}).",
+        details={"deleted": deleted, "delete_all": req.delete_all, "ids": req.ids},
+        status="success",
+        ip_address=ip_address,
+        commit=False,
+    )
     db.commit()
     return {"deleted": deleted}
 
@@ -187,6 +243,7 @@ def _delete_registry_batch(model, req: RegistryBatchDeleteRequest, db: Session, 
 @router.delete("/customers/{customer_id}")
 def delete_customer(
     customer_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -195,7 +252,23 @@ def delete_customer(
     if not customer:
         raise HTTPException(status_code=404, detail="Tomador não encontrado.")
     _assert_registry_client_access(db, current_user, customer.client_id)
+    cid = customer.client_id
+    doc = customer.documento
+    nome = customer.razao_social
     db.delete(customer)
+    AuditService.record(
+        db,
+        action="registry.customer_delete",
+        entity_type="customer",
+        entity_id=customer_id,
+        client_id=cid,
+        current_user=current_user,
+        summary=f"Tomador '{nome}' ({doc}) removido.",
+        details={"documento": doc, "razao_social": nome},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     return {"message": "Tomador removido com sucesso."}
 
@@ -203,11 +276,19 @@ def delete_customer(
 @router.post("/customers/delete-batch")
 def delete_customers_batch(
     req: RegistryBatchDeleteRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Remove múltiplos tomadores recorrentes selecionados ou todos."""
-    return _delete_registry_batch(Customer, req, db, current_user)
+    return _delete_registry_batch(
+        Customer,
+        req,
+        db,
+        current_user,
+        entity_type="customer",
+        ip_address=get_client_ip(request),
+    )
 
 
 # ==============================================================================
@@ -283,6 +364,7 @@ def list_service_items(
 @router.post("/service-items", response_model=ServiceItemResponse)
 def create_service_item(
     payload: ServiceItemCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -331,6 +413,20 @@ def create_service_item(
         reter_federais=1 if payload.reter_federais else 0,
     )
     db.add(item)
+    db.flush()
+    AuditService.record(
+        db,
+        action="registry.service_create",
+        entity_type="service_item",
+        entity_id=item.id,
+        client_id=item.client_id,
+        current_user=current_user,
+        summary=f"Serviço '{item.titulo}' ({item.c_trib_nac}) cadastrado.",
+        details={"titulo": item.titulo, "c_trib_nac": item.c_trib_nac, "c_nbs": item.c_nbs},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     db.refresh(item)
     resp = ServiceItemResponse.model_validate(item)
@@ -342,6 +438,7 @@ def create_service_item(
 def update_service_item(
     item_id: int,
     payload: ServiceItemUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -381,6 +478,19 @@ def update_service_item(
             },
         )
 
+    AuditService.record(
+        db,
+        action="registry.service_update",
+        entity_type="service_item",
+        entity_id=item.id,
+        client_id=item.client_id,
+        current_user=current_user,
+        summary=f"Serviço '{item.titulo}' atualizado.",
+        details={"changed_fields": sorted(data.keys()), "titulo": item.titulo},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     db.refresh(item)
     resp = ServiceItemResponse.model_validate(item)
@@ -391,6 +501,7 @@ def update_service_item(
 @router.delete("/service-items/{item_id}")
 def delete_service_item(
     item_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -399,7 +510,22 @@ def delete_service_item(
     if not item:
         raise HTTPException(status_code=404, detail="Serviço não encontrado.")
     _assert_registry_client_access(db, current_user, item.client_id)
+    cid = item.client_id
+    titulo = item.titulo
     db.delete(item)
+    AuditService.record(
+        db,
+        action="registry.service_delete",
+        entity_type="service_item",
+        entity_id=item_id,
+        client_id=cid,
+        current_user=current_user,
+        summary=f"Serviço '{titulo}' removido.",
+        details={"titulo": titulo},
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     return {"message": "Serviço removido com sucesso."}
 
@@ -407,11 +533,19 @@ def delete_service_item(
 @router.post("/service-items/delete-batch")
 def delete_service_items_batch(
     req: RegistryBatchDeleteRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Remove múltiplos serviços recorrentes selecionados ou todos."""
-    return _delete_registry_batch(ServiceItem, req, db, current_user)
+    return _delete_registry_batch(
+        ServiceItem,
+        req,
+        db,
+        current_user,
+        entity_type="service",
+        ip_address=get_client_ip(request),
+    )
 
 
 # ==============================================================================
@@ -455,6 +589,7 @@ def download_customers_template(format: str = Query("xlsx", description="csv ou 
 
 @router.post("/customers/import")
 async def import_customers_batch(
+    request: Request,
     file: UploadFile = File(...),
     client_id: Optional[int] = Form(None),
     atualizar_existentes: bool = Form(True),
@@ -520,6 +655,25 @@ async def import_customers_batch(
             db.add(Customer(client_id=client_id, documento=doc, **fields))
             criados += 1
 
+    AuditService.record(
+        db,
+        action="registry.customer_import",
+        entity_type="customer",
+        client_id=client_id,
+        current_user=current_user,
+        summary=f"Importação de tomadores ({file.filename or 'planilha'}): {criados} criado(s), {atualizados} atualizado(s).",
+        details={
+            "filename": file.filename,
+            "total_lidas": len(rows),
+            "criados": criados,
+            "atualizados": atualizados,
+            "ignorados": ignorados,
+            "erros_count": len(erros),
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     return {
         "total_lidas": len(rows),
@@ -566,6 +720,7 @@ def download_services_template(format: str = Query("xlsx", description="csv ou x
 
 @router.post("/service-items/import")
 async def import_services_batch(
+    request: Request,
     file: UploadFile = File(...),
     client_id: Optional[int] = Form(None),
     atualizar_existentes: bool = Form(True),
@@ -640,6 +795,25 @@ async def import_services_batch(
             db.add(ServiceItem(client_id=client_id, titulo=titulo, **fields))
             criados += 1
 
+    AuditService.record(
+        db,
+        action="registry.service_import",
+        entity_type="service_item",
+        client_id=client_id,
+        current_user=current_user,
+        summary=f"Importação de serviços ({file.filename or 'planilha'}): {criados} criado(s), {atualizados} atualizado(s).",
+        details={
+            "filename": file.filename,
+            "total_lidas": len(rows),
+            "criados": criados,
+            "atualizados": atualizados,
+            "ignorados": ignorados,
+            "erros_count": len(erros),
+        },
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=False,
+    )
     db.commit()
     return {
         "total_lidas": len(rows),

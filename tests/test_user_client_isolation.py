@@ -278,6 +278,7 @@ def test_frontend_views_help_users_and_about_served():
     r_users = client.get("/views/users.html")
     assert r_users.status_code == 200
     assert "admin-users-section" in r_users.text
+    assert "admin-audit-section" in r_users.text
 
     r_help = client.get("/views/help.html")
     assert r_help.status_code == 200
@@ -288,6 +289,48 @@ def test_frontend_views_help_users_and_about_served():
     assert r_about.status_code == 200
     assert "admin-users-section" not in r_about.text
     assert "sup-email" not in r_about.text
+
+
+def test_background_sync_marks_failed_when_all_clients_fail(monkeypatch):
+    """Garante que background_sync marque status='failed' se todas as empresas falharem."""
+    from app.api.routers import invoices as inv_router
+    from app.api.state import TaskStore
+    from app.models import Client
+
+    db = SessionLocal()
+    try:
+        cli = Client(
+            cnpj="77665544000133",
+            razao_social="Empresa Sync Falha",
+            username="77665544000133",
+            password="123",
+        )
+        db.add(cli)
+        db.commit()
+        db.refresh(cli)
+        cli_id = cli.id
+    finally:
+        db.close()
+
+    class FailingPortalClient:
+        def autenticar(self):
+            raise RuntimeError("Portal indisponível no teste")
+
+    monkeypatch.setattr(inv_router, "get_nfse_client", lambda _c: FailingPortalClient())
+    sync_id = "sync_test_all_fail"
+    inv_router.background_sync(
+        sync_id,
+        cli_id,
+        "01/01/2026",
+        "31/01/2026",
+        "emitidas",
+        allowed_client_ids=None,
+        created_by=None,
+    )
+    task = TaskStore.get_task(sync_id)
+    assert task is not None
+    assert task["status"] == "failed"
+    assert "falhou para todas as empresas" in task["message"]
 
 
 @pytest.mark.real_auth

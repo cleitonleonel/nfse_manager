@@ -175,6 +175,18 @@ erDiagram
 | `access_level` | `VARCHAR` | Nível de acesso na empresa (`manager` para criador/gestor, `operator` para operador vinculado) |
 | `created_at` | `TIMESTAMP` | Data de criação do vínculo |
 
+### Tabela `audit_logs`
+
+| Coluna | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `INTEGER` (PK) | Identificador do evento de auditoria |
+| `created_at` | `TIMESTAMP` | Data/hora UTC do registro |
+| `actor_user_id` / `actor_username` / `actor_role` | `INTEGER` / `VARCHAR` | Usuário responsável pela ação (nullable para rotinas internas) |
+| `client_id` | `INTEGER` (FK) | Empresa relacionada ao evento (`ON DELETE SET NULL`) |
+| `action` / `entity_type` / `entity_id` | `VARCHAR` | Ação executada, domínio (`user`, `client`, `invoice`, `batch`, `system`) e identificador alvo |
+| `summary` / `details_json` | `VARCHAR` | Resumo legível e metadados JSON da operação |
+| `status` / `ip_address` | `VARCHAR` | Resultado (`success`, `error`, `denied`) e IP de origem |
+
 ---
 
 ## 4. Segurança e Criptografia em Repouso (Encryption at Rest)

@@ -16,7 +16,12 @@ from app.schemas import (
     BatchImportItemUpdateRequest,
     BatchImportResponse,
 )
-from app.services.batch_emission.importer import parse_batch_file
+from app.services.batch_emission.importer import (
+    TAX_CODE_PAD_WIDTHS,
+    normalize_tax_code_field,
+    parse_batch_file,
+)
+from app.services.batch_emission.processor import recover_stale_processing_batch
 from app.services.batch_emission.validator import (
     recompute_batch_counters,
     validate_all_batch_items,
@@ -108,6 +113,7 @@ class BatchEmissionService:
         ambiente: Optional[str] = None,
         created_by: Optional[str] = None,
         auto_validate: bool = True,
+        include_global_registry: bool = False,
     ) -> BatchImport:
         client_db = db.query(Client).filter(Client.id == client_id).first()
         if not client_db:
@@ -151,14 +157,24 @@ class BatchEmissionService:
         db.refresh(batch)
 
         if auto_validate:
-            batch = validate_all_batch_items(db, batch)
+            batch = validate_all_batch_items(db, batch, include_global=include_global_registry)
         return batch
 
     @classmethod
-    def list_batches(cls, db: Session, client_id: Optional[int] = None, limit: int = 50) -> List[BatchImport]:
+    def list_batches(
+        cls,
+        db: Session,
+        client_id: Optional[int] = None,
+        limit: int = 50,
+        allowed_client_ids: Optional[List[int]] = None,
+    ) -> List[BatchImport]:
         q = db.query(BatchImport)
         if client_id is not None:
             q = q.filter(BatchImport.client_id == client_id)
+        elif allowed_client_ids is not None:
+            if not allowed_client_ids:
+                return []
+            q = q.filter(BatchImport.client_id.in_(allowed_client_ids))
         return q.order_by(BatchImport.created_at.desc()).limit(limit).all()
 
     @classmethod
@@ -181,8 +197,11 @@ class BatchEmissionService:
         batch_id: str,
         item_id: str,
         req: BatchImportItemUpdateRequest,
+        *,
+        include_global_registry: bool = False,
     ) -> BatchImportItem:
         batch = cls.get_batch_or_404(db, batch_id)
+        recover_stale_processing_batch(db, batch)
         if batch.status == "PROCESSING":
             raise HTTPException(status_code=409, detail="Não é possível editar itens durante processamento ativo.")
 
@@ -210,6 +229,8 @@ class BatchEmissionService:
         for k, v in updates.items():
             if k == "documento_tomador" and v is not None:
                 payload[k] = clean_doc(v) or str(v).strip()
+            elif k in TAX_CODE_PAD_WIDTHS and v is not None:
+                payload[k] = normalize_tax_code_field(k, v)
             elif k == "competencia" and v is not None:
                 try:
                     payload[k] = parse_date_iso(v)
@@ -220,7 +241,13 @@ class BatchEmissionService:
                 payload[k] = v
         payload["_parse_errors"] = parse_errors
 
-        errors = validate_batch_item(db, client_db, payload, ambiente=batch.ambiente)
+        errors = validate_batch_item(
+            db,
+            client_db,
+            payload,
+            ambiente=batch.ambiente,
+            include_global=include_global_registry,
+        )
         item.payload_json = json.dumps(payload, ensure_ascii=False)
         item.validation_errors_json = json.dumps(errors, ensure_ascii=False)
         item.status = "INVALID" if errors else "VALID"
@@ -234,6 +261,7 @@ class BatchEmissionService:
     @classmethod
     def cancel_pending_items(cls, db: Session, batch_id: str) -> BatchImport:
         batch = cls.get_batch_or_404(db, batch_id)
+        recover_stale_processing_batch(db, batch)
         if batch.status == "COMPLETED":
             raise HTTPException(status_code=409, detail="Lote já concluído não pode ser cancelado.")
 
@@ -253,6 +281,7 @@ class BatchEmissionService:
     def delete_batch(cls, db: Session, batch_id: str) -> Dict[str, Any]:
         """Exclui um lote importado, seus itens e eventuais notas ainda pendentes na fila de contingência."""
         batch = cls.get_batch_or_404(db, batch_id)
+        recover_stale_processing_batch(db, batch)
         if batch.status == "PROCESSING":
             raise HTTPException(status_code=409, detail="Não é possível excluir um lote em processamento ativo.")
 
@@ -282,6 +311,7 @@ class BatchEmissionService:
     ) -> Dict[str, Any]:
         """Exclui 1, múltiplos ou todos os itens do lote e limpa pendências correspondentes na fila de contingência."""
         batch = cls.get_batch_or_404(db, batch_id)
+        recover_stale_processing_batch(db, batch)
         if batch.status == "PROCESSING":
             raise HTTPException(status_code=409, detail="Não é possível excluir itens durante processamento ativo.")
 

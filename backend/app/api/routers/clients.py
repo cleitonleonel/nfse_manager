@@ -7,11 +7,12 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, Query, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.permissions import (
-    assert_client_access,
+    assert_client_manager_or_admin,
     filter_query_by_allowed_clients,
     grant_client_access,
     is_admin_user,
@@ -36,8 +37,9 @@ from app.core.config import (
     to_storage_relative_path,
 )
 from app.database import get_db
-from app.models import BatchImport, BatchImportItem, Client, Invoice, User, UserClient
+from app.models import BatchImport, BatchImportItem, Client, Invoice, User
 from app.schemas import ClientResponse
+from app.services.audit_service import AuditService, get_client_ip
 from app.services.email_service import EmailService
 from pynfse.adn import DpsSigner
 
@@ -45,6 +47,10 @@ logger = logging.getLogger(__name__)
 
 CERTIFICADOS_DIR = get_certs_dir()
 DOWNLOADS_DIR = get_downloads_dir()
+
+
+def _normalize_cnpj_key(raw: Optional[str]) -> str:
+    return re.sub(r"[^0-9A-Za-z]", "", (raw or "")).upper()
 
 
 def _is_within_root(target: Path, root: Path) -> bool:
@@ -95,6 +101,15 @@ def _validate_client_save_path(
     if resolved is None:
         return ""
 
+    if cleaned.strip("/\\").lower() == "downloads" or resolved.resolve() == downloads_root.resolve():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Não é permitido definir a pasta raiz de downloads como diretório exclusivo da empresa. "
+                "Informe ou crie uma subpasta dedicada (ex: cnpj_empresa)."
+            ),
+        )
+
     if _is_within_root(resolved, downloads_root):
         return to_storage_relative_path(resolved, "downloads")
 
@@ -119,7 +134,7 @@ def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str
         return None
 
     certs_dir = get_certs_dir()
-    safe_cnpj = re.sub(r"\D", "", cnpj or "")
+    safe_cnpj = _normalize_cnpj_key(cnpj)
     if not safe_cnpj:
         safe_cnpj = "cliente_sem_cnpj"
 
@@ -134,8 +149,9 @@ def salvar_arquivo_certificado(cert_file: UploadFile, cnpj: str) -> Optional[str
             except Exception as e:
                 logger.warning(f"Erro ao remover certificado anterior {existing_file}: {e}")
 
-    safe_filename = "".join(c for c in cert_file.filename if c.isalnum() or c in "._- ")
-    if not safe_filename:
+    raw_filename = Path(cert_file.filename).name
+    safe_filename = "".join(c for c in raw_filename if c.isalnum() or c in "._- ")
+    if safe_filename.strip(". ") in ("", ".", ".."):
         safe_filename = "certificado.pfx"
 
     cert_file_path = client_cert_dir / safe_filename
@@ -182,7 +198,7 @@ def remover_arquivos_e_pastas_cliente(client: Client, invoices: List[Invoice]) -
     - Pastas de downloads do cliente em downloads/{CNPJ} ou com o nome da empresa
     - Pasta dedicada de downloads se client.save_path for exclusivo
     """
-    safe_cnpj = re.sub(r"\D", "", client.cnpj or "")
+    safe_cnpj = _normalize_cnpj_key(client.cnpj)
     arquivos_removidos = 0
     pastas_removidas: List[str] = []
     certs_dir = get_certs_dir()
@@ -364,6 +380,7 @@ def get_smtp_padrao_env():
 
 @router.post("", response_model=ClientResponse)
 def create_client(
+    request: Request,
     cnpj: str = Form(...),
     razao_social: str = Form(...),
     username: str = Form(""),
@@ -408,8 +425,22 @@ def create_client(
             detail="Apenas administradores podem cadastrar novas empresas no sistema.",
         )
 
+    raw_cnpj = (cnpj or "").strip()
+    norm_cnpj = _normalize_cnpj_key(raw_cnpj)
+    if not norm_cnpj:
+        raise HTTPException(status_code=400, detail="CNPJ é obrigatório.")
+
+    existing_clients = db.query(Client.id, Client.cnpj).all()
+    for _existing_id, existing_cnpj in existing_clients:
+        existing_raw = (existing_cnpj or "").strip()
+        if existing_raw == raw_cnpj or _normalize_cnpj_key(existing_raw) == norm_cnpj:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Já existe uma empresa cadastrada com o CNPJ '{raw_cnpj}'.",
+            )
+
     validated_save_path = _validate_client_save_path(save_path, current_user) or ""
-    cert_path = salvar_arquivo_certificado(cert_file, cnpj)
+    cert_path = salvar_arquivo_certificado(cert_file, raw_cnpj)
     cert_valid_until, cert_subject = extrair_metadados_certificado_pfx(cert_path, cert_password)
 
     if usar_smtp_padrao:
@@ -424,7 +455,7 @@ def create_client(
             email = smtp_from
 
     db_client = Client(
-        cnpj=cnpj,
+        cnpj=raw_cnpj,
         razao_social=razao_social,
         username=username,
         password=password,
@@ -460,11 +491,37 @@ def create_client(
         smtp_tls=smtp_tls if smtp_tls is not None else 1,
         enviar_email_automatico=enviar_email_automatico or 0,
     )
-    db.add(db_client)
-    db.flush()
-    if not is_admin_user(current_user) and getattr(current_user, "id", None):
-        grant_client_access(db, current_user.id, db_client.id, access_level="manager")
-    db.commit()
+    try:
+        db.add(db_client)
+        db.flush()
+        if not is_admin_user(current_user) and getattr(current_user, "id", None):
+            grant_client_access(db, current_user.id, db_client.id, access_level="manager")
+        AuditService.record(
+            db,
+            action="client.create",
+            entity_type="client",
+            entity_id=db_client.id,
+            client_id=db_client.id,
+            current_user=current_user,
+            summary=f"Empresa '{db_client.razao_social}' ({db_client.cnpj}) cadastrada.",
+            details={
+                "cnpj": db_client.cnpj,
+                "razao_social": db_client.razao_social,
+                "ambiente_padrao": db_client.ambiente_padrao,
+                "has_cert": bool(cert_path),
+                "save_path": validated_save_path,
+            },
+            status="success",
+            ip_address=get_client_ip(request),
+            commit=False,
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma empresa cadastrada com este CNPJ.",
+        ) from exc
     db.refresh(db_client)
     return db_client
 
@@ -472,6 +529,7 @@ def create_client(
 @router.delete("/{client_id}")
 def delete_client(
     client_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -479,18 +537,12 @@ def delete_client(
     Remove o cliente, todas as suas notas associadas no banco de dados e todos os
     arquivos físicos (certificados e downloads) no servidor.
     """
-    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
-    if not is_admin_user(current_user):
-        link = (
-            db.query(UserClient)
-            .filter(UserClient.user_id == current_user.id, UserClient.client_id == client_id)
-            .first()
-        )
-        if not link or link.access_level != "manager":
-            raise HTTPException(
-                status_code=403,
-                detail="Apenas administradores ou o gestor da empresa podem excluí-la.",
-            )
+    assert_client_manager_or_admin(
+        db,
+        current_user,
+        client_id,
+        detail="Apenas administradores ou o gestor da empresa podem excluí-la.",
+    )
 
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
@@ -500,6 +552,13 @@ def delete_client(
 
     # 1. Deletar arquivos físicos e pastas do cliente (certificados e downloads)
     info_remocao = remover_arquivos_e_pastas_cliente(db_client, invoices)
+    snapshot = {
+        "deleted_client_id": client_id,
+        "cnpj": db_client.cnpj,
+        "razao_social": db_client.razao_social,
+        "notas_excluidas": len(invoices),
+        "arquivos_removidos": info_remocao["arquivos_removidos"],
+    }
 
     # 2. Desvincular e limpar lotes de importação associados (integridade FK PostgreSQL)
     inv_ids = [inv.id for inv in invoices if inv.id is not None]
@@ -521,10 +580,24 @@ def delete_client(
     db.delete(db_client)
     db.commit()
 
+    AuditService.record(
+        db,
+        action="client.delete",
+        entity_type="client",
+        entity_id=client_id,
+        client_id=None,
+        current_user=current_user,
+        summary=f"Empresa '{snapshot['razao_social']}' ({snapshot['cnpj']}) excluída.",
+        details=snapshot,
+        status="success",
+        ip_address=get_client_ip(request),
+        commit=True,
+    )
+
     return {
         "message": "Cliente, configurações, notas e arquivos físicos excluídos com sucesso.",
         "client_id": client_id,
-        "notas_excluidas": len(invoices),
+        "notas_excluidas": snapshot["notas_excluidas"],
         "arquivos_removidos": info_remocao["arquivos_removidos"],
         "pastas_removidas": info_remocao["pastas_removidas"],
     }
@@ -533,6 +606,7 @@ def delete_client(
 @router.put("/{client_id}", response_model=ClientResponse)
 def update_client(
     client_id: int,
+    request: Request,
     razao_social: Optional[str] = Form(None),
     username: Optional[str] = Form(None),
     password: Optional[str] = Form(None),
@@ -570,7 +644,12 @@ def update_client(
     current_user: User = Depends(get_current_user),
 ):
     """Atualizar dados do cliente."""
-    assert_client_access(db, current_user, client_id, allow_none_for_admin=False)
+    assert_client_manager_or_admin(
+        db,
+        current_user,
+        client_id,
+        detail="Apenas administradores ou gestores vinculados à empresa podem alterar seus dados.",
+    )
     db_client = db.query(Client).filter(Client.id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -622,20 +701,55 @@ def update_client(
         "smtp_tls": smtp_tls,
         "enviar_email_automatico": enviar_email_automatico,
     }
+    changed_fields: List[str] = []
     for field, value in update_fields.items():
         if value is not None:
             if field in ("password", "cert_password", "smtp_password") and value == "":
                 continue
             setattr(db_client, field, value)
+            changed_fields.append(field)
 
     saved_cert_path = salvar_arquivo_certificado(cert_file, db_client.cnpj)
     if saved_cert_path:
         db_client.cert_path = saved_cert_path
-    if saved_cert_path or cert_password is not None:
+    cert_password_updated = cert_password is not None and cert_password != ""
+    if saved_cert_path or cert_password_updated:
         v_dt, subj = extrair_metadados_certificado_pfx(db_client.cert_path, db_client.cert_password)
-        if v_dt:
-            db_client.cert_valid_until = v_dt
-            db_client.cert_subject = subj
+        db_client.cert_valid_until = v_dt
+        db_client.cert_subject = subj
+
+    ip_addr = get_client_ip(request)
+    if saved_cert_path:
+        AuditService.record(
+            db,
+            action="client.cert_update",
+            entity_type="client",
+            entity_id=db_client.id,
+            client_id=db_client.id,
+            current_user=current_user,
+            summary=f"Certificado digital A1 atualizado para '{db_client.razao_social}'.",
+            details={
+                "cert_subject": db_client.cert_subject,
+                "cert_valid_until": db_client.cert_valid_until.isoformat() if db_client.cert_valid_until else None,
+            },
+            status="success",
+            ip_address=ip_addr,
+            commit=False,
+        )
+    if changed_fields or not saved_cert_path:
+        AuditService.record(
+            db,
+            action="client.update",
+            entity_type="client",
+            entity_id=db_client.id,
+            client_id=db_client.id,
+            current_user=current_user,
+            summary=f"Dados da empresa '{db_client.razao_social}' atualizados.",
+            details={"changed_fields": changed_fields},
+            status="success",
+            ip_address=ip_addr,
+            commit=False,
+        )
 
     db.commit()
     db.refresh(db_client)

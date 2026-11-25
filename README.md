@@ -589,6 +589,18 @@ Consulte também na pasta [`docs/`](file:///home/cleiton/PyJobs/MeusProjetos/nfs
 
 ---
 
+## 📜 Licença, Atribuição e Contribuições
+
+Este projeto é licenciado sob a **[GNU Affero General Public License v3.0 (AGPL-3.0-or-later)](LICENSE)** em conjunto com o arquivo de atribuição e proteção de marca **[`NOTICE`](NOTICE)**:
+
+- **Uso e contribuições permitidos:** você pode usar, estudar, aprimorar e contribuir (via Issues e Pull Requests) livremente.
+- **Menção obrigatória ao projeto original:** qualquer uso derivado, redistribuição ou oferta em rede deve preservar o copyright, o arquivo `NOTICE` e a menção clara ao **NFSe Manager Pro** e ao repositório oficial (`https://github.com/cleitonleonel/nfse_manager`).
+- **Proteção contra cópias fechadas e clones SaaS:** pela cláusula de copyleft de rede (Seção 13 da AGPLv3), terceiros não podem copiar, modificar e distribuir ou hospedar o sistema como software fechado/proprietário sem disponibilizar o código-fonte derivado sob a mesma licença AGPLv3.
+- **Proteção de marca:** a licença não autoriza o uso da marca/logotipo **NFSe Manager Pro** para promover forks ou produtos comerciais de terceiros sem permissão prévia.
+- **Licenciamento comercial / white-label:** para uso fechado sem obrigações de copyleft, contate o autor em [cleiton.leonel@gmail.com](mailto:cleiton.leonel@gmail.com).
+
+---
+
 ## 👤 Autor
 
 **Cleiton Leonel Creton** — [cleiton.leonel@gmail.com](mailto:cleiton.leonel@gmail.com)

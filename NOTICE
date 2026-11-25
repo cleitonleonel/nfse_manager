@@ -1,0 +1,46 @@
+NFSe Manager Pro
+Copyright (C) 2026 Cleiton Leonel Creton (cleiton.leonel@gmail.com)
+Repositório oficial: https://github.com/cleitonleonel/nfse_manager
+
+Este software é licenciado sob a GNU Affero General Public License v3.0
+ou posterior (AGPL-3.0-or-later). Consulte o arquivo LICENSE para o texto
+integral da licença.
+
+========================================================================
+TERMOS ADICIONAIS DE ATRIBUIÇÃO E MARCA (SEÇÃO 7 DA GNU AGPLv3)
+========================================================================
+
+1. Atribuição Obrigatória (Seção 7(b) e 7(c)):
+   Qualquer uso, redistribuição, modificação, obra derivada ou oferta
+   deste software como serviço em rede/SaaS DEVE preservar integralmente:
+   - Os avisos originais de copyright e este arquivo NOTICE;
+   - A menção clara e visível ao projeto original "NFSe Manager Pro",
+     ao autor "Cleiton Leonel Creton" e ao repositório oficial
+     https://github.com/cleitonleonel/nfse_manager na documentação,
+     no rodapé/tela "Sobre" da interface (quando aplicável) e nos
+     arquivos distribuídos.
+   - Qualquer alteração realizada por terceiros deve ser marcada de forma
+     clara para não ser confundida com a versão original oficial.
+
+2. Reciprocidade de Código em Rede / Proteção contra Cópias Fechadas
+   (Seção 13 da GNU AGPLv3):
+   Se você modificar este software e disponibilizá-lo para usuários via
+   rede (web, nuvem, SaaS ou ambiente corporativo remoto), você é obrigado
+   a disponibilizar o código-fonte completo correspondente da sua versão
+   modificada sob os mesmos termos da GNU AGPLv3.
+
+3. Proteção de Nome, Marca e Identidade Visual (Seção 7(e)):
+   Esta licença NÃO concede permissão para utilizar o nome comercial,
+   marcas, logotipos ou identidade visual de "NFSe Manager Pro" ou de
+   seu autor para endossar, promover ou comercializar forks, clones ou
+   produtos derivados sem autorização expressa por escrito.
+
+4. Contribuições:
+   Contribuições (Issues e Pull Requests) são muito bem-vindas! Ao enviar
+   contribuições para este repositório, você concorda que elas serão
+   licenciadas sob a mesma licença GNU AGPL-3.0-or-later e sob este NOTICE.
+
+5. Licenciamento Comercial / White-Label:
+   Para uso proprietário, distribuição fechada ou licenciamento comercial
+   sem as obrigações de copyleft da AGPLv3, entre em contato com o autor:
+   cleiton.leonel@gmail.com

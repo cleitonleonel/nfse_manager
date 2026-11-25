@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import threading
 from typing import Any, Dict, List, Optional, Tuple
+import xml.etree.ElementTree as ET
 
 from fastapi import HTTPException
 from sqlalchemy import false as sa_false, func, or_, update
@@ -595,7 +596,310 @@ class AdnService:
         return None, uname
 
     @staticmethod
+    def _pick_first(*values: Any, default: Any = None) -> Any:
+        for val in values:
+            if val is not None and (not isinstance(val, str) or val.strip() != ""):
+                return val
+        return default
+
+    @classmethod
+    def _pick_float(cls, *values: Any, default: Optional[float] = None) -> Optional[float]:
+        val = cls._pick_first(*values)
+        if val is None:
+            return default
+        return float(val)
+
+    @classmethod
+    def _pick_int(cls, *values: Any, default: Optional[int] = None) -> Optional[int]:
+        val = cls._pick_first(*values)
+        if val is None:
+            return default
+        return int(val)
+
+    @classmethod
+    def _pick_bool(cls, *values: Any, default: bool = False) -> bool:
+        val = cls._pick_first(*values)
+        if val is None:
+            return default
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        return str(val).strip().lower() in {"1", "true", "sim", "s", "yes", "y", "verdadeiro"}
+
+    @staticmethod
+    def _extrair_erros_adn(res: Dict[str, Any], regime: str = "normal") -> Tuple[str, List[Any]]:
+        sc = int(res.get("status_code") or 0)
+        resp_obj = res.get("resposta")
+        erros_raw: Any = None
+        if isinstance(resp_obj, dict):
+            erros_raw = (
+                resp_obj.get("erros")
+                or resp_obj.get("Erros")
+                or resp_obj.get("Mensagens")
+                or resp_obj.get("mensagens")
+            )
+
+        erros_list: List[Any] = list(erros_raw) if isinstance(erros_raw, list) else []
+        parts: List[str] = []
+        for err in erros_list:
+            if isinstance(err, dict):
+                cod_e = str(err.get("Codigo") or err.get("codigo") or "").strip()
+                desc_e = str(err.get("Descricao") or err.get("descricao") or err.get("Mensagem") or err.get("mensagem") or "").strip()
+                comp_e = str(err.get("Complemento") or err.get("complemento") or "").strip()
+                txt = f"{cod_e} - {desc_e}".strip(" -")
+                if comp_e:
+                    txt = f"{txt} ({comp_e})" if txt else comp_e
+                if cod_e == "E0039" and regime == "normal":
+                    txt += (
+                        " (Dica: caso o prestador seja optante pelo Simples Nacional ME/EPP ou MEI, "
+                        "configure o Regime Tributário como 'simples' ou 'mei')."
+                    )
+                if txt:
+                    parts.append(txt)
+            elif str(err or "").strip():
+                parts.append(str(err).strip())
+
+        if parts:
+            return " | ".join(parts)[:1000], erros_list
+
+        msg_fallback: Optional[str] = None
+        if isinstance(resp_obj, dict) and resp_obj.get("mensagem"):
+            msg_fallback = str(resp_obj.get("mensagem")).strip()
+        if not msg_fallback and res.get("erro"):
+            msg_fallback = str(res.get("erro")).strip()
+        if not msg_fallback and res.get("mensagem"):
+            cand = str(res.get("mensagem")).strip()
+            if cand != "Retorno do ambiente ADN/Sefin Nacional.":
+                msg_fallback = cand
+        if not msg_fallback and isinstance(resp_obj, str) and resp_obj.strip():
+            msg_fallback = resp_obj.strip()
+        if not msg_fallback:
+            msg_fallback = f"HTTP {sc}"
+        return msg_fallback[:1000], erros_list
+
+    @classmethod
+    def _validar_ibscbs_contexto(
+        cls,
+        servico: Dict[str, Any],
+        tributacao_calc: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        reforma = tributacao_calc.get("reforma_tributaria") or {}
+        trib_reg = servico.get("tributacao_regular") or reforma.get("tributacao_regular") or {}
+        c_class = str(cls._pick_first(servico.get("cClassTrib"), reforma.get("cClassTrib"), default="000001"))
+        cst = cls._pick_first(servico.get("cst"), reforma.get("cst"))
+        c_ind_op = str(cls._pick_first(servico.get("cIndOp"), servico.get("indop"), reforma.get("cIndOp"), default="100301"))
+        c_trib_nac = cls._pick_first(servico.get("cTribNac"))
+        c_nbs = cls._pick_first(servico.get("cNBS"), servico.get("nbs"))
+        req_val = TaxValidationRequest(
+            cClassTrib=c_class,
+            cst=str(cst) if cst is not None else None,
+            cIndOp=c_ind_op,
+            cTribNac=str(c_trib_nac) if c_trib_nac is not None else None,
+            cNBS=str(c_nbs) if c_nbs is not None else None,
+            tpOper=cls._pick_int(servico.get("tpOper"), servico.get("tp_oper")),
+            tpEnteGov=cls._pick_int(servico.get("tpEnteGov"), servico.get("tp_ente_gov")),
+            pRedutorGov=cls._pick_float(servico.get("pRedutorGov"), servico.get("p_redutor_gov")),
+            indDest=cls._pick_int(servico.get("indDest"), servico.get("ind_dest"), default=0) or 0,
+            temDestinatario=bool(servico.get("destinatario") or servico.get("dest") or servico.get("temDestinatario")),
+            temImovel=bool(servico.get("imovel") or servico.get("temImovel")),
+            temRefNFSe=bool(servico.get("gRefNFSe") or servico.get("ref_nfse") or servico.get("temRefNFSe")),
+            cstReg=cls._pick_first(trib_reg.get("CSTReg"), servico.get("cst_reg")),
+            cClassTribReg=cls._pick_first(trib_reg.get("cClassTribReg"), servico.get("c_class_trib_reg")),
+            pDifUF=cls._pick_float(servico.get("pDifUF"), servico.get("p_dif_uf")),
+            pDifMun=cls._pick_float(servico.get("pDifMun"), servico.get("p_dif_mun")),
+            pDifCBS=cls._pick_float(servico.get("pDifCBS"), servico.get("p_dif_cbs")),
+            indDoacao=cls._pick_int(servico.get("indDoacao"), servico.get("ind_doacao")),
+            vIBSEstCred=cls._pick_float(servico.get("vIBSEstCred"), servico.get("v_ibs_est_cred")),
+            vCBSEstCred=cls._pick_float(servico.get("vCBSEstCred"), servico.get("v_cbs_est_cred")),
+        )
+        return cls.validar_ibscbs(req_val)
+
+    @classmethod
+    def _prevalidar_e_construir_dps(
+        cls,
+        *,
+        db: Session,
+        client_db: Optional[Client],
+        prestador: Dict[str, Any],
+        tomador: Dict[str, Any],
+        intermediario: Optional[Dict[str, Any]],
+        servico: Dict[str, Any],
+        tributacao_calc: Dict[str, Any],
+        req_serie: Optional[str],
+        req_numero: Optional[int],
+        data_competencia: Optional[str],
+        ambiente: str,
+        substituicao: Optional[Dict[str, Any]],
+        incluir_ibscbs: bool,
+        xsd_error_title: str = "XML da DPS falhou na validação XSD v1.01.",
+    ) -> Tuple[str, int, str, str]:
+        if incluir_ibscbs:
+            val_ibs = cls._validar_ibscbs_contexto(servico, tributacao_calc)
+            if not val_ibs.get("valido"):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "mensagem": "Regras tributárias IBS/CBS (NT 1.101) inválidas.",
+                        "erros": val_ibs.get("erros") or [],
+                    },
+                )
+
+        preview_serie = (
+            req_serie or (client_db.serie_dps_padrao if client_db else None) or "900"
+        ).strip() or "900"
+        preview_num = (
+            int(req_numero)
+            if req_numero is not None
+            else (int(client_db.ultimo_numero_dps or 0) + 1 if client_db else 1)
+        )
+
+        try:
+            xml_preview = build_dps_xml(
+                prestador=prestador,
+                tomador=tomador,
+                intermediario=intermediario,
+                servico=servico,
+                tributacao=tributacao_calc,
+                serie_dps=preview_serie,
+                numero_dps=preview_num,
+                data_competencia=data_competencia,
+                ambiente=ambiente,
+                substituicao=substituicao,
+                incluir_ibscbs=incluir_ibscbs,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        validacao_pre = XsdValidator.validar_dps(xml_preview)
+        if not validacao_pre["valido"]:
+            raise HTTPException(
+                status_code=422,
+                detail={"mensagem": xsd_error_title, "erros": validacao_pre["erros"]},
+            )
+
+        if client_db:
+            serie, numero, id_dps = cls.reservar_proximo_numero_dps(
+                db=db,
+                client_id=client_db.id,
+                serie_dps=req_serie or client_db.serie_dps_padrao,
+                numero_informado=req_numero,
+                codigo_municipio=prestador.get("codigo_municipio"),
+                documento_prestador=prestador.get("cnpj") or prestador.get("cpf"),
+            )
+            db.refresh(client_db)
+        else:
+            serie = preview_serie
+            numero = preview_num
+            id_dps = formatar_id_dps(
+                prestador.get("codigo_municipio", "3201308"),
+                prestador.get("cnpj") or prestador.get("cpf") or "",
+                serie,
+                numero,
+            )
+
+        if (serie, numero) != (preview_serie, preview_num):
+            try:
+                xml_bruto = build_dps_xml(
+                    prestador=prestador,
+                    tomador=tomador,
+                    intermediario=intermediario,
+                    servico=servico,
+                    tributacao=tributacao_calc,
+                    serie_dps=serie,
+                    numero_dps=numero,
+                    data_competencia=data_competencia,
+                    ambiente=ambiente,
+                    substituicao=substituicao,
+                    incluir_ibscbs=incluir_ibscbs,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            validacao_num = XsdValidator.validar_dps(xml_bruto)
+            if not validacao_num["valido"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"mensagem": xsd_error_title, "erros": validacao_num["erros"]},
+                )
+        else:
+            xml_bruto = xml_preview
+
+        return serie, numero, id_dps, xml_bruto
+
+    @staticmethod
+    def _sincronizar_batch_items_para_invoice(
+        db: Session,
+        inv: Invoice,
+        *,
+        item_status: Optional[str] = None,
+        last_error: Optional[str] = None,
+        attempts: Optional[int] = None,
+        chave_acesso: Optional[str] = None,
+    ) -> None:
+        from app.models import BatchImport, BatchImportItem
+        from app.services.batch_emission.validator import recompute_batch_counters
+
+        linked_items = db.query(BatchImportItem).filter(BatchImportItem.invoice_id == inv.id).all()
+        if not linked_items:
+            return
+        affected_batch_ids = set()
+        now_utc = datetime.datetime.now(datetime.UTC)
+        for item in linked_items:
+            affected_batch_ids.add(item.batch_id)
+            if item_status is not None:
+                item.status = item_status
+                item.processed_at = now_utc
+            item.last_error = last_error
+            if attempts is not None:
+                item.attempts = attempts
+            if chave_acesso is not None:
+                item.chave_acesso = chave_acesso
+            db.add(item)
+        db.flush()
+        for b_id in affected_batch_ids:
+            b_obj = db.query(BatchImport).filter(BatchImport.id == b_id).first()
+            if b_obj:
+                recompute_batch_counters(db, b_obj)
+
+    @staticmethod
+    async def _extrair_nfse_por_consultar_dps(
+        adn_client: AdnNfseClient,
+        res_cons: Dict[str, Any],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        conteudo = res_cons.get("conteudo")
+        chave_rec: Optional[str] = None
+        nfse_xml_rec: Optional[str] = None
+        if isinstance(conteudo, dict):
+            chave_rec = conteudo.get("chNFSe") or conteudo.get("chaveAcesso")
+            b64 = conteudo.get("nfseXmlGZipB64") or conteudo.get("arquivoXml")
+            if b64:
+                try:
+                    nfse_xml_rec = adn_client.descompactar_xml_gzip_b64(b64)
+                except Exception:
+                    nfse_xml_rec = None
+        if chave_rec and not nfse_xml_rec:
+            try:
+                res_nf = await adn_client.consultar_nfse(chave_rec)
+            except Exception:
+                res_nf = {}
+            if res_nf.get("sucesso"):
+                cont_nf = res_nf.get("conteudo") or res_nf.get("xml")
+                if isinstance(cont_nf, dict):
+                    b64_nf = cont_nf.get("nfseXmlGZipB64") or cont_nf.get("arquivoXml")
+                    if b64_nf:
+                        try:
+                            nfse_xml_rec = adn_client.descompactar_xml_gzip_b64(b64_nf)
+                        except Exception:
+                            nfse_xml_rec = None
+                    elif cont_nf.get("xml"):
+                        nfse_xml_rec = cont_nf.get("xml")
+                elif isinstance(cont_nf, str) and cont_nf.strip():
+                    nfse_xml_rec = cont_nf
+        return chave_rec, nfse_xml_rec
+
+    @classmethod
     def _calcular_tributacao_se_necessario(
+        cls,
         prestador: Dict[str, Any],
         servico: Dict[str, Any],
         tributacao_informada: Optional[Dict[str, Any]],
@@ -606,41 +910,199 @@ class AdnService:
 
         trib_in = tributacao_informada or {}
         iss_in = trib_in.get("iss") or {}
-        valor_serv = float(
-            servico.get("valor") or servico.get("valor_servicos") or trib_in.get("valor_servicos") or 0.0
+        ret_in = trib_in.get("retencoes_federais") or {}
+        trib_reg_in = servico.get("tributacao_regular") or {}
+
+        valor_serv = cls._pick_float(
+            servico.get("valor"),
+            servico.get("valor_servicos"),
+            trib_in.get("valor_servicos"),
+            default=0.0,
+        ) or 0.0
+        regime = str(
+            cls._pick_first(prestador.get("regime"), prestador.get("regime_tributario"), default="normal")
+        ).strip().lower()
+        c_class = str(cls._pick_first(servico.get("cClassTrib"), trib_in.get("cClassTrib"), default="000001"))
+        c_ind_op = str(
+            cls._pick_first(servico.get("cIndOp"), servico.get("indop"), trib_in.get("cIndOp"), default="100301")
         )
-        regime = str(prestador.get("regime") or prestador.get("regime_tributario") or "normal").lower()
-        c_class = str(servico.get("cClassTrib") or trib_in.get("cClassTrib") or "000001")
-        c_ind_op = str(servico.get("indop") or servico.get("cIndOp") or "100301")
 
         return calcular_tributacao(
             valor_servicos=valor_serv,
             regime_prestador=regime,
             cClassTrib=c_class,
-            cst=servico.get("cst") or trib_in.get("cst"),
+            cst=cls._pick_first(servico.get("cst"), trib_in.get("cst")),
             cIndOp=c_ind_op,
-            cTribNac=servico.get("cTribNac"),
-            cNBS=servico.get("cNBS") or servico.get("nbs"),
-            data_competencia=data_competencia,
-            desconto_incondicionado=float(servico.get("desconto_incondicionado") or 0.0),
-            desconto_condicionado=float(servico.get("desconto_condicionado") or 0.0),
-            reembolso_repasse_ressarcimento=float(servico.get("reembolso_repasse_ressarcimento") or 0.0),
-            deducao_reducao_ibscbs=float(servico.get("deducao_reducao_ibscbs") or 0.0),
-            aliquota_iss_informada=servico.get("aliquota_iss") or iss_in.get("aliquota"),
-            iss_retido=bool(servico.get("iss_retido") or iss_in.get("retido")),
-            reter_federais=bool(servico.get("reter_federais") or trib_in.get("reter_federais")),
-            p_ibs_uf=servico.get("p_ibs_uf") or trib_in.get("p_ibs_uf"),
-            p_ibs_mun=servico.get("p_ibs_mun") or trib_in.get("p_ibs_mun"),
-            p_cbs=servico.get("p_cbs") or trib_in.get("p_cbs"),
-            tp_ente_gov=servico.get("tpEnteGov") or trib_in.get("tp_ente_gov"),
-            p_redutor_gov=servico.get("pRedutorGov") or trib_in.get("p_redutor_gov"),
-            p_dif_uf=servico.get("pDifUF") or trib_in.get("p_dif_uf"),
-            p_dif_mun=servico.get("pDifMun") or trib_in.get("p_dif_mun"),
-            p_dif_cbs=servico.get("pDifCBS") or trib_in.get("p_dif_cbs"),
-            c_cred_pres=servico.get("cCredPres") or trib_in.get("c_cred_pres"),
-            cst_reg=(servico.get("tributacao_regular") or {}).get("CSTReg") or trib_in.get("cst_reg"),
-            c_class_trib_reg=(servico.get("tributacao_regular") or {}).get("cClassTribReg")
-            or trib_in.get("c_class_trib_reg"),
+            cTribNac=cls._pick_first(servico.get("cTribNac"), trib_in.get("cTribNac")),
+            cNBS=cls._pick_first(servico.get("cNBS"), servico.get("nbs"), trib_in.get("cNBS")),
+            data_competencia=cls._pick_first(data_competencia, trib_in.get("data_competencia")),
+            ano_competencia=cls._pick_int(servico.get("ano_competencia"), trib_in.get("ano_competencia")),
+            desconto_incondicionado=cls._pick_float(
+                servico.get("desconto_incondicionado"),
+                trib_in.get("desconto_incondicionado"),
+                default=0.0,
+            ) or 0.0,
+            desconto_condicionado=cls._pick_float(
+                servico.get("desconto_condicionado"),
+                trib_in.get("desconto_condicionado"),
+                default=0.0,
+            ) or 0.0,
+            deducao_reducao_iss=cls._pick_float(
+                servico.get("deducao_reducao_iss"),
+                trib_in.get("deducao_reducao_iss"),
+                default=0.0,
+            ) or 0.0,
+            reembolso_repasse_ressarcimento=cls._pick_float(
+                servico.get("reembolso_repasse_ressarcimento"),
+                trib_in.get("reembolso_repasse_ressarcimento"),
+                default=0.0,
+            ) or 0.0,
+            deducao_reducao_ibscbs=cls._pick_float(
+                servico.get("deducao_reducao_ibscbs"),
+                trib_in.get("deducao_reducao_ibscbs"),
+                default=0.0,
+            ) or 0.0,
+            aliquota_iss_informada=cls._pick_float(
+                servico.get("aliquota_iss"),
+                iss_in.get("aliquota"),
+                trib_in.get("aliquota_iss"),
+            ),
+            iss_retido=cls._pick_bool(
+                servico.get("iss_retido"),
+                iss_in.get("retido"),
+                trib_in.get("iss_retido"),
+                default=False,
+            ),
+            tp_ret_issqn=cls._pick_int(
+                servico.get("tp_ret_issqn"),
+                iss_in.get("tp_ret_issqn"),
+                trib_in.get("tp_ret_issqn"),
+            ),
+            trib_issqn=cls._pick_int(
+                servico.get("trib_issqn"),
+                iss_in.get("trib_issqn"),
+                trib_in.get("trib_issqn"),
+                default=1,
+            ) or 1,
+            reter_federais=cls._pick_bool(
+                servico.get("reter_federais"),
+                trib_in.get("reter_federais"),
+                default=False,
+            ),
+            cst_pis_cofins=str(
+                cls._pick_first(
+                    servico.get("cst_pis_cofins"),
+                    ret_in.get("cst_pis_cofins"),
+                    trib_in.get("cst_pis_cofins"),
+                    default="01",
+                )
+            ),
+            p_aliq_pis=cls._pick_float(
+                servico.get("p_aliq_pis"),
+                ret_in.get("aliquota_pis"),
+                trib_in.get("p_aliq_pis"),
+            ),
+            p_aliq_cofins=cls._pick_float(
+                servico.get("p_aliq_cofins"),
+                ret_in.get("aliquota_cofins"),
+                trib_in.get("p_aliq_cofins"),
+            ),
+            v_pis_informado=cls._pick_float(servico.get("v_pis_informado"), trib_in.get("v_pis_informado")),
+            v_cofins_informado=cls._pick_float(servico.get("v_cofins_informado"), trib_in.get("v_cofins_informado")),
+            tp_ret_pis_cofins=str(
+                cls._pick_first(
+                    servico.get("tp_ret_pis_cofins"),
+                    ret_in.get("tp_ret_pis_cofins"),
+                    trib_in.get("tp_ret_pis_cofins"),
+                    default="2",
+                )
+            ),
+            v_irrf_informado=cls._pick_float(servico.get("v_irrf_informado"), trib_in.get("v_irrf_informado")),
+            v_csll_informado=cls._pick_float(servico.get("v_csll_informado"), trib_in.get("v_csll_informado")),
+            v_inss_informado=cls._pick_float(servico.get("v_inss_informado"), trib_in.get("v_inss_informado")),
+            p_ibs_uf=cls._pick_float(servico.get("p_ibs_uf"), trib_in.get("p_ibs_uf")),
+            p_ibs_mun=cls._pick_float(servico.get("p_ibs_mun"), trib_in.get("p_ibs_mun")),
+            p_cbs=cls._pick_float(servico.get("p_cbs"), trib_in.get("p_cbs")),
+            p_red_aliq_uf=cls._pick_float(
+                servico.get("p_red_aliq_uf"),
+                servico.get("pRedAliqUF"),
+                trib_in.get("p_red_aliq_uf"),
+            ),
+            p_red_aliq_mun=cls._pick_float(
+                servico.get("p_red_aliq_mun"),
+                servico.get("pRedAliqMun"),
+                trib_in.get("p_red_aliq_mun"),
+            ),
+            p_red_aliq_cbs=cls._pick_float(
+                servico.get("p_red_aliq_cbs"),
+                servico.get("pRedAliqCBS"),
+                trib_in.get("p_red_aliq_cbs"),
+            ),
+            tp_ente_gov=cls._pick_int(
+                servico.get("tpEnteGov"),
+                servico.get("tp_ente_gov"),
+                trib_in.get("tp_ente_gov"),
+            ),
+            p_redutor_gov=cls._pick_float(
+                servico.get("pRedutorGov"),
+                servico.get("p_redutor_gov"),
+                trib_in.get("p_redutor_gov"),
+            ),
+            p_dif_uf=cls._pick_float(servico.get("pDifUF"), servico.get("p_dif_uf"), trib_in.get("p_dif_uf")),
+            p_dif_mun=cls._pick_float(servico.get("pDifMun"), servico.get("p_dif_mun"), trib_in.get("p_dif_mun")),
+            p_dif_cbs=cls._pick_float(servico.get("pDifCBS"), servico.get("p_dif_cbs"), trib_in.get("p_dif_cbs")),
+            c_cred_pres=cls._pick_first(
+                servico.get("cCredPres"),
+                servico.get("c_cred_pres"),
+                trib_in.get("c_cred_pres"),
+            ),
+            p_cred_pres_ibs=cls._pick_float(
+                servico.get("pCredPresIBS"),
+                servico.get("p_cred_pres_ibs"),
+                trib_in.get("p_cred_pres_ibs"),
+            ),
+            p_cred_pres_cbs=cls._pick_float(
+                servico.get("pCredPresCBS"),
+                servico.get("p_cred_pres_cbs"),
+                trib_in.get("p_cred_pres_cbs"),
+            ),
+            cst_reg=cls._pick_first(trib_reg_in.get("CSTReg"), servico.get("cst_reg"), trib_in.get("cst_reg")),
+            c_class_trib_reg=cls._pick_first(
+                trib_reg_in.get("cClassTribReg"),
+                servico.get("c_class_trib_reg"),
+                trib_in.get("c_class_trib_reg"),
+            ),
+            p_aliq_reg_ibs_uf=cls._pick_float(
+                trib_reg_in.get("pAliqEfeRegIBSUF"),
+                servico.get("p_aliq_reg_ibs_uf"),
+                trib_in.get("p_aliq_reg_ibs_uf"),
+            ),
+            p_aliq_reg_ibs_mun=cls._pick_float(
+                trib_reg_in.get("pAliqEfeRegIBSMun"),
+                servico.get("p_aliq_reg_ibs_mun"),
+                trib_in.get("p_aliq_reg_ibs_mun"),
+            ),
+            p_aliq_reg_cbs=cls._pick_float(
+                trib_reg_in.get("pAliqEfeRegCBS"),
+                servico.get("p_aliq_reg_cbs"),
+                trib_in.get("p_aliq_reg_cbs"),
+            ),
+            ind_doacao=cls._pick_int(servico.get("indDoacao"), servico.get("ind_doacao"), trib_in.get("ind_doacao")),
+            v_ibs_est_cred=cls._pick_float(
+                servico.get("vIBSEstCred"),
+                servico.get("v_ibs_est_cred"),
+                trib_in.get("v_ibs_est_cred"),
+            ),
+            v_cbs_est_cred=cls._pick_float(
+                servico.get("vCBSEstCred"),
+                servico.get("v_cbs_est_cred"),
+                trib_in.get("v_cbs_est_cred"),
+            ),
+            apurar_ibscbs_simples=cls._pick_bool(
+                servico.get("apurar_ibscbs_simples"),
+                trib_in.get("apurar_ibscbs_simples"),
+                default=False,
+            ),
         )
 
     @staticmethod
@@ -757,6 +1219,12 @@ class AdnService:
             data_competencia=req.data_competencia,
         )
 
+        validacao_ibscbs = (
+            cls._validar_ibscbs_contexto(servico, tributacao_calc)
+            if req.incluir_ibscbs
+            else {"valido": True, "erros": [], "avisos": []}
+        )
+
         try:
             xml_dps = build_dps_xml(
                 prestador=prestador,
@@ -790,6 +1258,7 @@ class AdnService:
             "tomador_resolvido": tomador,
             "servico_resolvido": servico,
             "tributacao_calculada": tributacao_calc,
+            "validacao_ibscbs": validacao_ibscbs,
             "validacao_xsd": validacao_xsd,
             "xml_dps": xml_dps,
         }
@@ -825,49 +1294,22 @@ class AdnService:
             data_competencia=req.data_competencia,
         )
 
-        if client_db:
-            serie, numero, id_dps = cls.reservar_proximo_numero_dps(
-                db=db,
-                client_id=client_db.id,
-                serie_dps=req.serie_dps or client_db.serie_dps_padrao,
-                numero_informado=req.numero_dps,
-                codigo_municipio=prestador.get("codigo_municipio"),
-                documento_prestador=prestador.get("cnpj") or prestador.get("cpf"),
-            )
-            db.refresh(client_db)
-        else:
-            serie = req.serie_dps or "900"
-            numero = req.numero_dps or 1
-            id_dps = formatar_id_dps(
-                prestador.get("codigo_municipio", "3201308"),
-                prestador.get("cnpj") or prestador.get("cpf") or "",
-                serie,
-                numero,
-            )
-
-        try:
-            xml_bruto = build_dps_xml(
-                prestador=prestador,
-                tomador=tomador,
-                intermediario=req.intermediario,
-                servico=servico,
-                tributacao=tributacao_calc,
-                serie_dps=serie,
-                numero_dps=numero,
-                data_competencia=req.data_competencia,
-                ambiente=ambiente,
-                substituicao=req.substituicao,
-                incluir_ibscbs=req.incluir_ibscbs,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        validacao_pre = XsdValidator.validar_dps(xml_bruto)
-        if not validacao_pre["valido"]:
-            raise HTTPException(
-                status_code=422,
-                detail={"mensagem": "XML da DPS falhou na validação XSD v1.01.", "erros": validacao_pre["erros"]},
-            )
+        serie, numero, id_dps, xml_bruto = cls._prevalidar_e_construir_dps(
+            db=db,
+            client_db=client_db,
+            prestador=prestador,
+            tomador=tomador,
+            intermediario=req.intermediario,
+            servico=servico,
+            tributacao_calc=tributacao_calc,
+            req_serie=req.serie_dps,
+            req_numero=req.numero_dps,
+            data_competencia=req.data_competencia,
+            ambiente=ambiente,
+            substituicao=req.substituicao,
+            incluir_ibscbs=req.incluir_ibscbs,
+            xsd_error_title="XML da DPS falhou na validação XSD v1.01.",
+        )
 
         cert_pem = None
         key_pem = None
@@ -890,7 +1332,10 @@ class AdnService:
         }
         tentativas_envio = 0
         ultimo_erro_envio: Optional[str] = None
+        erros_sefin_list: List[Any] = []
         foi_para_contingencia = False
+        foi_rejeitada = False
+        regime_prest = str(prestador.get("regime") or "normal").strip().lower()
 
         if req.transmitir and assinado_com_certificado:
             tentativas_envio = 1
@@ -902,28 +1347,22 @@ class AdnService:
                     xml_dps_path = cls._salvar_xml_disco(xml_assinado, "dps", f"{id_dps}.xml")
                 if not resultado_adn.get("sucesso"):
                     sc = int(resultado_adn.get("status_code") or 0)
-                    resp_obj = resultado_adn.get("resposta")
-                    erros_sefin = resp_obj.get("erros") if isinstance(resp_obj, dict) else None
-                    if isinstance(erros_sefin, list) and erros_sefin and isinstance(erros_sefin[0], dict):
-                        err0 = erros_sefin[0]
-                        cod_e = str(err0.get("Codigo") or err0.get("codigo") or "")
-                        desc_e = str(err0.get("Descricao") or err0.get("descricao") or "")
-                        ultimo_erro_envio = f"{cod_e} - {desc_e}".strip(" -")
-                        if cod_e == "E0039" and str(prestador.get("regime") or "normal").lower() == "normal":
-                            ultimo_erro_envio += (
-                                " (Dica: caso o prestador seja optante pelo Simples Nacional ME/EPP ou MEI, "
-                                "configure o Regime Tributário como 'simples' ou 'mei')."
-                            )
-                    else:
-                        ultimo_erro_envio = str(resultado_adn.get("mensagem") or resultado_adn.get("erro") or f"HTTP {sc}")
-                    if sc == 0 or sc >= 500:
+                    has_transport_err = bool(resultado_adn.get("erro") or resultado_adn.get("erro_transporte"))
+                    ultimo_erro_envio, erros_sefin_list = cls._extrair_erros_adn(
+                        resultado_adn,
+                        regime=regime_prest,
+                    )
+                    if sc == 0 or sc >= 500 or has_transport_err:
                         foi_para_contingencia = True
+                    else:
+                        foi_rejeitada = True
             except Exception as exc:
                 ultimo_erro_envio = f"Falha de rede/conexão: {exc}"
                 foi_para_contingencia = True
                 resultado_adn = {
                     "sucesso": False,
                     "status_code": 0,
+                    "erro_transporte": True,
                     "mensagem": f"Sem conexão com a Sefin/ADN. Nota salva na Fila de Contingência ({exc}).",
                 }
         elif req.transmitir and not assinado_com_certificado:
@@ -938,21 +1377,27 @@ class AdnService:
             client_db.ultimo_numero_dps = int(numero)
             db.add(client_db)
 
+        if resultado_adn.get("sucesso"):
+            status_nota = "gerada"
+        elif foi_para_contingencia:
+            status_nota = "fila_contingencia"
+        elif foi_rejeitada:
+            status_nota = "rejeitada"
+        else:
+            status_nota = "dps_gerada"
+
         xml_nfse_path = None
         if resultado_adn.get("nfse_xml"):
             xml_nfse_path = cls._salvar_xml_disco(resultado_adn["nfse_xml"], "nfse", f"{chave_gerada}.xml")
 
         xml_principal_path = xml_nfse_path or xml_dps_path
-        pdf_gerado_path = cls._gerar_pdf_danfse(xml_principal_path, chave_gerada, status="NORMAL")
+        pdf_gerado_path = (
+            cls._gerar_pdf_danfse(xml_principal_path, chave_gerada, status="NORMAL")
+            if status_nota != "rejeitada"
+            else None
+        )
 
         existing_inv = db.query(Invoice).filter(Invoice.chave == chave_gerada).first()
-        if resultado_adn.get("sucesso"):
-            status_nota = "gerada"
-        elif foi_para_contingencia:
-            status_nota = "fila_contingencia"
-        else:
-            status_nota = "dps_gerada"
-
         ch_substituida = clean_digits((req.substituicao or {}).get("chSubstda")) or None
         tomador_doc = clean_digits(tomador.get("documento") or tomador.get("cnpj") or tomador.get("cpf") or "")
         tomador_nome = tomador.get("razao_social") or tomador.get("nome") or ""
@@ -1028,7 +1473,13 @@ class AdnService:
 
         email_resultado = None
         deve_enviar_email = req.enviar_email or bool(client_db and client_db.enviar_email_automatico)
-        if deve_enviar_email and client_db and tomador_email and EmailService.obter_config_smtp(client_db):
+        if (
+            status_nota == "gerada"
+            and deve_enviar_email
+            and client_db
+            and tomador_email
+            and EmailService.obter_config_smtp(client_db)
+        ):
             try:
                 email_resultado = EmailService.enviar_nfse_por_email(
                     client_db=client_db,
@@ -1052,6 +1503,10 @@ class AdnService:
             "xml_assinado": xml_assinado,
             "envio_adn": resultado_adn,
             "email_enviado": email_resultado,
+            "erros": erros_sefin_list,
+            "ultimo_erro_envio": ultimo_erro_envio,
+            "tomador_documento": tomador_doc or None,
+            "tomador_nome": tomador_nome or None,
         }
 
     @classmethod
@@ -1069,12 +1524,18 @@ class AdnService:
         erros = 0
 
         for idx, item in enumerate(req.itens, start=1):
+            toma_dict = dict(item.tomador or {})
+            toma_doc_fallback = (
+                clean_digits(toma_dict.get("documento") or toma_dict.get("cnpj") or toma_dict.get("cpf") or "")
+                or None
+            )
+            toma_nome_fallback = toma_dict.get("razao_social") or toma_dict.get("nome") or None
             item_req = EmitirDpsRequest(
                 client_id=req.client_id,
                 customer_id=item.customer_id,
                 service_item_id=item.service_item_id,
                 ambiente=req.ambiente,
-                tomador=dict(item.tomador or {}),
+                tomador=toma_dict,
                 servico=dict(item.servico or {}),
                 tributacao=item.tributacao,
                 serie_dps=item.serie_dps or req.serie_dps or "900",
@@ -1092,20 +1553,26 @@ class AdnService:
                     autorizadas += 1
                 elif status_nota == "fila_contingencia":
                     fila_contingencia += 1
+                elif status_nota == "rejeitada":
+                    erros += 1
                 else:
                     geradas_offline += 1
                 resultados.append(
                     {
                         "indice": idx,
-                        "sucesso": True,
+                        "sucesso": status_nota != "rejeitada",
                         "customer_id": item.customer_id,
                         "service_item_id": item.service_item_id,
+                        "tomador_documento": res.get("tomador_documento") or toma_doc_fallback,
+                        "tomador_nome": res.get("tomador_nome") or toma_nome_fallback,
                         "invoice_id": res.get("invoice_id"),
                         "id_dps": res.get("id_dps"),
                         "chave_acesso": res.get("chave_acesso"),
                         "status_nota": status_nota,
                         "valor_servicos": (res.get("tributacao") or {}).get("valor_servicos"),
                         "valor_liquido": (res.get("tributacao") or {}).get("valor_liquido"),
+                        "erro": res.get("ultimo_erro_envio"),
+                        "erros": res.get("erros") or [],
                     }
                 )
             except HTTPException as exc:
@@ -1118,6 +1585,8 @@ class AdnService:
                         "status_nota": "erro",
                         "customer_id": item.customer_id,
                         "service_item_id": item.service_item_id,
+                        "tomador_documento": toma_doc_fallback,
+                        "tomador_nome": toma_nome_fallback,
                         "erro": exc.detail if isinstance(exc.detail, str) else json.dumps(exc.detail, ensure_ascii=False),
                     }
                 )
@@ -1131,6 +1600,8 @@ class AdnService:
                         "status_nota": "erro",
                         "customer_id": item.customer_id,
                         "service_item_id": item.service_item_id,
+                        "tomador_documento": toma_doc_fallback,
+                        "tomador_nome": toma_nome_fallback,
                         "erro": str(exc),
                     }
                 )
@@ -1147,11 +1618,25 @@ class AdnService:
     @classmethod
     async def cancelar_nfse(cls, db: Session, req: CancelarNfseRequest) -> Dict[str, Any]:
         invoice_db: Optional[Invoice] = None
-        if req.invoice_id:
+        if req.invoice_id is not None:
             invoice_db = db.query(Invoice).filter(Invoice.id == req.invoice_id).first()
+            if not invoice_db:
+                raise HTTPException(status_code=404, detail=f"Nota fiscal ID {req.invoice_id} não encontrada.")
         if not invoice_db and req.chave_nfse:
             chave_busca = clean_digits(req.chave_nfse)
             invoice_db = db.query(Invoice).filter(Invoice.chave == chave_busca).first()
+
+        if invoice_db:
+            if req.client_id is not None and invoice_db.client_id is not None and int(invoice_db.client_id) != int(req.client_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A nota fiscal informada não pertence à empresa (client_id) selecionada.",
+                )
+            if req.chave_nfse and invoice_db.chave and clean_digits(req.chave_nfse) != clean_digits(invoice_db.chave):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A chave da NFS-e informada diverge da nota fiscal localizada no banco.",
+                )
 
         effective_client_id = req.client_id or (invoice_db.client_id if invoice_db else None)
         client_db, prestador, signer, ambiente = cls._resolver_prestador_e_certificado(
@@ -1212,15 +1697,37 @@ class AdnService:
             "mensagem": "Evento de cancelamento gerado e validado localmente (modo simulação ou transmitir=False).",
         }
         if req.transmitir and assinado_com_certificado:
-            adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
-            resultado_adn = await adn_client.enviar_evento(xml_assinado, chave_nfse=chave_limpa)
+            try:
+                adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
+                resultado_adn = await adn_client.enviar_evento(xml_assinado, chave_nfse=chave_limpa)
+            except Exception as exc:
+                resultado_adn = {
+                    "sucesso": False,
+                    "status_code": 0,
+                    "erro_transporte": True,
+                    "mensagem": f"Falha de rede/conexão ao transmitir cancelamento ao ADN: {exc}",
+                    "erro": str(exc),
+                }
+        elif req.transmitir and not assinado_com_certificado:
+            resultado_adn = {
+                "sucesso": False,
+                "status_code": 0,
+                "mensagem": "Certificado A1 (.pfx) não configurado ou não informado para transmitir o cancelamento.",
+            }
 
-        if invoice_db:
-            if resultado_adn.get("sucesso") or not req.transmitir:
-                invoice_db.status = "cancelada"
+        if invoice_db and (not req.transmitir or resultado_adn.get("sucesso")):
+            invoice_db.status = "cancelada"
             invoice_db.motivo_cancelamento = f"[{req.motivo_codigo}] {req.motivo_descricao}"
             invoice_db.data_cancelamento = datetime.datetime.now(datetime.UTC)
             invoice_db.xml_evento_path = xml_evento_path
+            if invoice_db.xml_path or invoice_db.xml_dps_path:
+                pdf_canc = cls._gerar_pdf_danfse(
+                    invoice_db.xml_path or invoice_db.xml_dps_path,
+                    chave_limpa or str(invoice_db.id),
+                    status="CANCELADA",
+                )
+                if pdf_canc:
+                    invoice_db.pdf_path = pdf_canc
             db.add(invoice_db)
             db.commit()
 
@@ -1243,11 +1750,32 @@ class AdnService:
         current_user: Optional[User] = None,
     ) -> Dict[str, Any]:
         invoice_orig: Optional[Invoice] = None
-        if req.invoice_id_substituida:
+        if req.invoice_id_substituida is not None:
             invoice_orig = db.query(Invoice).filter(Invoice.id == req.invoice_id_substituida).first()
+            if not invoice_orig:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Nota fiscal original ID {req.invoice_id_substituida} não encontrada.",
+                )
         if not invoice_orig and req.chave_nfse_substituida:
             chave_orig_busca = clean_digits(req.chave_nfse_substituida)
             invoice_orig = db.query(Invoice).filter(Invoice.chave == chave_orig_busca).first()
+
+        if invoice_orig:
+            if req.client_id is not None and invoice_orig.client_id is not None and int(invoice_orig.client_id) != int(req.client_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A nota fiscal original não pertence à empresa (client_id) selecionada.",
+                )
+            if (
+                req.chave_nfse_substituida
+                and invoice_orig.chave
+                and clean_digits(req.chave_nfse_substituida) != clean_digits(invoice_orig.chave)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="A chave da NFS-e a substituir diverge da nota fiscal original localizada no banco.",
+                )
 
         effective_client_id = req.client_id or (invoice_orig.client_id if invoice_orig else None)
         client_db, prestador, signer, ambiente = cls._resolver_prestador_e_certificado(
@@ -1272,59 +1800,33 @@ class AdnService:
             "xMotivo": req.motivo_descricao,
         }
 
+        tomador_dict = dict(req.tomador or {})
+        servico_dict = dict(req.servico or {})
+        servico_dict.setdefault("codigo_municipio_prestacao", prestador.get("codigo_municipio") or "3201308")
+
         tributacao_calc = cls._calcular_tributacao_se_necessario(
             prestador=prestador,
-            servico=req.servico,
+            servico=servico_dict,
             tributacao_informada=req.tributacao,
             data_competencia=req.data_competencia,
         )
 
-        if client_db:
-            serie, numero, id_dps = cls.reservar_proximo_numero_dps(
-                db=db,
-                client_id=client_db.id,
-                serie_dps=req.serie_dps or client_db.serie_dps_padrao,
-                numero_informado=req.numero_dps,
-                codigo_municipio=prestador.get("codigo_municipio"),
-                documento_prestador=prestador.get("cnpj") or prestador.get("cpf"),
-            )
-            db.refresh(client_db)
-        else:
-            serie = req.serie_dps or "900"
-            numero = req.numero_dps or 1
-            id_dps = formatar_id_dps(
-                prestador.get("codigo_municipio", "3201308"),
-                prestador.get("cnpj") or prestador.get("cpf") or "",
-                serie,
-                numero,
-            )
-
-        try:
-            xml_dps_bruto = build_dps_xml(
-                prestador=prestador,
-                tomador=req.tomador,
-                intermediario=req.intermediario,
-                servico=req.servico,
-                tributacao=tributacao_calc,
-                serie_dps=serie,
-                numero_dps=numero,
-                data_competencia=req.data_competencia,
-                ambiente=ambiente,
-                substituicao=substituicao_dict,
-                incluir_ibscbs=req.incluir_ibscbs,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        validacao_dps_pre = XsdValidator.validar_dps(xml_dps_bruto)
-        if not validacao_dps_pre["valido"]:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "mensagem": "XML da DPS substituta falhou na validação XSD v1.01.",
-                    "erros": validacao_dps_pre["erros"],
-                },
-            )
+        serie, numero, id_dps, xml_dps_bruto = cls._prevalidar_e_construir_dps(
+            db=db,
+            client_db=client_db,
+            prestador=prestador,
+            tomador=tomador_dict,
+            intermediario=req.intermediario,
+            servico=servico_dict,
+            tributacao_calc=tributacao_calc,
+            req_serie=req.serie_dps,
+            req_numero=req.numero_dps,
+            data_competencia=req.data_competencia,
+            ambiente=ambiente,
+            substituicao=substituicao_dict,
+            incluir_ibscbs=req.incluir_ibscbs,
+            xsd_error_title="XML da DPS substituta falhou na validação XSD v1.01.",
+        )
 
         cert_pem = None
         key_pem = None
@@ -1345,9 +1847,50 @@ class AdnService:
             "status_code": 0,
             "mensagem": "DPS de substituição gerada e validada localmente (modo simulação ou transmitir=False).",
         }
+        tentativas_envio = 0
+        ultimo_erro_envio: Optional[str] = None
+        erros_sefin_list: List[Any] = []
+        foi_contingencia = False
+        foi_rejeitada = False
+        regime_prest = str(prestador.get("regime") or "normal").strip().lower()
+
         if req.transmitir and assinado_com_certificado:
-            adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
-            resultado_adn = await adn_client.emitir_dps(xml_dps_assinado)
+            tentativas_envio = 1
+            try:
+                adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
+                resultado_adn = await adn_client.emitir_dps(xml_dps_assinado)
+                if resultado_adn.get("dps_xml_assinado") and resultado_adn["dps_xml_assinado"] != xml_dps_assinado:
+                    xml_dps_assinado = resultado_adn["dps_xml_assinado"]
+                    xml_dps_path = cls._salvar_xml_disco(xml_dps_assinado, "dps", f"{id_dps}_subst.xml")
+                if not resultado_adn.get("sucesso"):
+                    sc = int(resultado_adn.get("status_code") or 0)
+                    has_transport_err = bool(resultado_adn.get("erro") or resultado_adn.get("erro_transporte"))
+                    ultimo_erro_envio, erros_sefin_list = cls._extrair_erros_adn(
+                        resultado_adn,
+                        regime=regime_prest,
+                    )
+                    if sc == 0 or sc >= 500 or has_transport_err:
+                        foi_contingencia = True
+                    else:
+                        foi_rejeitada = True
+            except Exception as exc:
+                foi_contingencia = True
+                ultimo_erro_envio = f"Falha de rede/conexão na substituição: {exc}"
+                resultado_adn = {
+                    "sucesso": False,
+                    "status_code": 0,
+                    "erro_transporte": True,
+                    "mensagem": f"Falha de rede/conexão ao substituir no ADN: {exc}",
+                    "erro": str(exc),
+                }
+        elif req.transmitir and not assinado_com_certificado:
+            foi_contingencia = True
+            ultimo_erro_envio = "Aguardando certificado A1 para assinatura e transmissão da DPS substituta."
+            resultado_adn = {
+                "sucesso": False,
+                "status_code": 0,
+                "mensagem": ultimo_erro_envio,
+            }
 
         chave_substituta = (
             resultado_adn.get("chave_acesso")
@@ -1376,10 +1919,31 @@ class AdnService:
             validacao_evento_e105102 = XsdValidator.validar_evento(xml_evento_e105102)
             xml_evento_path = cls._salvar_xml_disco(xml_evento_e105102, "eventos", f"PRE{chave_orig}105102.xml")
 
-        if invoice_orig:
+        if resultado_adn.get("sucesso"):
+            status_subst = "gerada"
+        elif foi_contingencia:
+            status_subst = "fila_contingencia"
+        elif foi_rejeitada:
+            status_subst = "rejeitada"
+        else:
+            status_subst = "dps_gerada"
+
+        xml_nfse_path = None
+        if resultado_adn.get("nfse_xml"):
+            xml_nfse_path = cls._salvar_xml_disco(resultado_adn["nfse_xml"], "nfse", f"{chave_substituta}.xml")
+
+        xml_principal_path = xml_nfse_path or xml_dps_path
+        pdf_gerado_path = (
+            cls._gerar_pdf_danfse(xml_principal_path, chave_substituta, status="NORMAL")
+            if status_subst != "rejeitada"
+            else None
+        )
+
+        if invoice_orig and (not req.transmitir or resultado_adn.get("sucesso")):
             invoice_orig.status = "substituida"
             invoice_orig.chave_substituta = chave_substituta
             invoice_orig.motivo_cancelamento = f"[Substituição {req.motivo_codigo}] {req.motivo_descricao}"
+            invoice_orig.data_cancelamento = datetime.datetime.now(datetime.UTC)
             invoice_orig.xml_evento_path = xml_evento_path
             db.add(invoice_orig)
 
@@ -1389,6 +1953,21 @@ class AdnService:
 
         reforma = tributacao_calc.get("reforma_tributaria") or {}
         iss_info = tributacao_calc.get("iss") or {}
+        tomador_doc = clean_digits(tomador_dict.get("documento") or tomador_dict.get("cnpj") or tomador_dict.get("cpf") or "")
+        tomador_nome = tomador_dict.get("razao_social") or tomador_dict.get("nome") or ""
+        tomador_email = tomador_dict.get("email") or ""
+        payload_resumo = json.dumps(
+            {
+                "prestador": prestador,
+                "tomador": tomador_dict,
+                "servico": servico_dict,
+                "ambiente": ambiente,
+                "data_competencia": req.data_competencia,
+                "substituicao": substituicao_dict,
+            },
+            ensure_ascii=False,
+        )
+
         nova_nota = db.query(Invoice).filter(Invoice.chave == chave_substituta).first()
         audit_uid, audit_uname = cls._resolve_audit_user(db, current_user)
         if not nova_nota:
@@ -1396,7 +1975,7 @@ class AdnService:
                 client_id=client_db.id if client_db else None,
                 numero=str(numero),
                 chave=chave_substituta,
-                status="gerada" if resultado_adn.get("sucesso") else "dps_substituta",
+                status=status_subst,
                 tipo="emitidas",
                 valor=float(tributacao_calc.get("valor_servicos") or 0.0),
                 data_emissao=datetime.datetime.now(datetime.UTC),
@@ -1405,19 +1984,38 @@ class AdnService:
                 numero_dps=int(numero),
                 chave_substituida=chave_orig,
                 xml_dps_path=xml_dps_path,
-                xml_path=xml_dps_path,
+                xml_path=xml_principal_path,
+                pdf_path=pdf_gerado_path,
                 valor_iss=float(iss_info.get("valor") or 0.0),
                 valor_ibs=float(reforma.get("valor_ibs") or 0.0),
                 valor_cbs=float(reforma.get("valor_cbs") or 0.0),
                 valor_liquido=float(tributacao_calc.get("valor_liquido") or 0.0),
-                c_trib_nac=clean_digits(req.servico.get("cTribNac") or "010101").zfill(6),
-                c_nbs=clean_digits(req.servico.get("cNBS") or ""),
+                c_trib_nac=clean_digits(servico_dict.get("cTribNac") or "010101").zfill(6),
+                c_nbs=clean_digits(servico_dict.get("cNBS") or ""),
                 c_class_trib=str(reforma.get("cClassTrib") or "000001"),
                 cst_ibscbs=str(reforma.get("cst") or "000"),
+                tomador_documento=tomador_doc or None,
+                tomador_nome=tomador_nome or None,
+                tomador_email=tomador_email or None,
+                tentativas_envio=tentativas_envio,
+                ultimo_erro_envio=ultimo_erro_envio,
+                payload_dps_json=payload_resumo,
                 created_by_user_id=audit_uid,
                 created_by_username=audit_uname,
                 ambiente=ambiente,
             )
+            db.add(nova_nota)
+        else:
+            nova_nota.status = status_subst
+            nova_nota.xml_dps_path = xml_dps_path
+            nova_nota.xml_path = xml_principal_path
+            if pdf_gerado_path:
+                nova_nota.pdf_path = pdf_gerado_path
+            nova_nota.tentativas_envio = (nova_nota.tentativas_envio or 0) + tentativas_envio
+            nova_nota.ultimo_erro_envio = ultimo_erro_envio
+            nova_nota.payload_dps_json = payload_resumo
+            if not nova_nota.ambiente:
+                nova_nota.ambiente = ambiente
             db.add(nova_nota)
 
         db.commit()
@@ -1429,13 +2027,19 @@ class AdnService:
             "chave_nfse_substituida": chave_orig,
             "chave_nfse_substituta": chave_substituta,
             "id_dps_substituta": id_dps,
+            "status_nota": status_subst,
             "assinado_com_certificado": assinado_com_certificado,
             "validacao_xsd_dps": validacao_dps_pos,
             "validacao_xsd_evento_e105102": validacao_evento_e105102,
             "tributacao": tributacao_calc,
+            "xml_dps_path": xml_dps_path,
+            "xml_path": xml_principal_path,
+            "pdf_path": nova_nota.pdf_path,
             "xml_dps_substituta": xml_dps_assinado,
             "xml_evento_e105102": xml_evento_e105102,
             "envio_adn": resultado_adn,
+            "erros": erros_sefin_list,
+            "ultimo_erro_envio": ultimo_erro_envio,
         }
 
     @staticmethod
@@ -1507,7 +2111,7 @@ class AdnService:
         req: ReenviarFilaRequest,
         allowed_client_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        query = db.query(Invoice).filter(Invoice.status.in_(["dps_gerada", "fila_contingencia"]))
+        query = db.query(Invoice.id).filter(Invoice.status.in_(["dps_gerada", "fila_contingencia"]))
         if req.client_id is not None:
             query = query.filter(Invoice.client_id == req.client_id)
         elif allowed_client_ids is not None:
@@ -1518,20 +2122,35 @@ class AdnService:
         if req.invoice_ids:
             query = query.filter(Invoice.id.in_(req.invoice_ids))
 
-        pendentes = query.order_by(Invoice.id.asc()).all()
-        processadas = []
+        pending_ids = [int(row[0]) for row in query.order_by(Invoice.id.asc()).all()]
+        db.rollback()
+
+        processadas: List[Dict[str, Any]] = []
         autorizadas = 0
         falhas = 0
 
-        for inv in pendentes:
+        for inv_id in pending_ids:
+            inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+            if not inv or (inv.status or "") not in {"dps_gerada", "fila_contingencia"}:
+                db.rollback()
+                continue
+
             resolved_dps = resolve_storage_path(inv.xml_dps_path, kind="downloads") if inv.xml_dps_path else None
             if not resolved_dps or not resolved_dps.exists():
                 inv.ultimo_erro_envio = "Arquivo XML da DPS não encontrado no disco."
+                cls._sincronizar_batch_items_para_invoice(
+                    db,
+                    inv,
+                    last_error=inv.ultimo_erro_envio,
+                    attempts=inv.tentativas_envio,
+                )
+                db.add(inv)
+                db.commit()
                 falhas += 1
-                processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
+                processadas.append({"invoice_id": inv_id, "sucesso": False, "erro": inv.ultimo_erro_envio})
                 continue
 
-            client_db, _, signer, ambiente = cls._resolver_prestador_e_certificado(
+            client_db, prestador, signer, ambiente = cls._resolver_prestador_e_certificado(
                 db=db,
                 client_id=inv.client_id,
                 prestador_payload=None,
@@ -1541,8 +2160,16 @@ class AdnService:
             )
             if signer is None:
                 inv.ultimo_erro_envio = "Prestador não possui Certificado A1 configurado para reenvio."
+                cls._sincronizar_batch_items_para_invoice(
+                    db,
+                    inv,
+                    last_error=inv.ultimo_erro_envio,
+                    attempts=inv.tentativas_envio,
+                )
+                db.add(inv)
+                db.commit()
                 falhas += 1
-                processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
+                processadas.append({"invoice_id": inv_id, "sucesso": False, "erro": inv.ultimo_erro_envio})
                 continue
 
             xml_content = resolved_dps.read_text(encoding="utf-8")
@@ -1550,45 +2177,270 @@ class AdnService:
                 xml_content = signer.sign_xml(xml_content, tag_to_sign="infDPS")
                 resolved_dps.write_text(xml_content, encoding="utf-8")
 
-            inv.tentativas_envio = (inv.tentativas_envio or 0) + 1
-            try:
-                adn_client = AdnNfseClient(
-                    ambiente=ambiente,
-                    cert_pem=signer.get_pem_certificate(),
-                    key_pem=signer.get_pem_private_key(),
-                )
-                res = await adn_client.emitir_dps(xml_content)
-                if res.get("sucesso"):
-                    nova_chave = res.get("chave_acesso") or inv.chave
-                    inv.chave = nova_chave
-                    inv.status = "gerada"
-                    inv.ultimo_erro_envio = None
-                    if res.get("nfse_xml"):
-                        inv.xml_path = cls._salvar_xml_disco(res["nfse_xml"], "nfse", f"{nova_chave}.xml")
-                    pdf_path = cls._gerar_pdf_danfse(inv.xml_path or inv.xml_dps_path, nova_chave, status="NORMAL")
-                    if pdf_path:
-                        inv.pdf_path = pdf_path
+            inv_id_dps = inv.id_dps
+            inv_chave_subst = inv.chave_substituida
+            regime_prest = str((prestador or {}).get("regime") or "normal").strip().lower()
+            cert_pem = signer.get_pem_certificate()
+            key_pem = signer.get_pem_private_key()
+            adn_client = AdnNfseClient(ambiente=ambiente, cert_pem=cert_pem, key_pem=key_pem)
+
+            # Encerra transação de leitura antes de qualquer chamada HTTP ao ADN
+            db.rollback()
+
+            # 1. Verificação prévia de idempotência (evita duplicidade se timeout anterior já autorizou no ADN)
+            if inv_id_dps:
+                try:
+                    res_cons = await adn_client.consultar_dps(inv_id_dps)
+                except Exception as exc:
+                    res_cons = {"sucesso": False, "status_code": 0, "erro": str(exc)}
+
+                sc_cons = int(res_cons.get("status_code") or 0)
+                if res_cons.get("sucesso") and sc_cons == 200:
+                    chave_rec, nfse_xml_rec = await cls._extrair_nfse_por_consultar_dps(adn_client, res_cons)
+                    inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+                    if inv:
+                        nova_chave = chave_rec or inv.chave
+                        inv.chave = nova_chave
+                        inv.status = "gerada"
+                        inv.ultimo_erro_envio = None
+                        if nfse_xml_rec:
+                            inv.xml_path = cls._salvar_xml_disco(nfse_xml_rec, "nfse", f"{nova_chave}.xml")
+                        pdf_path = cls._gerar_pdf_danfse(inv.xml_path or inv.xml_dps_path, nova_chave, status="NORMAL")
+                        if pdf_path:
+                            inv.pdf_path = pdf_path
+                        if inv_chave_subst:
+                            orig_inv = db.query(Invoice).filter(Invoice.chave == clean_digits(inv_chave_subst)).first()
+                            if orig_inv:
+                                orig_inv.status = "substituida"
+                                orig_inv.chave_substituta = nova_chave
+                                db.add(orig_inv)
+                        cls._sincronizar_batch_items_para_invoice(
+                            db,
+                            inv,
+                            item_status="AUTHORIZED",
+                            last_error=None,
+                            attempts=inv.tentativas_envio,
+                            chave_acesso=nova_chave,
+                        )
+                        db.add(inv)
+                        db.commit()
                     autorizadas += 1
-                    processadas.append({"invoice_id": inv.id, "sucesso": True, "chave_acesso": nova_chave})
+                    processadas.append(
+                        {
+                            "invoice_id": inv_id,
+                            "sucesso": True,
+                            "chave_acesso": chave_rec,
+                            "recuperada_por_consulta": True,
+                        }
+                    )
+                    continue
+                if sc_cons != 404:
+                    erro_cons = f"Consulta prévia ao ADN indisponível (HTTP {sc_cons}); mantida na fila."
+                    inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+                    if inv:
+                        inv.status = "fila_contingencia"
+                        inv.ultimo_erro_envio = erro_cons
+                        cls._sincronizar_batch_items_para_invoice(
+                            db,
+                            inv,
+                            last_error=erro_cons,
+                            attempts=inv.tentativas_envio,
+                        )
+                        db.add(inv)
+                        db.commit()
+                    falhas += 1
+                    processadas.append({"invoice_id": inv_id, "sucesso": False, "erro": erro_cons})
+                    continue
+
+            # 2. Reenvio efetivo da DPS (somente quando 404 confirmado ou sem id_dps)
+            try:
+                res = await adn_client.emitir_dps(xml_content)
+            except Exception as exc:
+                res = {
+                    "sucesso": False,
+                    "status_code": 0,
+                    "erro_transporte": True,
+                    "erro": f"Erro de conexão no reenvio: {exc}",
+                }
+
+            inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+            if not inv:
+                db.rollback()
+                continue
+
+            inv.tentativas_envio = (inv.tentativas_envio or 0) + 1
+            if res.get("sucesso"):
+                nova_chave = res.get("chave_acesso") or inv.chave
+                inv.chave = nova_chave
+                inv.status = "gerada"
+                inv.ultimo_erro_envio = None
+                if res.get("nfse_xml"):
+                    inv.xml_path = cls._salvar_xml_disco(res["nfse_xml"], "nfse", f"{nova_chave}.xml")
+                pdf_path = cls._gerar_pdf_danfse(inv.xml_path or inv.xml_dps_path, nova_chave, status="NORMAL")
+                if pdf_path:
+                    inv.pdf_path = pdf_path
+                if inv_chave_subst:
+                    orig_inv = db.query(Invoice).filter(Invoice.chave == clean_digits(inv_chave_subst)).first()
+                    if orig_inv:
+                        orig_inv.status = "substituida"
+                        orig_inv.chave_substituta = nova_chave
+                        db.add(orig_inv)
+                cls._sincronizar_batch_items_para_invoice(
+                    db,
+                    inv,
+                    item_status="AUTHORIZED",
+                    last_error=None,
+                    attempts=inv.tentativas_envio,
+                    chave_acesso=nova_chave,
+                )
+                db.add(inv)
+                db.commit()
+                autorizadas += 1
+                processadas.append({"invoice_id": inv_id, "sucesso": True, "chave_acesso": nova_chave})
+            else:
+                sc = int(res.get("status_code") or 0)
+                has_transport_err = bool(res.get("erro") or res.get("erro_transporte"))
+                erro_msg, erros_list = cls._extrair_erros_adn(res, regime=regime_prest)
+                if 400 <= sc < 500 and not has_transport_err:
+                    inv.status = "rejeitada"
+                    inv.ultimo_erro_envio = erro_msg
+                    cls._sincronizar_batch_items_para_invoice(
+                        db,
+                        inv,
+                        item_status="REJECTED",
+                        last_error=erro_msg,
+                        attempts=inv.tentativas_envio,
+                    )
+                    db.add(inv)
+                    db.commit()
+                    falhas += 1
+                    processadas.append(
+                        {
+                            "invoice_id": inv_id,
+                            "sucesso": False,
+                            "status_nota": "rejeitada",
+                            "erro": erro_msg,
+                            "erros": erros_list,
+                        }
+                    )
                 else:
                     inv.status = "fila_contingencia"
-                    inv.ultimo_erro_envio = str(res.get("mensagem") or res.get("erro") or "Falha no reenvio ADN")
+                    inv.ultimo_erro_envio = erro_msg
+                    cls._sincronizar_batch_items_para_invoice(
+                        db,
+                        inv,
+                        last_error=erro_msg,
+                        attempts=inv.tentativas_envio,
+                    )
+                    db.add(inv)
+                    db.commit()
                     falhas += 1
-                    processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
-            except Exception as exc:
-                inv.status = "fila_contingencia"
-                inv.ultimo_erro_envio = f"Erro de conexão no reenvio: {exc}"
-                falhas += 1
-                processadas.append({"invoice_id": inv.id, "sucesso": False, "erro": inv.ultimo_erro_envio})
+                    processadas.append({"invoice_id": inv_id, "sucesso": False, "erro": erro_msg})
 
-            db.add(inv)
-
-        db.commit()
         return {
-            "total_processadas": len(pendentes),
+            "total_processadas": len(pending_ids),
             "autorizadas": autorizadas,
             "falhas": falhas,
             "resultados": processadas,
+        }
+
+    @classmethod
+    async def consultar_item_fila_contingencia(cls, db: Session, invoice_id: int) -> Dict[str, Any]:
+        """Consulta o status de uma DPS pendente na Sefin/ADN e sincroniza banco local e lote."""
+        inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Nota pendente não encontrada na fila.")
+        status_anterior = inv.status or ""
+        if status_anterior not in {"dps_gerada", "fila_contingencia"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Nota em estado '{status_anterior}' não está pendente na fila de contingência.",
+            )
+        if not inv.id_dps:
+            raise HTTPException(status_code=400, detail="Nota pendente não possui ID de DPS para consulta no ADN.")
+
+        _, _, signer, ambiente = cls._resolver_prestador_e_certificado(
+            db=db,
+            client_id=inv.client_id,
+            prestador_payload=None,
+            cert_b64=None,
+            cert_password=None,
+            ambiente_req="",
+        )
+        if signer is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Prestador não possui Certificado A1 configurado para consultar o ADN.",
+            )
+
+        inv_id_dps = inv.id_dps
+        inv_chave_subst = inv.chave_substituida
+        adn_client = AdnNfseClient(
+            ambiente=ambiente,
+            cert_pem=signer.get_pem_certificate(),
+            key_pem=signer.get_pem_private_key(),
+        )
+        db.rollback()
+
+        try:
+            res_cons = await adn_client.consultar_dps(inv_id_dps)
+        except Exception as exc:
+            res_cons = {"sucesso": False, "status_code": 0, "erro": str(exc)}
+
+        sc = int(res_cons.get("status_code") or 0)
+        if res_cons.get("sucesso") and sc == 200:
+            chave_rec, nfse_xml_rec = await cls._extrair_nfse_por_consultar_dps(adn_client, res_cons)
+            inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+            nova_chave = chave_rec or inv.chave
+            inv.chave = nova_chave
+            inv.status = "gerada"
+            inv.ultimo_erro_envio = None
+            if nfse_xml_rec:
+                inv.xml_path = cls._salvar_xml_disco(nfse_xml_rec, "nfse", f"{nova_chave}.xml")
+            pdf_path = cls._gerar_pdf_danfse(inv.xml_path or inv.xml_dps_path, nova_chave, status="NORMAL")
+            if pdf_path:
+                inv.pdf_path = pdf_path
+            if inv_chave_subst:
+                orig_inv = db.query(Invoice).filter(Invoice.chave == clean_digits(inv_chave_subst)).first()
+                if orig_inv:
+                    orig_inv.status = "substituida"
+                    orig_inv.chave_substituta = nova_chave
+                    db.add(orig_inv)
+            cls._sincronizar_batch_items_para_invoice(
+                db,
+                inv,
+                item_status="AUTHORIZED",
+                last_error=None,
+                attempts=inv.tentativas_envio,
+                chave_acesso=nova_chave,
+            )
+            db.add(inv)
+            db.commit()
+            return {
+                "invoice_id": invoice_id,
+                "id_dps": inv_id_dps,
+                "status_anterior": status_anterior,
+                "status_atual": "gerada",
+                "chave_nfse": nova_chave,
+                "mensagem": "NFS-e localizada e autorizada no ADN.",
+            }
+
+        inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+        if sc == 404:
+            msg = "DPS não localizada na Sefin (404). Segura para reenvio."
+        else:
+            err_txt, _ = cls._extrair_erros_adn(res_cons)
+            msg = f"Consulta prévia ao ADN retornou HTTP {sc}: {err_txt}"
+        inv.ultimo_erro_envio = msg[:1000]
+        db.add(inv)
+        db.commit()
+        return {
+            "invoice_id": invoice_id,
+            "id_dps": inv_id_dps,
+            "status_anterior": status_anterior,
+            "status_atual": inv.status,
+            "chave_nfse": inv.chave,
+            "mensagem": msg,
         }
 
     @classmethod
@@ -1646,6 +2498,10 @@ class AdnService:
                 detail=f"O cliente '{client_db.razao_social}' precisa ter um Certificado A1 (.pfx) configurado para sincronizar o Cofre ADN.",
             )
 
+        cnpj_cliente_limpo = clean_digits(client_db.cnpj)
+        if not cnpj_cliente_limpo:
+            raise HTTPException(status_code=400, detail="Cliente sem CNPJ configurado para consulta DistDFe.")
+
         adn_client = AdnNfseClient(
             ambiente=ambiente,
             cert_pem=signer.get_pem_certificate(),
@@ -1657,13 +2513,55 @@ class AdnService:
         novas_notas = 0
         atualizadas = 0
         documentos_lidos = 0
-        cnpj_cliente_limpo = clean_digits(client_db.cnpj)
+        eventos_processados = 0
+        parcial = False
+        aviso: Optional[str] = None
 
         from pynfse.xml_parser import extrair_dados_nfse
 
-        for _ in range(req.max_paginas):
-            res = await adn_client.listar_dfe_adn(ultimo_nsu=maior_nsu)
+        def _local_tag(el: ET.Element) -> str:
+            return el.tag.split("}")[-1] if "}" in el.tag else el.tag
+
+        def _find_text(root: ET.Element, tag_name: str) -> Optional[str]:
+            for elem in root.iter():
+                if _local_tag(elem) == tag_name and elem.text and elem.text.strip():
+                    return elem.text.strip()
+            return None
+
+        def _find_first_el(root: ET.Element, tag_name: str) -> Optional[ET.Element]:
+            for elem in root.iter():
+                if _local_tag(elem) == tag_name:
+                    return elem
+            return None
+
+        def _parse_iso_dt(raw: Optional[str]) -> datetime.datetime:
+            if raw:
+                try:
+                    return datetime.datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+            return datetime.datetime.now(datetime.UTC)
+
+        for page_idx in range(req.max_paginas):
+            try:
+                res = await adn_client.listar_dfe_adn(cnpj=cnpj_cliente_limpo, ultimo_nsu=maior_nsu)
+            except Exception as exc:
+                res = {"sucesso": False, "status_code": 0, "erro": str(exc)}
+
             if not res.get("sucesso"):
+                msg_err = str(
+                    res.get("erro")
+                    or res.get("mensagem")
+                    or (res.get("dados") if isinstance(res.get("dados"), str) else "")
+                    or f"HTTP {res.get('status_code') or 0}"
+                )
+                if page_idx == 0:
+                    raise HTTPException(status_code=502, detail=f"Falha ao consultar Cofre ADN: {msg_err}")
+                parcial = True
+                aviso = (
+                    f"Sincronização parcial: falha na página {page_idx + 1} ({msg_err}). "
+                    f"Documentos até NSU {maior_nsu} foram salvos."
+                )
                 break
 
             dados = res.get("dados") or {}
@@ -1678,10 +2576,90 @@ class AdnService:
                     maior_nsu = nsu_item
 
                 xml_descompactado = item.get("xml_descompactado")
-                chave = clean_digits(item.get("ChaveAcesso") or item.get("chaveAcesso") or "")
+                if not xml_descompactado:
+                    b64_doc = item.get("ArquivoXml") or item.get("arquivoXml")
+                    if b64_doc:
+                        try:
+                            xml_descompactado = adn_client.descompactar_xml_gzip_b64(b64_doc)
+                        except Exception:
+                            xml_descompactado = None
                 if not xml_descompactado:
                     continue
 
+                root_xml: Optional[ET.Element] = None
+                try:
+                    root_xml = ET.fromstring(xml_descompactado)
+                except ET.ParseError:
+                    root_xml = None
+
+                root_tag = _local_tag(root_xml) if root_xml is not None else ""
+                is_evento = root_tag in {"evento", "pedRegEvento"} or (
+                    root_xml is not None
+                    and _find_first_el(root_xml, "infNFSe") is None
+                    and (
+                        _find_first_el(root_xml, "infEvento") is not None
+                        or _find_first_el(root_xml, "pedRegEvento") is not None
+                    )
+                )
+
+                if is_evento and root_xml is not None:
+                    ch_ref = clean_digits(
+                        _find_text(root_xml, "chNFSe")
+                        or item.get("ChaveAcesso")
+                        or item.get("chaveAcesso")
+                        or ""
+                    )
+                    evt_code = ""
+                    for elem in root_xml.iter():
+                        t_name = _local_tag(elem)
+                        if re.match(r"^e\d{6}$", t_name):
+                            evt_code = t_name
+                            break
+                    ch_subst = clean_digits(
+                        _find_text(root_xml, "chSubstituta")
+                        or _find_text(root_xml, "chNFSeSubstituta")
+                        or ""
+                    )
+                    x_motivo = _find_text(root_xml, "xMotivo") or _find_text(root_xml, "xDesc")
+                    dt_evt = _parse_iso_dt(_find_text(root_xml, "dhProc") or _find_text(root_xml, "dhEvento"))
+                    xml_evt_path = cls._salvar_xml_disco(
+                        xml_descompactado,
+                        "eventos",
+                        f"EVT_{ch_ref or nsu_item}_{nsu_item}.xml",
+                    )
+
+                    existing_evt = db.query(Invoice).filter(Invoice.chave == ch_ref).first() if ch_ref else None
+                    if existing_evt:
+                        existing_evt.xml_evento_path = xml_evt_path
+                        if evt_code in {"e101101", "e105104", "e305101"}:
+                            existing_evt.status = "cancelada"
+                            existing_evt.motivo_cancelamento = (
+                                x_motivo or existing_evt.motivo_cancelamento or f"Evento {evt_code} (Cofre ADN)"
+                            )
+                            existing_evt.data_cancelamento = dt_evt
+                            if existing_evt.xml_path:
+                                pdf_canc = cls._gerar_pdf_danfse(
+                                    existing_evt.xml_path,
+                                    ch_ref,
+                                    status="CANCELADA",
+                                )
+                                if pdf_canc:
+                                    existing_evt.pdf_path = pdf_canc
+                        elif evt_code == "e105102":
+                            existing_evt.status = "substituida"
+                            if ch_subst:
+                                existing_evt.chave_substituta = ch_subst
+                            existing_evt.motivo_cancelamento = (
+                                x_motivo or existing_evt.motivo_cancelamento or f"Substituída via Cofre ADN ({evt_code})"
+                            )
+                            existing_evt.data_cancelamento = dt_evt
+                        db.add(existing_evt)
+                        db.flush()
+                        atualizadas += 1
+                    eventos_processados += 1
+                    continue
+
+                chave = clean_digits(item.get("ChaveAcesso") or item.get("chaveAcesso") or "")
                 if not chave:
                     m_ch = re.search(r'Id="NFS(\d{50})"', xml_descompactado)
                     if m_ch:
@@ -1696,12 +2674,45 @@ class AdnService:
                 except Exception:
                     info_xml = {}
 
-                # Identifica se a nota é emitida ou recebida pelo CNPJ do prestador no XML
-                m_prest = re.search(r"<emit>.*?<CNPJ>(\d{14})</CNPJ>.*?</emit>", xml_descompactado, re.DOTALL)
-                if not m_prest:
-                    m_prest = re.search(r"<prest>.*?<CNPJ>(\d{14})</CNPJ>.*?</prest>", xml_descompactado, re.DOTALL)
-                cnpj_emitente = m_prest.group(1) if m_prest else cnpj_cliente_limpo
+                c_stat = _find_text(root_xml, "cStat") if root_xml is not None else None
+                if c_stat == "101":
+                    status_nfse = "cancelada"
+                elif c_stat == "104":
+                    status_nfse = "substituida"
+                else:
+                    status_nfse = "gerada"
+
+                tp_amb_xml = _find_text(root_xml, "tpAmb") if root_xml is not None else None
+                amb_nota = "producao" if tp_amb_xml == "1" else ("homologacao" if tp_amb_xml == "2" else ambiente)
+
+                ch_substda = (
+                    clean_digits(_find_text(root_xml, "chSubstda") or "")
+                    if root_xml is not None
+                    else ""
+                ) or None
+
+                cnpj_emitente = ""
+                if root_xml is not None:
+                    for parent_tag in ("emit", "prest"):
+                        p_el = _find_first_el(root_xml, parent_tag)
+                        if p_el is not None:
+                            cnpj_emitente = clean_digits(_find_text(p_el, "CNPJ") or _find_text(p_el, "CPF") or "")
+                            if cnpj_emitente:
+                                break
+                if not cnpj_emitente:
+                    m_prest = re.search(r"<emit>.*?<CNPJ>(\d{14})</CNPJ>.*?</emit>", xml_descompactado, re.DOTALL)
+                    if not m_prest:
+                        m_prest = re.search(r"<prest>.*?<CNPJ>(\d{14})</CNPJ>.*?</prest>", xml_descompactado, re.DOTALL)
+                    cnpj_emitente = m_prest.group(1) if m_prest else cnpj_cliente_limpo
                 tipo_nota = "emitidas" if cnpj_emitente == cnpj_cliente_limpo else "recebidas"
+
+                tomador_doc = ""
+                tomador_nome = ""
+                if root_xml is not None:
+                    toma_el = _find_first_el(root_xml, "toma")
+                    if toma_el is not None:
+                        tomador_doc = clean_digits(_find_text(toma_el, "CNPJ") or _find_text(toma_el, "CPF") or "")
+                        tomador_nome = _find_text(toma_el, "xNome") or ""
 
                 valor_nota = float(info_xml.get("valor") or 0.0)
                 if valor_nota == 0.0:
@@ -1710,7 +2721,11 @@ class AdnService:
                         valor_nota = float(m_val.group(1))
 
                 numero_nota = str(info_xml.get("numero") or nsu_item)
-                pdf_saved = cls._gerar_pdf_danfse(xml_saved_path, chave, status="NORMAL")
+                pdf_saved = cls._gerar_pdf_danfse(
+                    xml_saved_path,
+                    chave,
+                    status="CANCELADA" if status_nfse == "cancelada" else "NORMAL",
+                )
 
                 existing = db.query(Invoice).filter(Invoice.chave == chave).first()
                 if not existing:
@@ -1718,15 +2733,19 @@ class AdnService:
                         client_id=client_db.id,
                         numero=numero_nota,
                         chave=chave,
-                        status="gerada",
+                        status=status_nfse,
                         tipo=tipo_nota,
                         valor=valor_nota,
                         data_emissao=info_xml.get("data_emissao") or datetime.datetime.now(datetime.UTC),
+                        chave_substituida=ch_substda,
+                        tomador_documento=tomador_doc or None,
+                        tomador_nome=tomador_nome or None,
                         xml_path=xml_saved_path,
                         pdf_path=pdf_saved,
-                        ambiente=ambiente,
+                        ambiente=amb_nota,
                     )
                     db.add(nova)
+                    db.flush()
                     novas_notas += 1
                 else:
                     existing.xml_path = xml_saved_path
@@ -1734,7 +2753,16 @@ class AdnService:
                         existing.pdf_path = pdf_saved
                     if valor_nota > 0:
                         existing.valor = valor_nota
+                    if status_nfse in {"cancelada", "substituida"} or existing.status not in {"cancelada", "substituida"}:
+                        existing.status = status_nfse
+                    if ch_substda and not existing.chave_substituida:
+                        existing.chave_substituida = ch_substda
+                    if tomador_doc and not existing.tomador_documento:
+                        existing.tomador_documento = tomador_doc
+                    if tomador_nome and not existing.tomador_nome:
+                        existing.tomador_nome = tomador_nome
                     db.add(existing)
+                    db.flush()
                     atualizadas += 1
 
             if len(lote) < 50:
@@ -1760,10 +2788,13 @@ class AdnService:
         db.commit()
         return {
             "sucesso": True,
+            "parcial": parcial,
+            "aviso": aviso,
             "client_id": client_db.id,
             "nsu_anterior": nsu_atual,
             "ultimo_nsu": maior_nsu,
             "documentos_lidos": documentos_lidos,
             "novas_notas": novas_notas,
             "notas_atualizadas": atualizadas,
+            "eventos_processados": eventos_processados,
         }

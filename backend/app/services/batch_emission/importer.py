@@ -142,6 +142,46 @@ def _safe_float_field(
         return None
 
 
+TAX_CODE_PAD_WIDTHS: Dict[str, int] = {
+    "c_trib_nac": 6,
+    "cst_ibs_cbs": 3,
+    "cclasstrib": 6,
+    "indop": 6,
+    "c_nbs": 9,
+}
+
+
+def _parse_optional_bool(val: Any) -> Optional[bool]:
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return val
+    txt = str(val).strip()
+    if not txt:
+        return None
+    return parse_bool(txt)
+
+
+def _pad_numeric_code(val: Any, width: int) -> str:
+    txt = format_cell_text(val)
+    if not txt:
+        return ""
+    return txt.zfill(width) if txt.isdigit() else txt
+
+
+def normalize_tax_code_field(field: str, val: Any) -> str:
+    width = TAX_CODE_PAD_WIDTHS.get(field)
+    return _pad_numeric_code(val, width) if width else format_cell_text(val)
+
+
+def _first_present(raw_row: Dict[str, Any], *keys: str) -> Any:
+    for k in keys:
+        val = raw_row.get(k)
+        if val is not None and str(val).strip() != "":
+            return val
+    return None
+
+
 def _normalize_ibge_digits(val: Any) -> str:
     txt = format_cell_text(val)
     digits = "".join(ch for ch in txt if ch.isdigit())
@@ -152,7 +192,7 @@ def normalize_batch_row(raw_row: Dict[str, Any]) -> Dict[str, Any]:
     """Normaliza uma linha bruta CSV/XLSX preservando textos e capturando erros de parsing por campo."""
     parse_errors: List[Dict[str, str]] = []
 
-    doc_raw = format_cell_text(raw_row.get("documento_tomador") or raw_row.get("cnpj_tomador") or raw_row.get("cpf_tomador"))
+    doc_raw = format_cell_text(_first_present(raw_row, "documento_tomador", "cnpj_tomador", "cpf_tomador"))
     doc_clean = clean_doc(doc_raw)
 
     comp_raw = raw_row.get("competencia")
@@ -182,23 +222,21 @@ def normalize_batch_row(raw_row: Dict[str, Any]) -> Dict[str, Any]:
         "bairro_tomador": format_cell_text(raw_row.get("bairro_tomador")),
         "municipio_tomador": _normalize_ibge_digits(raw_row.get("municipio_tomador")),
         "codigo_servico": format_cell_text(raw_row.get("codigo_servico")),
-        "c_trib_nac": format_cell_text(raw_row.get("c_trib_nac") or raw_row.get("ctribnac")),
-        "c_nbs": format_cell_text(raw_row.get("c_nbs") or raw_row.get("cnbs")),
+        "c_trib_nac": _pad_numeric_code(_first_present(raw_row, "c_trib_nac", "ctribnac"), 6),
+        "c_nbs": _pad_numeric_code(_first_present(raw_row, "c_nbs", "cnbs"), 9),
         "descricao_servico": format_cell_text(raw_row.get("descricao_servico")),
         "discriminacao": format_cell_text(raw_row.get("discriminacao")),
         "valor_servico": valor_servico,
         "valor_deducao": valor_deducao if valor_deducao is not None else 0.0,
         "valor_desconto": valor_desconto if valor_desconto is not None else 0.0,
         "aliquota_iss": aliquota_iss,
-        "iss_retido": parse_bool(raw_row.get("iss_retido")) if raw_row.get("iss_retido") not in (None, "") else None,
-        "reter_federais": (
-            parse_bool(raw_row.get("reter_federais")) if raw_row.get("reter_federais") not in (None, "") else None
-        ),
+        "iss_retido": _parse_optional_bool(raw_row.get("iss_retido")),
+        "reter_federais": _parse_optional_bool(raw_row.get("reter_federais")),
         "municipio_prestacao": _normalize_ibge_digits(raw_row.get("municipio_prestacao")),
         "competencia": competencia_iso or format_cell_text(comp_raw),
-        "cst_ibs_cbs": format_cell_text(raw_row.get("cst_ibs_cbs") or raw_row.get("cst")),
-        "cclasstrib": format_cell_text(raw_row.get("cclasstrib") or raw_row.get("c_class_trib")),
-        "indop": format_cell_text(raw_row.get("indop") or raw_row.get("c_ind_op")),
+        "cst_ibs_cbs": _pad_numeric_code(_first_present(raw_row, "cst_ibs_cbs", "cst"), 3),
+        "cclasstrib": _pad_numeric_code(_first_present(raw_row, "cclasstrib", "c_class_trib"), 6),
+        "indop": _pad_numeric_code(_first_present(raw_row, "indop", "c_ind_op"), 6),
         "_parse_errors": parse_errors,
     }
     return payload
