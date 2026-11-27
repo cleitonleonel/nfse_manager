@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint, Boot e Testes (SQLite + PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nfse_db
+          POSTGRES_USER: nfse_user
+          POSTGRES_PASSWORD: nfse_pass
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Poetry and locked dependencies
+        run: |
+          pip install --no-cache-dir poetry
+          poetry install --with dev --no-interaction
+
+      - name: Lint Python (ruff)
+        run: poetry run ruff check --no-cache backend tests manage.py scripts
+
+      - name: Check Frontend JS syntax
+        run: find frontend/js -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Smoke test backend boot with locked pynfse
+        env:
+          DATABASE_URL: sqlite:////tmp/nfse_ci_boot.db
+        run: |
+          PYTHONPATH=backend poetry run python -c "import app.main; print('BOOT OK:', app.main.app.version)"
+          rm -f /tmp/nfse_ci_boot.db
+
+      - name: Run pytest (clean SQLite)
+        env:
+          DATABASE_URL: sqlite:////tmp/nfse_ci_sqlite.db
+        run: |
+          poetry run pytest -q
+          rm -f /tmp/nfse_ci_sqlite.db
+
+      - name: Run pytest (PostgreSQL 16)
+        env:
+          DATABASE_URL: postgresql+psycopg2://nfse_user:nfse_pass@localhost:5434/nfse_db
+        run: |
+          PYTHONPATH=backend poetry run python -c "from app.database import engine; assert engine.dialect.name == 'postgresql', engine.dialect.name; print('DIALECT OK:', engine.dialect.name)"
+          poetry run pytest -q
+
+      - name: Validate docs build
+        run: |
+          poetry run mkdocs build --strict -d /tmp/nfse_mkdocs_ci
+          rm -rf /tmp/nfse_mkdocs_ci
