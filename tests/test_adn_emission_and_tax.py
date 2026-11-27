@@ -285,7 +285,8 @@ def test_tax_calculator_2026_vs_2027_vs_2033_and_reductions():
     assert res_2026["retencoes_federais"]["cofins"] == 300.00
     # vBC = 10000 - 500 (ISS) - 65 (PIS) - 300 (COFINS) = 9135.00
     assert res_2026["reforma_tributaria"]["vBC"] == 9135.00
-    assert res_2026["reforma_tributaria"]["valor_ibs_uf"] == 9.13
+    # 9135.00 * 0.10% = 9.135 exato -> 9.14 pela ABNT NBR 5891 / Decimal ROUND_HALF_EVEN (ADR003 RFB)
+    assert res_2026["reforma_tributaria"]["valor_ibs_uf"] == 9.14
     assert res_2026["reforma_tributaria"]["valor_cbs"] == 82.22
     assert res_2026["valor_total_nf"] == res_2026["valor_liquido"]
 
@@ -396,6 +397,7 @@ def test_tax_api_special_regimes_and_validation_rules(api_client: TestClient):
             "p_ibs_mun": 0.5,
             "p_cbs": 2.0,
             "p_dif_uf": 50.0,
+            "p_dif_cbs": 50.0,
             "c_cred_pres": "01",
             "p_cred_pres_ibs": 2.0,
             "p_cred_pres_cbs": 3.0,
@@ -408,10 +410,13 @@ def test_tax_api_special_regimes_and_validation_rules(api_client: TestClient):
     assert r_calc.status_code == 200
     calc_json = r_calc.json()
     assert calc_json["iss"]["retido"] is True
-    assert calc_json["reforma_tributaria"]["ibs_uf"]["vDifUF"] > 0
+    # Em 2027 com tp_ente_gov=1 (União), Art. 473 redistribui IBS UF/Mun para CBS -> diferimento incide na CBS
+    assert calc_json["reforma_tributaria"]["ibs_uf"]["pAliqEfetUF"] == 0.0
+    assert calc_json["reforma_tributaria"]["cbs"]["vDifCBS"] > 0
     assert calc_json["reforma_tributaria"]["credito_presumido"]["cCredPres"] == "01"
     assert calc_json["reforma_tributaria"]["tributacao_regular"]["cClassTribReg"] == "000001"
     assert calc_json["reforma_tributaria"]["compras_governamentais"]["tpEnteGov"] == 1
+    assert calc_json["reforma_tributaria"]["compras_governamentais"]["redistribuido"] is True
 
     # 2. CST incompatível com cClassTrib -> erro E0959
     r_bad = api_client.post(
@@ -1205,3 +1210,83 @@ def test_enviar_email_baixa_xml_e_pdf_sob_demanda_quando_ausentes(api_client: Te
     assert mock_smtp.called
 
     api_client.delete(f"/api/clients/{cid}")
+
+
+def test_rfb_v0073_api_endpoints_simples_art473_and_vigencia(api_client: TestClient):
+    """Testa endpoints das Fases 3 e 4 (atividades Simples, gTribSN, Art. 473, suspensão CST 550 e vigência)."""
+    # 1. Catálogo oficial do Simples Nacional (V0073)
+    r_ativ = api_client.get("/api/catalogs/atividades-simples", params={"apenas_nfse": True})
+    assert r_ativ.status_code == 200, r_ativ.text
+    ativs = r_ativ.json()
+    assert [a["codigo"] for a in ativs] == ["07", "08", "09", "10", "11", "12", "13", "14", "90"]
+
+    r_sn_cat = api_client.get("/api/catalogs/simples-nacional")
+    assert r_sn_cat.status_code == 200, r_sn_cat.text
+    assert len(r_sn_cat.json().get("enquadramentos", [])) >= 6
+
+    # 2. Vigência em cClassTrib + fundamentação legal
+    r_ct = api_client.get("/api/catalogs/cclasstrib/200029", params={"data_competencia": "2026-06-01"})
+    assert r_ct.status_code == 200, r_ct.text
+    ct_data = r_ct.json()
+    assert ct_data["tp_doacao"] == 2
+    assert "Art. 130" in (ct_data.get("fundamentacao_legal") or "")
+
+    r_ct_old = api_client.get("/api/catalogs/cclasstrib/200029", params={"data_competencia": "2020-01-01"})
+    assert r_ct_old.status_code == 404
+
+    # 3. Endpoint dedicado POST /api/tax/calculate-simples (gTribSN NT 2026.005)
+    r_sn = api_client.post(
+        "/api/tax/calculate-simples",
+        json={
+            "base_receita_bruta_sn": "10000.00",
+            "cClassTrib": "000001",
+            "op_simp_nac": 3,
+            "reg_ap_ibscbs_sn": 1,
+            "p_ibs_sn": "2.3456789",
+            "p_cbs_sn": "1.2345678",
+            "c_ativ_sn": "09",
+            "fator_r": True,
+            "ano_competencia": 2027,
+        },
+    )
+    assert r_sn.status_code == 200, r_sn.text
+    sn_res = r_sn.json()
+    assert sn_res["estado"] == "CALCULADO"
+    assert sn_res["pIBSSN"] == 2.35
+    assert sn_res["vIBSSN"] == 235.0
+    assert sn_res["pCBSSN"] == 1.23
+    assert sn_res["vCBSSN"] == 123.0
+
+    # Negativo: MEI (op_simp_nac=2) rejeitado no gTribSN (VSN-019)
+    r_mei = api_client.post(
+        "/api/tax/calculate-simples",
+        json={"base_receita_bruta_sn": 1000.0, "op_simp_nac": 2, "reg_ap_ibscbs_sn": 1},
+    )
+    assert r_mei.status_code == 200
+    assert r_mei.json()["estado"] == "INCONSISTENCIA_ENTRADA"
+    assert r_mei.json()["erros"][0]["codigo"] == "VSN-019"
+
+    # 4. POST /api/tax/calculate com Art. 473 (Estado 2029) + memória de cálculo
+    r_gov = api_client.post(
+        "/api/tax/calculate",
+        json={
+            "valor_servicos": 10000.0,
+            "regime_prestador": "normal",
+            "cClassTrib": "000001",
+            "ano_competencia": 2029,
+            "aliquota_iss": 0.0,
+            "trib_issqn": 2,
+            "p_ibs_uf": 10.0,
+            "p_ibs_mun": 5.0,
+            "p_cbs": 10.0,
+            "tp_ente_gov": 2,
+            "p_redutor_gov": 0.0,
+        },
+    )
+    assert r_gov.status_code == 200, r_gov.text
+    gov_ref = r_gov.json()["reforma_tributaria"]
+    assert gov_ref["cbs"]["pAliqEfetCBS"] == 9.0
+    assert gov_ref["ibs_uf"]["pAliqEfetUF"] == 16.0
+    assert gov_ref["ibs_mun"]["pAliqEfetMun"] == 0.0
+    assert gov_ref["compras_governamentais"]["redistribuido"] is True
+    assert "Art. 473" in (gov_ref.get("memoria_calculo") or "")

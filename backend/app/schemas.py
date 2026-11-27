@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 from datetime import datetime
+from decimal import Decimal
 
 
 class ClientBase(BaseModel):
@@ -370,6 +371,7 @@ class TaxCalculationRequest(BaseModel):
     iss_retido: bool = False
     tp_ret_issqn: Optional[int] = None
     trib_issqn: int = 1
+    tp_bm: Optional[int] = None
 
     reter_federais: bool = False
     cst_pis_cofins: str = "01"
@@ -410,6 +412,34 @@ class TaxCalculationRequest(BaseModel):
     v_ibs_est_cred: Optional[float] = None
     v_cbs_est_cred: Optional[float] = None
     apurar_ibscbs_simples: bool = False
+    p_tot_trib_sn: Optional[float] = None
+    op_simp_nac: Optional[int] = Field(None, description="1=Não Optante, 2=MEI, 3=ME/EPP, 4=Opção Pendente")
+    reg_ap_ibscbs_sn: Optional[int] = Field(None, description="1=SN Pleno, 2=Sublimite, 3=Regime Regular por fora")
+    reg_ap_trib_sn: Optional[int] = None
+    c_ativ_sn: Optional[str] = Field(None, description="Código atividade Simples Nacional (07..14, 90)")
+    fator_r: Optional[bool] = Field(None, description="Obrigatório para atividade cAtivSN='09' (Anexo III vs. V)")
+    p_ibs_sn: Optional[Union[str, float]] = Field(None, description="Alíquota efetiva IBS do PGDAS-D (até 34 casas)")
+    p_cbs_sn: Optional[Union[str, float]] = Field(None, description="Alíquota efetiva CBS do PGDAS-D (até 34 casas)")
+    impedimento_sublimite: bool = False
+
+
+class SimplesNacionalTaxRequest(BaseModel):
+    base_receita_bruta_sn: Decimal = Field(..., ge=0)
+    cClassTrib: str = Field("000001")
+    op_simp_nac: int = Field(3, description="3=Optante ME/EPP, 4=Opção Pendente")
+    reg_ap_ibscbs_sn: int = Field(1, description="1=SN Pleno, 2=Excesso Sublimite, 3=Por fora (Somente Receita)")
+    p_ibs_sn: Optional[Union[str, float]] = None
+    p_cbs_sn: Optional[Union[str, float]] = None
+    c_ativ_sn: Optional[str] = None
+    fator_r: Optional[bool] = None
+    tp_ente_gov: Optional[int] = None
+    data_competencia: Optional[str] = None
+    ano_competencia: Optional[int] = None
+    impedimento_sublimite: bool = False
+    reg_ap_trib_sn: Optional[int] = None
+    trib_issqn: int = 1
+    tp_bm: Optional[int] = None
+    tp_ret_issqn: Optional[int] = None
 
 
 class TaxValidationRequest(BaseModel):
@@ -433,6 +463,9 @@ class TaxValidationRequest(BaseModel):
     indDoacao: Optional[int] = None
     vIBSEstCred: Optional[float] = None
     vCBSEstCred: Optional[float] = None
+    data_competencia: Optional[str] = None
+    regime_prestador: Optional[str] = None
+    apurar_ibscbs_simples: bool = False
 
 
 # =====================================================================

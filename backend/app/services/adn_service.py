@@ -35,6 +35,7 @@ from app.schemas import (
     EmitirDpsRequest,
     EnviarEmailNfseRequest,
     ReenviarFilaRequest,
+    SimplesNacionalTaxRequest,
     SincronizarCofreAdnRequest,
     SubstituirNfseRequest,
     TaxCalculationRequest,
@@ -50,10 +51,12 @@ from pynfse.adn import (
     build_dps_xml,
     build_evento_cancelamento_xml,
     build_evento_substituicao_xml,
+    calcular_ibscbs_simples_nacional,
     calcular_tributacao,
     clean_digits,
     formatar_id_dps,
     get_catalogs_dir as get_pynfse_catalogs_dir,
+    listar_atividades_simples,
     listar_cclasstrib,
     listar_cst,
     listar_favoritos,
@@ -61,6 +64,7 @@ from pynfse.adn import (
     listar_nbs,
     listar_servicos_ctribnac,
     listar_subitens_lc116,
+    obter_catalogo_simples_nacional,
     obter_cclasstrib,
     obter_metadados_catalogos,
     obter_nbs,
@@ -175,6 +179,7 @@ class AdnService:
         apenas_nfse: bool = False,
         apenas_anexo_viii: bool = False,
         q: Optional[str] = None,
+        data_competencia: Optional[str] = None,
     ):
         cls._ensure_catalogs_dir()
         return listar_cclasstrib(
@@ -182,12 +187,13 @@ class AdnService:
             apenas_nfse=apenas_nfse,
             apenas_anexo_viii=apenas_anexo_viii,
             q=q,
+            data_competencia=data_competencia,
         )
 
     @classmethod
-    def obter_cclasstrib(cls, codigo: str):
+    def obter_cclasstrib(cls, codigo: str, data_competencia: Optional[str] = None):
         cls._ensure_catalogs_dir()
-        return obter_cclasstrib(codigo)
+        return obter_cclasstrib(codigo, data_competencia=data_competencia)
 
     @classmethod
     def listar_servicos(
@@ -232,9 +238,23 @@ class AdnService:
         )
 
     @classmethod
-    def listar_indop(cls):
+    def listar_indop(cls, data_competencia: Optional[str] = None):
         cls._ensure_catalogs_dir()
-        return listar_indop()
+        return listar_indop(data_competencia=data_competencia)
+
+    @classmethod
+    def listar_atividades_simples(
+        cls,
+        apenas_nfse: bool = False,
+        data_competencia: Optional[str] = None,
+    ):
+        cls._ensure_catalogs_dir()
+        return listar_atividades_simples(apenas_nfse=apenas_nfse, data_competencia=data_competencia)
+
+    @classmethod
+    def obter_catalogo_simples_nacional(cls) -> Dict[str, Any]:
+        cls._ensure_catalogs_dir()
+        return obter_catalogo_simples_nacional()
 
     @classmethod
     def listar_nbs(
@@ -422,6 +442,7 @@ class AdnService:
             iss_retido=req.iss_retido,
             tp_ret_issqn=req.tp_ret_issqn,
             trib_issqn=req.trib_issqn,
+            tp_bm=req.tp_bm,
             reter_federais=req.reter_federais,
             cst_pis_cofins=req.cst_pis_cofins,
             p_aliq_pis=req.p_aliq_pis,
@@ -455,6 +476,36 @@ class AdnService:
             v_ibs_est_cred=req.v_ibs_est_cred,
             v_cbs_est_cred=req.v_cbs_est_cred,
             apurar_ibscbs_simples=req.apurar_ibscbs_simples,
+            p_tot_trib_sn=req.p_tot_trib_sn,
+            op_simp_nac=req.op_simp_nac,
+            reg_ap_ibscbs_sn=req.reg_ap_ibscbs_sn,
+            reg_ap_trib_sn=req.reg_ap_trib_sn,
+            c_ativ_sn=req.c_ativ_sn,
+            fator_r=req.fator_r,
+            p_ibs_sn=req.p_ibs_sn,
+            p_cbs_sn=req.p_cbs_sn,
+            impedimento_sublimite=req.impedimento_sublimite,
+        )
+
+    @staticmethod
+    def calcular_simples_nacional(req: SimplesNacionalTaxRequest) -> Dict[str, Any]:
+        return calcular_ibscbs_simples_nacional(
+            base_receita_bruta_sn=req.base_receita_bruta_sn,
+            c_class_trib=req.cClassTrib,
+            op_simp_nac=req.op_simp_nac,
+            reg_ap_ibscbs_sn=req.reg_ap_ibscbs_sn,
+            p_ibs_sn=req.p_ibs_sn,
+            p_cbs_sn=req.p_cbs_sn,
+            c_ativ_sn=req.c_ativ_sn,
+            fator_r=req.fator_r,
+            tp_ente_gov=req.tp_ente_gov,
+            data_competencia=req.data_competencia,
+            ano_competencia=req.ano_competencia,
+            impedimento_sublimite=req.impedimento_sublimite,
+            reg_ap_trib_sn=req.reg_ap_trib_sn,
+            trib_issqn=req.trib_issqn,
+            tp_bm=req.tp_bm,
+            tp_ret_issqn=req.tp_ret_issqn,
         )
 
     @staticmethod
@@ -480,6 +531,9 @@ class AdnService:
             ind_doacao=req.indDoacao,
             v_ibs_est_cred=req.vIBSEstCred,
             v_cbs_est_cred=req.vCBSEstCred,
+            data_competencia=req.data_competencia,
+            regime_prestador=req.regime_prestador,
+            apurar_ibscbs_simples=req.apurar_ibscbs_simples,
         )
 
         # Cruzamento próprio NBS × cClassTrib × cIndOp via Anexo VIII (aviso preventivo não bloqueante)

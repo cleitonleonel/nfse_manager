@@ -33,6 +33,7 @@ def get_cclasstrib_table(
     apenas_nfse: bool = Query(False, description="Retornar apenas códigos com IndNfse=True ou presentes no Anexo VIII"),
     apenas_anexo_viii: bool = Query(False, description="Retornar apenas os códigos presentes no Anexo VIII da NFS-e"),
     q: Optional[str] = Query(None, description="Busca textual por código ou descrição"),
+    data_competencia: Optional[str] = Query(None, description="Filtrar por vigência na data AAAA-MM-DD"),
 ):
     """Lista e filtra a tabela oficial de códigos cClassTrib da Reforma Tributária."""
     return AdnService.listar_cclasstrib(
@@ -40,13 +41,17 @@ def get_cclasstrib_table(
         apenas_nfse=apenas_nfse,
         apenas_anexo_viii=apenas_anexo_viii,
         q=q,
+        data_competencia=data_competencia,
     )
 
 
 @router.get("/cclasstrib/{codigo}")
-def get_cclasstrib_detail(codigo: str):
+def get_cclasstrib_detail(
+    codigo: str,
+    data_competencia: Optional[str] = Query(None, description="Validar vigência na data AAAA-MM-DD"),
+):
     """Retorna os metadados detalhados de um código cClassTrib de 6 dígitos."""
-    item = AdnService.obter_cclasstrib(codigo)
+    item = AdnService.obter_cclasstrib(codigo, data_competencia=data_competencia)
     if not item:
         raise HTTPException(status_code=404, detail=f"cClassTrib '{codigo}' não encontrado.")
     return item
@@ -100,9 +105,29 @@ def get_correlacoes_anexo_viii(
 
 
 @router.get("/indop")
-def get_indop_table():
+def get_indop_table(
+    data_competencia: Optional[str] = Query(None, description="Filtrar por vigência na data AAAA-MM-DD"),
+):
     """Lista a tabela de Códigos Indicadores de Operação (cIndOp) e regras de local de incidência IBS/CBS."""
-    return AdnService.listar_indop()
+    return AdnService.listar_indop(data_competencia=data_competencia)
+
+
+@router.get("/atividades-simples")
+def get_atividades_simples_nacional(
+    apenas_nfse: bool = Query(False, description="Retornar apenas atividades habilitadas para NFS-e (tpDoc=91)"),
+    data_competencia: Optional[str] = Query(None, description="Filtrar por vigência na data AAAA-MM-DD"),
+):
+    """Lista as atividades oficiais do Simples Nacional (cAtivSN — NT 2026.005 / base RFB V0073)."""
+    return AdnService.listar_atividades_simples(
+        apenas_nfse=apenas_nfse,
+        data_competencia=data_competencia,
+    )
+
+
+@router.get("/simples-nacional")
+def get_catalogo_simples_nacional():
+    """Retorna o catálogo oficial completo do Simples Nacional (atividades, regimes, tpRBSN e transição)."""
+    return AdnService.obter_catalogo_simples_nacional()
 
 
 @router.get("/nbs")
